@@ -1,0 +1,182 @@
+CA-90.3 selected live evidence
+run=ca90-r4-dd0bf75-6h-20260907-113203
+tested_binary=dd0bf75c9176bceb70ce8f1d2a07057610ec381b
+timezone=+07
+
+=== bounded side-I/O pressure ===
+2026-09-07T17:06:05.243536+07:00 systemd[1]: Started radixdb-side-io-pressure-15m.service.
+2026-09-07T17:06:05.696820+07:00 side-io-pressure.sh[55708]: side-io-pressure: target=/storage/radixdb-soak/io-pressure/random-20260907T100605Z.bin
+2026-09-07T17:06:05.697669+07:00 side-io-pressure.sh[55708]: side-io-pressure: pressure_seconds=900 recovery_seconds=300
+2026-09-07T17:06:05.751942+07:00 side-io-pressure.sh[55735]: {"timestamp":"2026-09-07T17:06:05,738920748+07:00","label":"pressure-start","state":"running","phase":"clients-128","watchdog_state":"healthy","watchdog_silence_millis":3427,"current_tps":3.244347273208431,"active_clients":128,"target_clients":128,"planned":100417,"committed":79491,"rolled_back":11551,"conflicts":3471,"operations":2021720,"invariant_failures":0,"failure":null}
+2026-09-07T17:15:09.737870+07:00 side-io-pressure.sh[55708]: side-io-pressure: pressure_elapsed_seconds=540 file_bytes=19096666112
+2026-09-07T17:15:09.799585+07:00 side-io-pressure.sh[56334]: {"timestamp":"2026-09-07T17:15:09,779413395+07:00","label":"pressure-540s","state":"running","phase":"clients-128","watchdog_state":"healthy","watchdog_silence_millis":547470,"current_tps":3.244347273208431,"active_clients":128,"target_clients":128,"planned":100417,"committed":79491,"rolled_back":11551,"conflicts":3471,"operations":2021720,"invariant_failures":0,"failure":null}
+2026-09-07T17:19:10.074714+07:00 side-io-pressure.sh[55708]: side-io-pressure: pressure_elapsed_seconds=780 file_bytes=26252148736
+2026-09-07T17:19:10.157235+07:00 side-io-pressure.sh[56665]: {"timestamp":"2026-09-07T17:19:10,117230578+07:00","label":"pressure-780s","state":"running","phase":"clients-128","watchdog_state":"healthy","watchdog_silence_millis":46306,"current_tps":1.8219234445182615,"active_clients":128,"target_clients":128,"planned":101768,"committed":80434,"rolled_back":11687,"conflicts":3676,"operations":2047834,"invariant_failures":0,"failure":null}
+2026-09-07T17:21:10.253658+07:00 side-io-pressure.sh[55708]: side-io-pressure: pressure-stopped file_bytes=29657923584
+2026-09-07T17:21:10.370472+07:00 side-io-pressure.sh[56813]: {"timestamp":"2026-09-07T17:21:10,303136464+07:00","label":"pressure-stopped","state":"running","phase":"clients-128","watchdog_state":"healthy","watchdog_silence_millis":166492,"current_tps":1.8219234445182615,"active_clients":128,"target_clients":128,"planned":101768,"committed":80434,"rolled_back":11687,"conflicts":3676,"operations":2047834,"invariant_failures":0,"failure":null}
+2026-09-07T17:26:10.656080+07:00 side-io-pressure.sh[57936]: {"timestamp":"2026-09-07T17:26:10,644780014+07:00","label":"recovery-300s","state":"running","phase":"clients-128","watchdog_state":"healthy","watchdog_silence_millis":466834,"current_tps":1.8219234445182615,"active_clients":128,"target_clients":128,"planned":101768,"committed":80434,"rolled_back":11687,"conflicts":3676,"operations":2047834,"invariant_failures":0,"failure":null}
+2026-09-07T17:26:10.753695+07:00 side-io-pressure.sh[55708]: side-io-pressure: completed; retained /storage/radixdb-soak/io-pressure/random-20260907T100605Z.bin
+2026-09-07T17:26:10.756979+07:00 systemd[1]: radixdb-side-io-pressure-15m.service: Deactivated successfully.
+
+=== real kernel ATA failure and recovery ===
+2026-09-07T17:26:31.173789+07:00 debian kernel: ata3.00: exception Emask 0x10 SAct 0x0 SErr 0x4050000 action 0xe frozen
+2026-09-07T17:26:31.174033+07:00 debian kernel: ata3.00: irq_stat 0x00000040, connection status changed
+2026-09-07T17:26:31.174111+07:00 debian kernel: ata3: SError: { PHYRdyChg CommWake DevExch }
+2026-09-07T17:26:31.174187+07:00 debian kernel: ata3.00: failed command: FLUSH CACHE EXT
+2026-09-07T17:26:31.174281+07:00 debian kernel: ata3.00: cmd ea/00:00:00:00:00/00:00:00:00:00/a0 tag 29
+2026-09-07T17:26:31.174350+07:00 debian kernel: ata3.00: status: { DRDY }
+2026-09-07T17:26:31.174414+07:00 debian kernel: ata3: hard resetting link
+2026-09-07T17:26:31.905837+07:00 debian kernel: ata3: SATA link up 1.5 Gbps (SStatus 113 SControl 310)
+2026-09-07T17:26:31.913837+07:00 debian kernel: ata3.00: configured for UDMA/33
+2026-09-07T17:26:31.914022+07:00 debian kernel: ata3.00: retrying FLUSH 0xea Emask 0x10
+2026-09-07T17:26:31.914103+07:00 debian kernel: ata3: EH complete
+
+=== bounded engine retry excerpts ===
+2026-09-07T17:20:56.944842+07:00 radixdb-server[52665]: Warning: checkpoint cycle failed: checkpoint timed out acquiring the commit fence
+2026-09-07T17:20:59.129455+07:00 radixdb-server[52665]: Warning: immutable-member retirement requires retry: artifact cleanup wall-time nanoseconds is 2061232602; configured limit is 2000000000
+2026-09-07T17:25:23.631488+07:00 radixdb-server[52665]: Warning: checkpoint cycle failed: checkpoint timed out acquiring the commit fence
+2026-09-07T17:28:21.750294+07:00 radixdb-server[52665]: Warning: checkpoint cycle failed: checkpoint timed out acquiring the commit fence
+2026-09-07T17:28:23.852990+07:00 radixdb-server[52665]: Warning: immutable-member retirement requires retry: artifact cleanup wall-time nanoseconds is 2000795172; configured limit is 2000000000
+
+=== observer incident ===
+{"format":2,"id":"incident-000104","alert_ids":["disk-degradation-13014"],"opened_unix_millis":1788776824086,"closed_unix_millis":null,"candidate_cause":"disk_degradation","confidence":"confirmed","artifact_directory":"incidents/000104-disk-degradation","missing_evidence":["engine-after.json","threads-after.json"]}
+{"format":2,"id":"disk-degradation-13014","kind":"disk_degradation","severity":"fatal","confidence":"confirmed","state":"active","first_unix_millis":1788776824086,"last_unix_millis":1788776824086,"first_frame_sequence":13014,"last_frame_sequence":13014,"evidence":[{"name":"host_disk_degradation","observed":1.0,"expected":0.0,"unit":"boolean","detail":"SMART, kernel I/O or filesystem evidence reports physical degradation"}]}
+
+=== post-recovery live status at 2026-09-07T17:34:52.782580863+07:00 ===
+run_id=ca90-r4-dd0bf75-6h-20260907-113203
+state=running
+phase=clients-256
+current_tps=2.707224773137264
+watchdog_state=healthy
+watchdog_silence_millis=131271
+watchdog_timeout_millis=1260000
+active_clients=256
+target_clients=256
+transactions_planned=103889
+transactions_committed=82024
+transactions_rolled_back=11910
+conflicts=3978
+operations=2091985
+invariant_passes=2040
+invariant_failures=0
+reopens=2
+failure=null
+agent_unit=active
+database_unit=active
+observer_unit=active
+filesystem=/dev/sda1 ext4 rw,relatime,errors=remount-ro
+
+=== SMART selected after incident ===
+Power_On_Hours=3364
+Reallocated_Sector_Ct=0
+Current_Pending_Sector=0
+Offline_Uncorrectable=0
+UDMA_CRC_Error_Count=3
+ATA_Error_Count=3
+Temperature_Celsius=43
+
+No Buffer I/O error, EXT4-fs error, critical medium error or read-only remount
+was present in the kernel journal from 17:00 through the 17:34 evidence cut.
+
+=== post-incident stall observation at 2026-09-07T18:07:39.117520518+07:00 ===
+state=running
+phase=clients-256
+updated_unix_millis=1788777749628
+last_progress_unix_millis=1788777749628
+current_tps=9.535062315253045
+watchdog_state=stalled
+watchdog_silence_millis=1509571
+watchdog_timeout_millis=1260000
+active_clients=256
+target_clients=256
+transactions_planned=109863
+transactions_committed=85770
+transactions_rolled_back=12499
+conflicts=5074
+operations=2150604
+invariant_passes=2052
+invariant_failures=0
+checkpoint_deferred=48
+reopens=2
+failure=null
+agent_unit=active
+database_unit=active
+observer_unit=active
+filesystem=/dev/sda1 ext4 rw,relatime,errors=remount-ro
+new_kernel_storage_events_after_17_26_32=0
+
+=== first observed recovery at 2026-09-07T18:17:15.307845922+07:00 ===
+state=running
+phase=clients-256
+current_tps=5.041624592762397
+watchdog_state=healthy
+watchdog_silence_millis=525059
+transactions_committed=91021
+operations=2230964
+invariant_failures=0
+failure=null
+
+=== second stall at 2026-09-07T18:29:56.914442640+07:00 ===
+state=running
+phase=clients-256
+watchdog_state=stalled
+watchdog_silence_millis=1286635
+transactions_committed=91021
+operations=2230964
+invariant_failures=0
+failure=null
+
+=== second observed recovery at 2026-09-07T18:30:57.566805521+07:00 ===
+state=running
+phase=clients-256
+current_tps=4.887798197682118
+watchdog_state=healthy
+watchdog_silence_millis=34624
+transactions_committed=95361
+operations=2297615
+invariant_failures=0
+failure=null
+
+=== terminal engine result ===
+run_id=ca90-r4-dd0bf75-6h-20260907-113203
+state=passed
+phase=passed
+elapsed_millis=27427411
+transactions_planned=128652
+transactions_committed=98668
+transactions_rolled_back=14259
+conflicts=8604
+operations=2351035
+invariant_passes=2100
+invariant_failures=0
+checkpoints=2
+checkpoint_deferred=51
+backups=1
+restores=1
+reopens=2
+telemetry_dropped=0
+logical_digest=59b56e6b7bdaf846dd167aa01185222c7af95aec54593b9a05927b4c0abda4b0
+failure=null
+agent_result=success
+agent_exec_main_status=0
+final_rss_bytes=206327808
+peak_rss_bytes=1060020224
+
+=== terminal observer result ===
+terminal=true
+samples=14176
+telemetry_sequence=7166
+telemetry_gaps=0
+retention_dropped_records=0
+retention_saturated=false
+last_error=null
+active_hardware_alert=disk-degradation-13014
+active_incidents=1
+incident_000104_missing_evidence=engine-after.json,threads-after.json
+
+=== terminal artifact checksums ===
+config_sha256=1edf165c21651f9888b6f5257f62bb28f0fc29e5da524e7ea61330898f91e025
+server_config_sha256=2cca6d86627f452f905a370a0d9d6d4aa77f648849917c387c24b36df830aada
+manifest_sha256=4cc2d80343aac1b40a520d22b8ad753b8de068a8458bed6e9b9f66effbbc9862
+report_sha256=9ae80e5ab496caa8dfe9beff83d224a0b0ce19226777c7c4667a27fb2f6da715
+status_sha256=3c5ded5539513c2b863efdebf15273e1f8522e7320ab1daa4333c7882e42216c

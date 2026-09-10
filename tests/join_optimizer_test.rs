@@ -1,0 +1,545 @@
+// Copyright 2026 RadixDB Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Integration tests for join optimizer
+
+use radixdb::Database;
+
+#[test]
+fn test_explain_shows_hash_join() {
+    let db = Database::open("memory://join_opt_hash").unwrap();
+
+    // Create tables with non-indexed columns for join condition
+    // Using non-PK columns forces hash join instead of index nested loop
+    db.execute(
+        "CREATE TABLE users (id INTEGER PRIMARY KEY, dept_id INTEGER, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE departments (id INTEGER PRIMARY KEY, dept_code INTEGER, name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    // Insert enough data to make hash join beneficial (planner uses nested loop for < 200 rows)
+    for i in 0..300 {
+        db.execute(
+            "INSERT INTO users (id, dept_id, name) VALUES (?, ?, ?)",
+            (i, i % 10, format!("User {}", i)),
+        )
+        .unwrap();
+    }
+    for i in 0..50 {
+        db.execute(
+            "INSERT INTO departments (id, dept_code, name) VALUES (?, ?, ?)",
+            (i, i, format!("Dept {}", i)),
+        )
+        .unwrap();
+    }
+
+    // Collect statistics so the planner can make informed decisions
+    db.execute("ANALYZE users", ()).unwrap();
+    db.execute("ANALYZE departments", ()).unwrap();
+
+    // EXPLAIN should show Hash Join for equality condition on non-indexed columns
+    let result = db
+        .query(
+            "EXPLAIN SELECT * FROM users u INNER JOIN departments d ON u.dept_id = d.dept_code",
+            (),
+        )
+        .unwrap();
+
+    let mut found_hash_join = false;
+    let mut all_lines = Vec::new();
+    for row in result {
+        let row = row.unwrap();
+        let plan_line: String = row.get(0).unwrap();
+        all_lines.push(plan_line.clone());
+        if plan_line.contains("Hash Join") {
+            found_hash_join = true;
+        }
+    }
+
+    assert!(
+        found_hash_join,
+        "EXPLAIN should show Hash Join for equality condition on non-indexed columns. Got:\n{}",
+        all_lines.join("\n")
+    );
+}
+
+#[test]
+fn test_explain_shows_nested_loop_for_cross_join() {
+    let db = Database::open("memory://join_opt_nested").unwrap();
+
+    db.execute("CREATE TABLE t1 (id INTEGER PRIMARY KEY)", ())
+        .unwrap();
+    db.execute("CREATE TABLE t2 (id INTEGER PRIMARY KEY)", ())
+        .unwrap();
+
+    // CROSS JOIN should show Nested Loop
+    let result = db
+        .query("EXPLAIN SELECT * FROM t1 CROSS JOIN t2", ())
+        .unwrap();
+
+    let mut found_nested_loop = false;
+    for row in result {
+        let row = row.unwrap();
+        let plan_line: String = row.get(0).unwrap();
+        if plan_line.contains("Nested Loop") {
+            found_nested_loop = true;
+            break;
+        }
+    }
+
+    assert!(
+        found_nested_loop,
+        "EXPLAIN should show Nested Loop for CROSS JOIN"
+    );
+}
+
+#[test]
+fn test_explain_shows_cost_and_rows() {
+    let db = Database::open("memory://join_opt_cost").unwrap();
+
+    db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
+        .unwrap();
+    db.execute(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER)",
+        (),
+    )
+    .unwrap();
+
+    let result = db
+        .query(
+            "EXPLAIN SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id",
+            (),
+        )
+        .unwrap();
+
+    let mut found_cost = false;
+    let mut found_rows = false;
+    for row in result {
+        let row = row.unwrap();
+        let plan_line: String = row.get(0).unwrap();
+        if plan_line.contains("cost=") {
+            found_cost = true;
+        }
+        if plan_line.contains("rows=") {
+            found_rows = true;
+        }
+    }
+
+    assert!(found_cost, "EXPLAIN should show cost estimate");
+    assert!(found_rows, "EXPLAIN should show row estimate");
+}
+
+#[test]
+fn test_explain_analyze_shows_actual_rows() {
+    let db = Database::open("memory://join_opt_analyze").unwrap();
+
+    db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
+        .unwrap();
+    db.execute(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER)",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob')", ())
+        .unwrap();
+    db.execute("INSERT INTO orders VALUES (1, 1), (2, 1), (3, 2)", ())
+        .unwrap();
+
+    let result = db
+        .query(
+            "EXPLAIN ANALYZE SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id",
+            (),
+        )
+        .unwrap();
+
+    let mut found_actual_rows = false;
+    for row in result {
+        let row = row.unwrap();
+        let plan_line: String = row.get(0).unwrap();
+        if plan_line.contains("SELECT (actual time=") && plan_line.contains("rows=") {
+            found_actual_rows = true;
+            break;
+        }
+    }
+
+    assert!(
+        found_actual_rows,
+        "EXPLAIN ANALYZE should show actual row count"
+    );
+}
+
+#[test]
+fn test_statistics_improve_estimates() {
+    let db = Database::open("memory://join_opt_stats").unwrap();
+
+    db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
+        .unwrap();
+    db.execute(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO orders VALUES (1, 1), (2, 1), (3, 2)", ())
+        .unwrap();
+
+    // Get estimate without ANALYZE
+    let result_before = db
+        .query(
+            "EXPLAIN SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id",
+            (),
+        )
+        .unwrap();
+    let mut cost_before = String::new();
+    for row in result_before {
+        let row = row.unwrap();
+        let plan_line: String = row.get(0).unwrap();
+        if plan_line.contains("Join") && plan_line.contains("cost=") {
+            cost_before = plan_line;
+            break;
+        }
+    }
+
+    // Run ANALYZE
+    db.execute("ANALYZE users", ()).unwrap();
+    db.execute("ANALYZE orders", ()).unwrap();
+
+    // Get estimate after ANALYZE
+    let result_after = db
+        .query(
+            "EXPLAIN SELECT * FROM users u INNER JOIN orders o ON u.id = o.user_id",
+            (),
+        )
+        .unwrap();
+    let mut cost_after = String::new();
+    for row in result_after {
+        let row = row.unwrap();
+        let plan_line: String = row.get(0).unwrap();
+        if plan_line.contains("Join") && plan_line.contains("cost=") {
+            cost_after = plan_line;
+            break;
+        }
+    }
+
+    // After ANALYZE, the estimates should be different (more accurate)
+    assert!(!cost_before.is_empty(), "Should have cost before ANALYZE");
+    assert!(!cost_after.is_empty(), "Should have cost after ANALYZE");
+    assert_ne!(
+        cost_before, cost_after,
+        "Cost estimates should change after ANALYZE"
+    );
+}
+
+#[test]
+fn test_hash_join_executes_correctly() {
+    let db = Database::open("memory://join_opt_exec").unwrap();
+
+    db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
+        .unwrap();
+    db.execute(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER, total FLOAT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO orders VALUES (1, 1, 100.0), (2, 1, 200.0), (3, 2, 150.0)",
+        (),
+    )
+    .unwrap();
+
+    // Execute the join
+    let result = db
+        .query("SELECT u.name, o.total FROM users u INNER JOIN orders o ON u.id = o.user_id ORDER BY o.total", ())
+        .unwrap();
+
+    let mut rows = Vec::new();
+    for row in result {
+        let row = row.unwrap();
+        let name: String = row.get(0).unwrap();
+        let total: f64 = row.get(1).unwrap();
+        rows.push((name, total));
+    }
+
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0], ("Alice".to_string(), 100.0));
+    assert_eq!(rows[1], ("Bob".to_string(), 150.0));
+    assert_eq!(rows[2], ("Alice".to_string(), 200.0));
+}
+
+#[test]
+fn test_left_join_with_hash_join() {
+    let db = Database::open("memory://join_opt_left").unwrap();
+
+    db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)", ())
+        .unwrap();
+    db.execute(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO users VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO orders VALUES (1, 1), (2, 1)", ())
+        .unwrap();
+
+    // LEFT JOIN should include users without orders
+    let result = db
+        .query(
+            "SELECT u.name, o.id FROM users u LEFT JOIN orders o ON u.id = o.user_id ORDER BY u.id",
+            (),
+        )
+        .unwrap();
+
+    let mut rows = Vec::new();
+    for row in result {
+        let row = row.unwrap();
+        let name: String = row.get(0).unwrap();
+        let order_id: Option<i64> = row.get(1).ok();
+        rows.push((name, order_id));
+    }
+
+    // Alice has 2 orders, Bob has 0, Charlie has 0
+    assert_eq!(rows.len(), 4);
+    assert!(rows.iter().any(|(n, id)| n == "Alice" && id.is_some()));
+    assert!(rows.iter().any(|(n, id)| n == "Bob" && id.is_none()));
+    assert!(rows.iter().any(|(n, id)| n == "Charlie" && id.is_none()));
+}
+
+#[test]
+fn test_join_with_complex_condition() {
+    let db = Database::open("memory://join_opt_complex").unwrap();
+
+    db.execute(
+        "CREATE TABLE products (id INTEGER PRIMARY KEY, price FLOAT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE order_items (id INTEGER PRIMARY KEY, product_id INTEGER, quantity INTEGER)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO products VALUES (1, 10.0), (2, 20.0), (3, 30.0)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO order_items VALUES (1, 1, 2), (2, 2, 1), (3, 1, 3)",
+        (),
+    )
+    .unwrap();
+
+    // Join with equality and additional filter
+    let result = db
+        .query(
+            "SELECT p.price, oi.quantity
+             FROM products p
+             INNER JOIN order_items oi ON p.id = oi.product_id
+             WHERE oi.quantity > 1
+             ORDER BY p.price",
+            (),
+        )
+        .unwrap();
+
+    let mut rows = Vec::new();
+    for row in result {
+        let row = row.unwrap();
+        let price: f64 = row.get(0).unwrap();
+        let quantity: i64 = row.get(1).unwrap();
+        rows.push((price, quantity));
+    }
+
+    // Only items with quantity > 1
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|(_, q)| *q > 1));
+}
+
+#[test]
+fn composite_on_uses_index_lookup_and_preserves_left_join_null_extension() {
+    let db = Database::open("memory://join_opt_composite_on_index").unwrap();
+    db.execute("CREATE TABLE parents (id INTEGER PRIMARY KEY)", ())
+        .unwrap();
+    db.execute(
+        "CREATE TABLE children (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER NOT NULL,
+            active INTEGER NOT NULL
+        )",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE INDEX idx_children_parent ON children(parent_id)",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO parents VALUES (1), (2), (3)", ())
+        .unwrap();
+    db.execute(
+        "INSERT INTO children VALUES
+            (10, 1, 0),
+            (11, 1, 0),
+            (20, 2, 1),
+            (21, 2, 0)",
+        (),
+    )
+    .unwrap();
+
+    let sql = "SELECT p.id, c.id
+        FROM parents p
+        LEFT JOIN children c
+          ON c.parent_id = p.id AND c.active = 1
+        ORDER BY p.id";
+    let rows: Vec<(i64, Option<i64>)> = db
+        .query(sql, ())
+        .unwrap()
+        .map(|row| {
+            let row = row.unwrap();
+            (row.get(0).unwrap(), row.get(1).ok())
+        })
+        .collect();
+    assert_eq!(rows, vec![(1, None), (2, Some(20)), (3, None)]);
+
+    let explain_sql = format!("EXPLAIN ANALYZE {sql}");
+    let small_plan: Vec<String> = db
+        .query(&explain_sql, ())
+        .unwrap()
+        .map(|row| row.unwrap().get(0).unwrap())
+        .collect();
+    let small_plan = small_plan.join("\n");
+    assert!(
+        small_plan.contains("batch_index_nested_loop=0")
+            && small_plan.contains("hash_streaming=1")
+            && small_plan.contains("nested_loop=0"),
+        "a four-row inner relation must stay on the cheaper general hash path:\n{small_plan}"
+    );
+
+    let unrelated = (0..512)
+        .map(|offset| {
+            let id = 1_000 + offset;
+            format!("({id}, {id}, 0)")
+        })
+        .collect::<Vec<_>>()
+        .join(",");
+    db.execute(
+        &format!("INSERT INTO children (id, parent_id, active) VALUES {unrelated}"),
+        (),
+    )
+    .unwrap();
+    db.execute("ANALYZE children", ()).unwrap();
+
+    let large_plan: Vec<String> = db
+        .query(&explain_sql, ())
+        .unwrap()
+        .map(|row| row.unwrap().get(0).unwrap())
+        .collect();
+    let large_plan = large_plan.join("\n");
+    assert!(
+        large_plan.contains("batch_index_nested_loop=1")
+            && large_plan.contains("hash_streaming=0"),
+        "the same selective edge must switch to BatchIndexNL as unrelated inner rows grow:\n{large_plan}"
+    );
+}
+
+#[test]
+fn nested_join_propagates_dependency_projection_before_parent_edge() {
+    let db = Database::open("memory://join_dependency_projection").unwrap();
+    db.execute(
+        "CREATE TABLE dep_a (
+            id INTEGER PRIMARY KEY,
+            b_id INTEGER NOT NULL,
+            unused_a1 TEXT,
+            unused_a2 TEXT
+        )",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE dep_b (
+            id INTEGER PRIMARY KEY,
+            c_id INTEGER NOT NULL,
+            unused_b1 TEXT,
+            unused_b2 TEXT
+        )",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE dep_c (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            unused_c1 TEXT,
+            unused_c2 TEXT
+        )",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO dep_a VALUES (1, 10, 'wide-a1', 'wide-a2')", ())
+        .unwrap();
+    db.execute(
+        "INSERT INTO dep_b VALUES (10, 100, 'wide-b1', 'wide-b2')",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO dep_c VALUES (100, 'target', 'wide-c1', 'wide-c2')",
+        (),
+    )
+    .unwrap();
+
+    let sql = "SELECT a.id,
+                      CASE WHEN c.name = 'target' THEN c.name ELSE 'missing' END AS label
+               FROM dep_a a
+               INNER JOIN dep_b b ON b.id = a.b_id
+               INNER JOIN dep_c c ON c.id = b.c_id
+               ORDER BY a.id";
+    let rows: Vec<(i64, String)> = db
+        .query(sql, ())
+        .unwrap()
+        .map(|row| {
+            let row = row.unwrap();
+            (row.get(0).unwrap(), row.get(1).unwrap())
+        })
+        .collect();
+    assert_eq!(rows, vec![(1, "target".to_string())]);
+
+    let plan = db
+        .query(&format!("EXPLAIN ANALYZE {sql}"), ())
+        .unwrap()
+        .map(|row| row.unwrap().get::<String>(0).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        plan.contains("max_width=2"),
+        "the nested edge must publish only parent dependencies instead of a 12-value wide row:\n{plan}"
+    );
+}

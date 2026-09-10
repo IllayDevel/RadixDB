@@ -1,0 +1,10 @@
+[Unit]
+Description=RadixDB isolated soak slice for the Atom HDD stand
+
+[Slice]
+AllowedCPUs=0-1
+MemoryHigh=1400M
+MemoryMax=1536M
+MemorySwapMax=1536M
+IOWeight=50
+TasksMax=1024

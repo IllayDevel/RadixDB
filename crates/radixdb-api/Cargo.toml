@@ -1,0 +1,40 @@
+[package]
+name = "radixdb-api"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "Embedded database composition API for RadixDB"
+license-file = "../../LICENSE"
+publish = false
+
+[lib]
+# Public examples are validated through the supported `radixdb` facade. The
+# implementation crate intentionally does not depend back on that facade.
+doctest = false
+
+[features]
+default = []
+parallel = ["radixdb-executor/parallel", "radixdb-storage/parallel"]
+test-filedb = ["dep:tempfile"]
+
+[dependencies]
+radixdb-core = { path = "../radixdb-core" }
+radixdb-executor = { path = "../radixdb-executor" }
+radixdb-orm = { path = "../radixdb-orm" }
+radixdb-storage = { path = "../radixdb-storage" }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+rustc-hash = "1.1"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
+smallvec = "1.11"
+tempfile = { version = "3.9", optional = true }
+thiserror = "2.0"
+uuid = "1"
+
+[dev-dependencies]
+radixdb-catalog = { path = "../radixdb-catalog" }
+radixdb-executor = { path = "../radixdb-executor", features = ["test-hooks"] }
+radixdb-storage = { path = "../radixdb-storage", features = ["test-hooks", "test-failpoints"] }
+tempfile = "3.9"

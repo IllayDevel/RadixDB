@@ -1,0 +1,19 @@
+[package]
+name = "radixdb-plugin-macros"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "Procedural macros for the safe RadixDB native plugin SDK"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+semver = "1"
+sha2 = "0.10"
+syn = { version = "2", features = ["full", "extra-traits"] }
+uuid = "1"

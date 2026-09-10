@@ -1,0 +1,7 @@
+{
+  "select": [["1", "Alice"], ["2", "Boris"], ["3", "Clara"]],
+  "join": [["Alice", "Engineering"], ["Boris", "Support"], ["Clara", null]],
+  "navigation": [["Alice", "Engineering"], ["Boris", "Support"], ["Clara", null]],
+  "after_rollback": [["1", "Alice"], ["2", "Boris"], ["3", "Clara"]],
+  "after_commit": [["1", "Alicia"], ["2", "Boris"], ["3", "Clara"]]
+}

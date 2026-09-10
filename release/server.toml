@@ -1,0 +1,35 @@
+[server]
+bind_ip = "127.0.0.1"
+port = 15441
+data_dir = "data"
+max_connections = 64
+max_inflight_frame_bytes = 268435456
+max_databases = 64
+max_database_name_bytes = 64
+connect_timeout_secs = 10
+connection_idle_timeout_secs = 28800
+net_read_timeout_secs = 30
+net_write_timeout_secs = 60
+cursor_batch_max_rows = 1024
+cursor_batch_max_bytes = 8388608
+max_frame_bytes = 67108864
+copy_max_transaction_bytes = 536870912
+max_compaction_jobs = 1
+storage_cpu_workers = 0
+page_cache_level = 0
+page_cache_max_bytes = 0
+page_cache_memory_reserve = 0
+
+# Storage persistence. Sizes are bytes.
+target_volume_rows = 1048576
+seal_hot_bytes_threshold = 67108864
+seal_incremental_hot_bytes_threshold = 16777216
+
+# Safe release default. Raise to 4 only after measuring the real sequential
+# cold-scan workload; random PK lookups stay at depth 1 in all configurations.
+read_queue_depth = 1
+
+# Omit this table to retain passwordless root recovery on a loopback plaintext
+# endpoint. Generate a verifier with radixdb-password before enabling it.
+# [server.authentication]
+# root_password_verifier = "$argon2id$..."

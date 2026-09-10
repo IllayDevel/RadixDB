@@ -1,0 +1,16 @@
+[package]
+name = "radixdb-plugin"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "Safe authoring SDK and local test host for RadixDB native plugins"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+radixdb-plugin-abi = { path = "../radixdb-plugin-abi" }
+radixdb-plugin-macros = { path = "../radixdb-plugin-macros" }
+sha2 = "0.10"
+
+[dev-dependencies]
+trybuild = "1"

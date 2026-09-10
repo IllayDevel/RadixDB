@@ -1,0 +1,26 @@
+[package]
+name = "radixdb-spatial"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.97"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+radixdb-plugin = { path = "../radixdb-plugin" }
+
+[dev-dependencies]
+radixdb-core = { path = "../radixdb-core" }
+radixdb-executor = { path = "../radixdb-executor", features = ["test-hooks"] }
+radixdb-plugin-host = { path = "../radixdb-plugin-host", features = ["test-hooks"] }
+radixdb-storage = { path = "../radixdb-storage", features = ["test-failpoints", "test-hooks"] }
+smallvec = "1.11"
+tempfile = "3.9"
+
+[workspace]
+
+[profile.release]
+panic = "unwind"

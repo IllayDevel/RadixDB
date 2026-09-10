@@ -1,0 +1,5 @@
+error: planner support requires exactly one of exact or always_recheck
+  --> tests/ui/planner_without_recheck.rs:85:5
+   |
+85 |     #[radixdb_planner_support(
+   |     ^

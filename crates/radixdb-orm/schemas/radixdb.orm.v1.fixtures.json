@@ -1,0 +1,4940 @@
+{
+  "fixtures": "radixdb.orm.fixtures.v1",
+  "cases": [
+    {
+      "id": "ORM-AGG-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "navigation",
+                      "root": "payroll_documents",
+                      "path": [
+                        "employee",
+                        "position",
+                        "department",
+                        "name"
+                      ]
+                    },
+                    "alias": "department"
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "COUNT",
+                      "arguments": [],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": "documents"
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "SUM",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        }
+                      ],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": "total"
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "payroll_documents",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "column",
+                    "column": {
+                      "relation": null,
+                      "name": "status"
+                    }
+                  },
+                  "operator": "ne",
+                  "right": {
+                    "node": "literal",
+                    "value": {
+                      "type": "text",
+                      "value": "cancelled"
+                    }
+                  }
+                },
+                "group_by": {
+                  "grouping": "expressions",
+                  "expressions": [
+                    {
+                      "node": "navigation",
+                      "root": "payroll_documents",
+                      "path": [
+                        "employee",
+                        "position",
+                        "department",
+                        "name"
+                      ]
+                    }
+                  ]
+                },
+                "having": {
+                  "node": "binary",
+                  "left": {
+                    "node": "aggregate",
+                    "name": "SUM",
+                    "arguments": [
+                      {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "amount"
+                        }
+                      }
+                    ],
+                    "distinct": false,
+                    "filter": null,
+                    "order_by": []
+                  },
+                  "operator": "gt",
+                  "right": {
+                    "node": "literal",
+                    "value": {
+                      "type": "decimal",
+                      "value": "100000.00"
+                    }
+                  }
+                },
+                "windows": [],
+                "set_operations": [],
+                "order_by": [
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "SUM",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        }
+                      ],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "direction": "desc",
+                    "nulls": null
+                  }
+                ],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"payroll_documents\".\"employee\".\"position\".\"department\".\"name\" AS \"department\", \"COUNT\"() AS \"documents\", \"SUM\"(\"amount\") AS \"total\" FROM \"payroll_documents\" WHERE (\"status\" <> $1) GROUP BY \"payroll_documents\".\"employee\".\"position\".\"department\".\"name\" HAVING (\"SUM\"(\"amount\") > $2) ORDER BY \"SUM\"(\"amount\") DESC",
+          "parameters": [
+            {
+              "type": "text",
+              "value": "cancelled"
+            },
+            {
+              "type": "decimal",
+              "value": "100000.00"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-AGG-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "COUNT",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "employee"
+                          }
+                        }
+                      ],
+                      "distinct": true,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "SUM",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        }
+                      ],
+                      "distinct": false,
+                      "filter": {
+                        "node": "binary",
+                        "left": {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "status"
+                          }
+                        },
+                        "operator": "eq",
+                        "right": {
+                          "node": "literal",
+                          "value": {
+                            "type": "text",
+                            "value": "paid"
+                          }
+                        }
+                      },
+                      "order_by": []
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "ARRAY_AGG",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        }
+                      ],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": [
+                        {
+                          "expression": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "period"
+                            }
+                          },
+                          "direction": "asc",
+                          "nulls": null
+                        }
+                      ]
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "STRING_AGG",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "status"
+                          }
+                        },
+                        {
+                          "node": "literal",
+                          "value": {
+                            "type": "text",
+                            "value": "|"
+                          }
+                        }
+                      ],
+                      "distinct": true,
+                      "filter": null,
+                      "order_by": [
+                        {
+                          "expression": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "status"
+                            }
+                          },
+                          "direction": "asc",
+                          "nulls": null
+                        }
+                      ]
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "payroll_documents",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"COUNT\"(DISTINCT \"employee\"), \"SUM\"(\"amount\") FILTER (WHERE (\"status\" = $1)), \"ARRAY_AGG\"(\"amount\" ORDER BY \"period\" ASC), \"STRING_AGG\"(DISTINCT \"status\", $2 ORDER BY \"status\" ASC) FROM \"payroll_documents\"",
+          "parameters": [
+            {
+              "type": "text",
+              "value": "paid"
+            },
+            {
+              "type": "text",
+              "value": "|"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-AGG-03",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "status"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "period"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "SUM",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        }
+                      ],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "payroll_documents",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": {
+                  "grouping": "rollup",
+                  "expressions": [
+                    {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "status"
+                      }
+                    },
+                    {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "period"
+                      }
+                    }
+                  ]
+                },
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"status\", \"period\", \"SUM\"(\"amount\") FROM \"payroll_documents\" GROUP BY ROLLUP (\"status\", \"period\")",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-AGG-04",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "status"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "period"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "SUM",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        }
+                      ],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "payroll_documents",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": {
+                  "grouping": "cube",
+                  "expressions": [
+                    {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "status"
+                      }
+                    },
+                    {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "period"
+                      }
+                    }
+                  ]
+                },
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"status\", \"period\", \"SUM\"(\"amount\") FROM \"payroll_documents\" GROUP BY CUBE (\"status\", \"period\")",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-AGG-05",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "status"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "period"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "SUM",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        }
+                      ],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "payroll_documents",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": {
+                  "grouping": "sets",
+                  "sets": [
+                    [
+                      {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "status"
+                        }
+                      },
+                      {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "period"
+                        }
+                      }
+                    ],
+                    [
+                      {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "status"
+                        }
+                      }
+                    ],
+                    [
+                      {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "period"
+                        }
+                      }
+                    ],
+                    []
+                  ]
+                },
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"status\", \"period\", \"SUM\"(\"amount\") FROM \"payroll_documents\" GROUP BY GROUPING SETS ((\"status\", \"period\"), (\"status\"), (\"period\"), ())",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-CATALOG-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "catalog",
+            "payload": {
+              "node": "catalog",
+              "operation": {
+                "operation": "list_tables"
+              }
+            }
+          },
+          "sql": "SHOW TABLES",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "COUNT",
+                      "arguments": [],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"COUNT\"() FROM \"people\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-CATALOG-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "catalog",
+            "payload": {
+              "node": "catalog",
+              "operation": {
+                "operation": "describe_table",
+                "table": "people"
+              }
+            }
+          },
+          "sql": "DESCRIBE TABLE \"people\" FORMAT JSON",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-CONFORMANCE-001",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "catalog",
+            "payload": {
+              "node": "catalog",
+              "operation": {
+                "operation": "list_tables"
+              }
+            }
+          },
+          "sql": "SHOW TABLES",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-CONFORMANCE-002",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "insert",
+            "payload": {
+              "node": "insert",
+              "statement": {
+                "table": "people",
+                "columns": [
+                  "id",
+                  "name"
+                ],
+                "rows": [
+                  [
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "integer",
+                        "value": 7
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "text",
+                        "value": "Alice"
+                      }
+                    }
+                  ]
+                ],
+                "source": null,
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "INSERT INTO \"people\" (\"id\", \"name\") VALUES ($1, $2) RETURNING *",
+          "parameters": [
+            {
+              "type": "integer",
+              "value": 7
+            },
+            {
+              "type": "text",
+              "value": "Alice"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-CONFORMANCE-003",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "transaction",
+            "payload": {
+              "node": "transaction",
+              "statement": {
+                "operation": "savepoint",
+                "name": "orm_step"
+              }
+            }
+          },
+          "sql": "SAVEPOINT \"orm_step\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DDL-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "create_table",
+                "table": "fio_copy",
+                "if_not_exists": false,
+                "columns": [
+                  {
+                    "name": "id",
+                    "data_type": {
+                      "type": "uuid"
+                    },
+                    "nullable": false,
+                    "primary_key": true,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "name",
+                    "data_type": {
+                      "type": "text"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  }
+                ],
+                "constraints": []
+              }
+            }
+          },
+          "sql": "CREATE TABLE \"fio_copy\" (\"id\" UUID PRIMARY KEY, \"name\" TEXT)",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DDL-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "create_table",
+                "table": "all_types",
+                "if_not_exists": false,
+                "columns": [
+                  {
+                    "name": "integer_value",
+                    "data_type": {
+                      "type": "integer"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "float_value",
+                    "data_type": {
+                      "type": "float"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "decimal_value",
+                    "data_type": {
+                      "type": "decimal",
+                      "precision": 38,
+                      "scale": 10
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "text_value",
+                    "data_type": {
+                      "type": "text"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "boolean_value",
+                    "data_type": {
+                      "type": "boolean"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "timestamp_value",
+                    "data_type": {
+                      "type": "timestamp"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "date_value",
+                    "data_type": {
+                      "type": "date"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "json_value",
+                    "data_type": {
+                      "type": "json"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "uuid_value",
+                    "data_type": {
+                      "type": "uuid"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "bytes_value",
+                    "data_type": {
+                      "type": "bytes"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "embedding",
+                    "data_type": {
+                      "type": "vector",
+                      "dimensions": 768
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  }
+                ],
+                "constraints": []
+              }
+            }
+          },
+          "sql": "CREATE TABLE \"all_types\" (\"integer_value\" INTEGER, \"float_value\" FLOAT, \"decimal_value\" DECIMAL(38,10), \"text_value\" TEXT, \"boolean_value\" BOOLEAN, \"timestamp_value\" TIMESTAMP, \"date_value\" DATE, \"json_value\" JSON, \"uuid_value\" UUID, \"bytes_value\" BYTES, \"embedding\" VECTOR(768))",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DDL-03",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "alter_table",
+                "table": "people",
+                "action": {
+                  "operation": "add_constraint",
+                  "constraint": {
+                    "constraint": "check",
+                    "expression": {
+                      "node": "binary",
+                      "left": {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "email"
+                        }
+                      },
+                      "operator": "ne",
+                      "right": {
+                        "node": "literal",
+                        "value": {
+                          "type": "text",
+                          "value": ""
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "sql": "ALTER TABLE \"people\" ADD CONSTRAINT CHECK ((\"email\" <> $1))",
+          "parameters": [
+            {
+              "type": "text",
+              "value": ""
+            }
+          ]
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "alter_table",
+                "table": "people",
+                "action": {
+                  "operation": "drop_constraint",
+                  "name": "chk_people_1",
+                  "if_exists": false
+                }
+              }
+            }
+          },
+          "sql": "ALTER TABLE \"people\" DROP CONSTRAINT \"chk_people_1\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DDL-03B",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "create_table",
+                "table": "constraint_collision",
+                "if_not_exists": false,
+                "columns": [
+                  {
+                    "name": "a_b",
+                    "data_type": {
+                      "type": "integer"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "c",
+                    "data_type": {
+                      "type": "integer"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "a",
+                    "data_type": {
+                      "type": "integer"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  },
+                  {
+                    "name": "b_c",
+                    "data_type": {
+                      "type": "integer"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  }
+                ],
+                "constraints": [
+                  {
+                    "constraint": "unique",
+                    "columns": [
+                      "a_b",
+                      "c"
+                    ]
+                  },
+                  {
+                    "constraint": "unique",
+                    "columns": [
+                      "a",
+                      "b_c"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "CREATE TABLE \"constraint_collision\" (\"a_b\" INTEGER, \"c\" INTEGER, \"a\" INTEGER, \"b_c\" INTEGER, UNIQUE (\"a_b\", \"c\"), UNIQUE (\"a\", \"b_c\"))",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DDL-04",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "transaction",
+            "payload": {
+              "node": "transaction",
+              "statement": {
+                "operation": "begin"
+              }
+            }
+          },
+          "sql": "BEGIN",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "alter_table",
+                "table": "people",
+                "action": {
+                  "operation": "add_column",
+                  "column": {
+                    "name": "display_name",
+                    "data_type": {
+                      "type": "text"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": null,
+                    "check": null,
+                    "reference": null
+                  }
+                }
+              }
+            }
+          },
+          "sql": "ALTER TABLE \"people\" ADD COLUMN \"display_name\" TEXT",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "alter_table",
+                "table": "people",
+                "action": {
+                  "operation": "add_column",
+                  "column": {
+                    "name": "revision",
+                    "data_type": {
+                      "type": "integer"
+                    },
+                    "nullable": true,
+                    "primary_key": false,
+                    "unique": false,
+                    "auto_increment": false,
+                    "default": {
+                      "node": "literal",
+                      "value": {
+                        "type": "integer",
+                        "value": 0
+                      }
+                    },
+                    "check": null,
+                    "reference": null
+                  }
+                }
+              }
+            }
+          },
+          "sql": "ALTER TABLE \"people\" ADD COLUMN \"revision\" INTEGER DEFAULT $1",
+          "parameters": [
+            {
+              "type": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "alter_table",
+                "table": "people",
+                "action": {
+                  "operation": "add_constraint",
+                  "constraint": {
+                    "constraint": "check",
+                    "expression": {
+                      "node": "binary",
+                      "left": {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "revision"
+                        }
+                      },
+                      "operator": "gte",
+                      "right": {
+                        "node": "literal",
+                        "value": {
+                          "type": "integer",
+                          "value": 0
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "sql": "ALTER TABLE \"people\" ADD CONSTRAINT CHECK ((\"revision\" >= $1))",
+          "parameters": [
+            {
+              "type": "integer",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "transaction",
+            "payload": {
+              "node": "transaction",
+              "statement": {
+                "operation": "commit"
+              }
+            }
+          },
+          "sql": "COMMIT",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DDL-05",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "create_index",
+                "index": {
+                  "name": "uq_people_live_email",
+                  "table": "people",
+                  "columns": [
+                    "email"
+                  ],
+                  "unique": true,
+                  "if_not_exists": false,
+                  "method": null,
+                  "predicate": {
+                    "node": "is_null",
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "deleted_at"
+                      }
+                    },
+                    "negated": false
+                  }
+                }
+              }
+            }
+          },
+          "sql": "CREATE UNIQUE INDEX \"uq_people_live_email\" ON \"people\" (\"email\") WHERE (\"deleted_at\" IS NULL)",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DML-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "insert",
+            "payload": {
+              "node": "insert",
+              "statement": {
+                "table": "people",
+                "columns": [
+                  "id",
+                  "email"
+                ],
+                "rows": [
+                  [
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "uuid",
+                        "value": "018c0e27-aa31-7000-8000-112233445566"
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "text",
+                        "value": "strict@example.test"
+                      }
+                    }
+                  ]
+                ],
+                "source": null,
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "INSERT INTO \"people\" (\"id\", \"email\") VALUES ($1, $2) RETURNING *",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            },
+            {
+              "type": "text",
+              "value": "strict@example.test"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DML-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "upsert",
+            "payload": {
+              "node": "upsert",
+              "statement": {
+                "insert": {
+                  "table": "people",
+                  "columns": [
+                    "id",
+                    "email",
+                    "fio"
+                  ],
+                  "rows": [
+                    [
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "uuid",
+                          "value": "018c0e27-aa31-7000-8000-112233445566"
+                        }
+                      },
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "text",
+                          "value": "saved@example.test"
+                        }
+                      },
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "uuid",
+                          "value": "018c0e27-aa31-7000-8000-222344556677"
+                        }
+                      }
+                    ]
+                  ],
+                  "source": null,
+                  "returning": [
+                    {
+                      "expression": {
+                        "node": "star",
+                        "relation": null
+                      },
+                      "alias": null
+                    }
+                  ]
+                },
+                "conflict_columns": [
+                  "id"
+                ],
+                "assignments": [
+                  {
+                    "column": "email",
+                    "value": {
+                      "node": "column",
+                      "column": {
+                        "relation": "excluded",
+                        "name": "email"
+                      }
+                    }
+                  },
+                  {
+                    "column": "fio",
+                    "value": {
+                      "node": "column",
+                      "column": {
+                        "relation": "excluded",
+                        "name": "fio"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "INSERT INTO \"people\" (\"id\", \"email\", \"fio\") VALUES ($1, $2, $3) ON CONFLICT (\"id\") DO UPDATE SET \"email\" = \"excluded\".\"email\", \"fio\" = \"excluded\".\"fio\" RETURNING *",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            },
+            {
+              "type": "text",
+              "value": "saved@example.test"
+            },
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-222344556677"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DML-03",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "upsert",
+            "payload": {
+              "node": "upsert",
+              "statement": {
+                "insert": {
+                  "table": "payroll_documents",
+                  "columns": [
+                    "id",
+                    "employee",
+                    "period",
+                    "amount",
+                    "status"
+                  ],
+                  "rows": [
+                    [
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "uuid",
+                          "value": "018c0e27-aa31-7000-8000-112233445566"
+                        }
+                      },
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "uuid",
+                          "value": "018c0e27-aa31-7000-8000-222344556677"
+                        }
+                      },
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "date",
+                          "value": "2026-01-01"
+                        }
+                      },
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "decimal",
+                          "value": "100.00"
+                        }
+                      },
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "text",
+                          "value": "paid"
+                        }
+                      }
+                    ]
+                  ],
+                  "source": null,
+                  "returning": [
+                    {
+                      "expression": {
+                        "node": "star",
+                        "relation": null
+                      },
+                      "alias": null
+                    }
+                  ]
+                },
+                "conflict_columns": [
+                  "employee",
+                  "period"
+                ],
+                "assignments": [
+                  {
+                    "column": "amount",
+                    "value": {
+                      "node": "column",
+                      "column": {
+                        "relation": "excluded",
+                        "name": "amount"
+                      }
+                    }
+                  },
+                  {
+                    "column": "status",
+                    "value": {
+                      "node": "column",
+                      "column": {
+                        "relation": "excluded",
+                        "name": "status"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "INSERT INTO \"payroll_documents\" (\"id\", \"employee\", \"period\", \"amount\", \"status\") VALUES ($1, $2, $3, $4, $5) ON CONFLICT (\"employee\", \"period\") DO UPDATE SET \"amount\" = \"excluded\".\"amount\", \"status\" = \"excluded\".\"status\" RETURNING *",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            },
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-222344556677"
+            },
+            {
+              "type": "date",
+              "value": "2026-01-01"
+            },
+            {
+              "type": "decimal",
+              "value": "100.00"
+            },
+            {
+              "type": "text",
+              "value": "paid"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DML-04",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "update",
+            "payload": {
+              "node": "update",
+              "statement": {
+                "table": "people",
+                "alias": null,
+                "assignments": [
+                  {
+                    "column": "email",
+                    "value": {
+                      "node": "literal",
+                      "value": {
+                        "type": "text",
+                        "value": "new@example.test"
+                      }
+                    }
+                  }
+                ],
+                "from": null,
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "column",
+                    "column": {
+                      "relation": null,
+                      "name": "id"
+                    }
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "node": "literal",
+                    "value": {
+                      "type": "uuid",
+                      "value": "018c0e27-aa31-7000-8000-112233445566"
+                    }
+                  }
+                },
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "UPDATE \"people\" SET \"email\" = $1 WHERE (\"id\" = $2) RETURNING *",
+          "parameters": [
+            {
+              "type": "text",
+              "value": "new@example.test"
+            },
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DML-05",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "update",
+            "payload": {
+              "node": "update",
+              "statement": {
+                "table": "payroll_documents",
+                "alias": null,
+                "assignments": [
+                  {
+                    "column": "amount",
+                    "value": {
+                      "node": "binary",
+                      "left": {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "amount"
+                        }
+                      },
+                      "operator": "multiply",
+                      "right": {
+                        "node": "literal",
+                        "value": {
+                          "type": "decimal",
+                          "value": "1.10"
+                        }
+                      }
+                    }
+                  },
+                  {
+                    "column": "status",
+                    "value": {
+                      "node": "literal",
+                      "value": {
+                        "type": "text",
+                        "value": "recalculated"
+                      }
+                    }
+                  }
+                ],
+                "from": null,
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "between",
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "period"
+                      }
+                    },
+                    "lower": {
+                      "node": "literal",
+                      "value": {
+                        "type": "date",
+                        "value": "2026-01-01"
+                      }
+                    },
+                    "upper": {
+                      "node": "literal",
+                      "value": {
+                        "type": "date",
+                        "value": "2026-12-31"
+                      }
+                    },
+                    "negated": false
+                  },
+                  "operator": "and",
+                  "right": {
+                    "node": "in_list",
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "status"
+                      }
+                    },
+                    "values": [
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "text",
+                          "value": "draft"
+                        }
+                      },
+                      {
+                        "node": "literal",
+                        "value": {
+                          "type": "text",
+                          "value": "approved"
+                        }
+                      }
+                    ],
+                    "negated": false
+                  }
+                },
+                "returning": []
+              }
+            }
+          },
+          "sql": "UPDATE \"payroll_documents\" SET \"amount\" = (\"amount\" * $1), \"status\" = $2 WHERE ((\"period\" BETWEEN $3 AND $4) AND (\"status\" IN ($5, $6)))",
+          "parameters": [
+            {
+              "type": "decimal",
+              "value": "1.10"
+            },
+            {
+              "type": "text",
+              "value": "recalculated"
+            },
+            {
+              "type": "date",
+              "value": "2026-01-01"
+            },
+            {
+              "type": "date",
+              "value": "2026-12-31"
+            },
+            {
+              "type": "text",
+              "value": "draft"
+            },
+            {
+              "type": "text",
+              "value": "approved"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-DML-06",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "delete",
+            "payload": {
+              "node": "delete",
+              "statement": {
+                "table": "people",
+                "alias": null,
+                "using": null,
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "is_null",
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "deleted_at"
+                      }
+                    },
+                    "negated": true
+                  },
+                  "operator": "and",
+                  "right": {
+                    "node": "binary",
+                    "left": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "deleted_at"
+                      }
+                    },
+                    "operator": "lt",
+                    "right": {
+                      "node": "literal",
+                      "value": {
+                        "type": "timestamp",
+                        "value": "2026-01-01T00:00:00Z"
+                      }
+                    }
+                  }
+                },
+                "all_rows": false,
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "DELETE FROM \"people\" WHERE ((\"deleted_at\" IS NOT NULL) AND (\"deleted_at\" < $1)) RETURNING \"id\"",
+          "parameters": [
+            {
+              "type": "timestamp",
+              "value": "2026-01-01T00:00:00Z"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-JOIN-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "email"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "name"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "join",
+                  "left": {
+                    "node": "table",
+                    "name": "people",
+                    "alias": "p"
+                  },
+                  "right": {
+                    "node": "table",
+                    "name": "fio",
+                    "alias": "f"
+                  },
+                  "kind": "inner",
+                  "on": {
+                    "node": "binary",
+                    "left": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "fio"
+                      }
+                    },
+                    "operator": "eq",
+                    "right": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "id"
+                      }
+                    }
+                  }
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"p\".\"id\", \"p\".\"email\", \"f\".\"name\" FROM \"people\" AS \"p\" INNER JOIN \"fio\" AS \"f\" ON (\"p\".\"fio\" = \"f\".\"id\")",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-JOIN-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "name"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "join",
+                  "left": {
+                    "node": "table",
+                    "name": "people",
+                    "alias": "p"
+                  },
+                  "right": {
+                    "node": "table",
+                    "name": "fio",
+                    "alias": "f"
+                  },
+                  "kind": "left",
+                  "on": {
+                    "node": "binary",
+                    "left": {
+                      "node": "binary",
+                      "left": {
+                        "node": "column",
+                        "column": {
+                          "relation": "p",
+                          "name": "fio"
+                        }
+                      },
+                      "operator": "eq",
+                      "right": {
+                        "node": "column",
+                        "column": {
+                          "relation": "f",
+                          "name": "id"
+                        }
+                      }
+                    },
+                    "operator": "and",
+                    "right": {
+                      "node": "is_null",
+                      "expression": {
+                        "node": "column",
+                        "column": {
+                          "relation": "f",
+                          "name": "name"
+                        }
+                      },
+                      "negated": true
+                    }
+                  }
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"p\".\"id\", \"f\".\"name\" FROM \"people\" AS \"p\" LEFT JOIN \"fio\" AS \"f\" ON ((\"p\".\"fio\" = \"f\".\"id\") AND (\"f\".\"name\" IS NOT NULL))",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-JOIN-03",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "d",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "email"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "pos",
+                        "name": "name"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "dep",
+                        "name": "name"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "join",
+                  "left": {
+                    "node": "join",
+                    "left": {
+                      "node": "join",
+                      "left": {
+                        "node": "table",
+                        "name": "payroll_documents",
+                        "alias": "d"
+                      },
+                      "right": {
+                        "node": "table",
+                        "name": "people",
+                        "alias": "p"
+                      },
+                      "kind": "inner",
+                      "on": {
+                        "node": "binary",
+                        "left": {
+                          "node": "column",
+                          "column": {
+                            "relation": "d",
+                            "name": "employee"
+                          }
+                        },
+                        "operator": "eq",
+                        "right": {
+                          "node": "column",
+                          "column": {
+                            "relation": "p",
+                            "name": "id"
+                          }
+                        }
+                      }
+                    },
+                    "right": {
+                      "node": "table",
+                      "name": "positions",
+                      "alias": "pos"
+                    },
+                    "kind": "left",
+                    "on": {
+                      "node": "binary",
+                      "left": {
+                        "node": "column",
+                        "column": {
+                          "relation": "p",
+                          "name": "position"
+                        }
+                      },
+                      "operator": "eq",
+                      "right": {
+                        "node": "column",
+                        "column": {
+                          "relation": "pos",
+                          "name": "id"
+                        }
+                      }
+                    }
+                  },
+                  "right": {
+                    "node": "table",
+                    "name": "departments",
+                    "alias": "dep"
+                  },
+                  "kind": "left",
+                  "on": {
+                    "node": "binary",
+                    "left": {
+                      "node": "column",
+                      "column": {
+                        "relation": "pos",
+                        "name": "department"
+                      }
+                    },
+                    "operator": "eq",
+                    "right": {
+                      "node": "column",
+                      "column": {
+                        "relation": "dep",
+                        "name": "id"
+                      }
+                    }
+                  }
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"d\".\"id\", \"p\".\"email\", \"pos\".\"name\", \"dep\".\"name\" FROM \"payroll_documents\" AS \"d\" INNER JOIN \"people\" AS \"p\" ON (\"d\".\"employee\" = \"p\".\"id\") LEFT JOIN \"positions\" AS \"pos\" ON (\"p\".\"position\" = \"pos\".\"id\") LEFT JOIN \"departments\" AS \"dep\" ON (\"pos\".\"department\" = \"dep\".\"id\")",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-JOIN-04",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "join",
+                  "left": {
+                    "node": "table",
+                    "name": "people",
+                    "alias": "p"
+                  },
+                  "right": {
+                    "node": "table",
+                    "name": "fio",
+                    "alias": "f"
+                  },
+                  "kind": "right",
+                  "on": {
+                    "node": "binary",
+                    "left": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "id"
+                      }
+                    },
+                    "operator": "eq",
+                    "right": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "id"
+                      }
+                    }
+                  }
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"p\".\"id\", \"f\".\"id\" FROM \"people\" AS \"p\" RIGHT JOIN \"fio\" AS \"f\" ON (\"p\".\"id\" = \"f\".\"id\")",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "join",
+                  "left": {
+                    "node": "table",
+                    "name": "people",
+                    "alias": "p"
+                  },
+                  "right": {
+                    "node": "table",
+                    "name": "fio",
+                    "alias": "f"
+                  },
+                  "kind": "full",
+                  "on": {
+                    "node": "binary",
+                    "left": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "id"
+                      }
+                    },
+                    "operator": "eq",
+                    "right": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "id"
+                      }
+                    }
+                  }
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"p\".\"id\", \"f\".\"id\" FROM \"people\" AS \"p\" FULL JOIN \"fio\" AS \"f\" ON (\"p\".\"id\" = \"f\".\"id\")",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "join",
+                  "left": {
+                    "node": "table",
+                    "name": "people",
+                    "alias": "p"
+                  },
+                  "right": {
+                    "node": "table",
+                    "name": "fio",
+                    "alias": "f"
+                  },
+                  "kind": "cross",
+                  "on": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"p\".\"id\", \"f\".\"id\" FROM \"people\" AS \"p\" CROSS JOIN \"fio\" AS \"f\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-JSON-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "ddl",
+            "payload": {
+              "node": "ddl",
+              "operation": {
+                "operation": "alter_table",
+                "table": "people",
+                "action": {
+                  "operation": "drop_constraint",
+                  "name": "uq_people_email",
+                  "if_exists": false
+                }
+              }
+            }
+          },
+          "sql": "ALTER TABLE \"people\" DROP CONSTRAINT \"uq_people_email\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-JSON-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "email"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "column",
+                    "column": {
+                      "relation": null,
+                      "name": "id"
+                    }
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "node": "literal",
+                    "value": {
+                      "type": "uuid",
+                      "value": "018c0e27-aa31-7000-8000-112233445566"
+                    }
+                  }
+                },
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\", \"email\" FROM \"people\" WHERE (\"id\" = $1)",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-JSON-03",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\" FROM \"people\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      },
+      "rejected_documents": [
+        {
+          "ir": "radixdb.orm.v2",
+          "kind": "select",
+          "payload": {}
+        },
+        {
+          "ir": "radixdb.orm.v1",
+          "kind": "select",
+          "payload": {
+            "node": "raw_sql",
+            "sql": "SELECT 1"
+          }
+        },
+        {
+          "ir": "radixdb.orm.v1",
+          "kind": "select",
+          "payload": {
+            "node": "select",
+            "query": {
+              "projection": [
+                {
+                  "alias": null,
+                  "expression": {
+                    "node": "literal",
+                    "value": 7
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "ORM-MIXED-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "transaction",
+            "payload": {
+              "node": "transaction",
+              "statement": {
+                "operation": "begin"
+              }
+            }
+          },
+          "sql": "BEGIN",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "insert",
+            "payload": {
+              "node": "insert",
+              "statement": {
+                "table": "people",
+                "columns": [
+                  "id",
+                  "email",
+                  "fio"
+                ],
+                "rows": [
+                  [
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "uuid",
+                        "value": "018c0e27-aa31-7000-8000-112233445566"
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "text",
+                        "value": "mixed@example.test"
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "uuid",
+                        "value": "018c0e27-aa31-7000-8000-222344556677"
+                      }
+                    }
+                  ]
+                ],
+                "source": null,
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "INSERT INTO \"people\" (\"id\", \"email\", \"fio\") VALUES ($1, $2, $3) RETURNING *",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            },
+            {
+              "type": "text",
+              "value": "mixed@example.test"
+            },
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-222344556677"
+            }
+          ]
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "COUNT",
+                      "arguments": [],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "column",
+                    "column": {
+                      "relation": null,
+                      "name": "fio"
+                    }
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "node": "literal",
+                    "value": {
+                      "type": "uuid",
+                      "value": "018c0e27-aa31-7000-8000-222344556677"
+                    }
+                  }
+                },
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"COUNT\"() FROM \"people\" WHERE (\"fio\" = $1)",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-222344556677"
+            }
+          ]
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "transaction",
+            "payload": {
+              "node": "transaction",
+              "statement": {
+                "operation": "commit"
+              }
+            }
+          },
+          "sql": "COMMIT",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-NAV-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "email"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "navigation",
+                      "root": "people",
+                      "path": [
+                        "fio",
+                        "name"
+                      ]
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\", \"email\", \"people\".\"fio\".\"name\" FROM \"people\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-NAV-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "navigation",
+                      "root": "people",
+                      "path": [
+                        "fio",
+                        "name"
+                      ]
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "navigation",
+                      "root": "people",
+                      "path": [
+                        "fio",
+                        "short_name"
+                      ]
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"people\".\"fio\".\"name\", \"people\".\"fio\".\"short_name\" FROM \"people\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-NAV-03",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "email"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "navigation",
+                      "root": "people",
+                      "path": [
+                        "position",
+                        "name"
+                      ]
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "navigation",
+                      "root": "people",
+                      "path": [
+                        "position",
+                        "department",
+                        "name"
+                      ]
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"email\", \"people\".\"position\".\"name\", \"people\".\"position\".\"department\".\"name\" FROM \"people\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-NAV-04",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "binary",
+                    "left": {
+                      "node": "navigation",
+                      "root": "people",
+                      "path": [
+                        "position",
+                        "department",
+                        "active"
+                      ]
+                    },
+                    "operator": "eq",
+                    "right": {
+                      "node": "literal",
+                      "value": {
+                        "type": "boolean",
+                        "value": true
+                      }
+                    }
+                  },
+                  "operator": "or",
+                  "right": {
+                    "node": "is_null",
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "position"
+                      }
+                    },
+                    "negated": false
+                  }
+                },
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT * FROM \"people\" WHERE ((\"people\".\"position\".\"department\".\"active\" = $1) OR (\"position\" IS NULL))",
+          "parameters": [
+            {
+              "type": "boolean",
+              "value": true
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-NAV-05",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "email"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "navigation",
+                      "root": "people",
+                      "path": [
+                        "fio",
+                        "name"
+                      ]
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\", \"email\", \"people\".\"fio\".\"name\" FROM \"people\"",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "name"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "join",
+                  "left": {
+                    "node": "table",
+                    "name": "people",
+                    "alias": "p"
+                  },
+                  "right": {
+                    "node": "table",
+                    "name": "fio",
+                    "alias": "f"
+                  },
+                  "kind": "left",
+                  "on": {
+                    "node": "binary",
+                    "left": {
+                      "node": "column",
+                      "column": {
+                        "relation": "p",
+                        "name": "fio"
+                      }
+                    },
+                    "operator": "eq",
+                    "right": {
+                      "node": "column",
+                      "column": {
+                        "relation": "f",
+                        "name": "id"
+                      }
+                    }
+                  }
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"p\".\"id\", \"f\".\"name\" FROM \"people\" AS \"p\" LEFT JOIN \"fio\" AS \"f\" ON (\"p\".\"fio\" = \"f\".\"id\")",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-REF-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "insert",
+            "payload": {
+              "node": "insert",
+              "statement": {
+                "table": "people",
+                "columns": [
+                  "id",
+                  "email",
+                  "fio"
+                ],
+                "rows": [
+                  [
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "uuid",
+                        "value": "018c0e27-aa31-7000-8000-112233445566"
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "text",
+                        "value": "user@example.test"
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "uuid",
+                        "value": "018c0e27-aa31-7000-8000-222344556677"
+                      }
+                    }
+                  ]
+                ],
+                "source": null,
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "INSERT INTO \"people\" (\"id\", \"email\", \"fio\") VALUES ($1, $2, $3) RETURNING *",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            },
+            {
+              "type": "text",
+              "value": "user@example.test"
+            },
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-222344556677"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-REF-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "transaction",
+            "payload": {
+              "node": "transaction",
+              "statement": {
+                "operation": "begin"
+              }
+            }
+          },
+          "sql": "BEGIN",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "insert",
+            "payload": {
+              "node": "insert",
+              "statement": {
+                "table": "fio",
+                "columns": [
+                  "id",
+                  "name"
+                ],
+                "rows": [
+                  [
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "uuid",
+                        "value": "018c0e27-aa31-7000-8000-222344556677"
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "text",
+                        "value": "Иванов Иван Иванович"
+                      }
+                    }
+                  ]
+                ],
+                "source": null,
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "INSERT INTO \"fio\" (\"id\", \"name\") VALUES ($1, $2) RETURNING *",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-222344556677"
+            },
+            {
+              "type": "text",
+              "value": "Иванов Иван Иванович"
+            }
+          ]
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "insert",
+            "payload": {
+              "node": "insert",
+              "statement": {
+                "table": "people",
+                "columns": [
+                  "id",
+                  "email",
+                  "fio"
+                ],
+                "rows": [
+                  [
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "uuid",
+                        "value": "018c0e27-aa31-7000-8000-112233445566"
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "text",
+                        "value": "user@example.test"
+                      }
+                    },
+                    {
+                      "node": "literal",
+                      "value": {
+                        "type": "uuid",
+                        "value": "018c0e27-aa31-7000-8000-222344556677"
+                      }
+                    }
+                  ]
+                ],
+                "source": null,
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "INSERT INTO \"people\" (\"id\", \"email\", \"fio\") VALUES ($1, $2, $3) RETURNING *",
+          "parameters": [
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            },
+            {
+              "type": "text",
+              "value": "user@example.test"
+            },
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-222344556677"
+            }
+          ]
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "transaction",
+            "payload": {
+              "node": "transaction",
+              "statement": {
+                "operation": "commit"
+              }
+            }
+          },
+          "sql": "COMMIT",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-REF-03",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "update",
+            "payload": {
+              "node": "update",
+              "statement": {
+                "table": "people",
+                "alias": null,
+                "assignments": [
+                  {
+                    "column": "fio",
+                    "value": {
+                      "node": "literal",
+                      "value": {
+                        "type": "null",
+                        "value": {
+                          "type": "uuid"
+                        }
+                      }
+                    }
+                  }
+                ],
+                "from": null,
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "column",
+                    "column": {
+                      "relation": null,
+                      "name": "id"
+                    }
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "node": "literal",
+                    "value": {
+                      "type": "uuid",
+                      "value": "018c0e27-aa31-7000-8000-112233445566"
+                    }
+                  }
+                },
+                "returning": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ]
+              }
+            }
+          },
+          "sql": "UPDATE \"people\" SET \"fio\" = $1 WHERE (\"id\" = $2) RETURNING *",
+          "parameters": [
+            {
+              "type": "null",
+              "value": {
+                "type": "uuid"
+              }
+            },
+            {
+              "type": "uuid",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-REL-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [
+                  {
+                    "name": "paid",
+                    "columns": [
+                      "employee",
+                      "amount"
+                    ],
+                    "query": {
+                      "ctes": [],
+                      "recursive": false,
+                      "distinct": false,
+                      "distinct_on": [],
+                      "projection": [
+                        {
+                          "expression": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "employee"
+                            }
+                          },
+                          "alias": null
+                        },
+                        {
+                          "expression": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "amount"
+                            }
+                          },
+                          "alias": null
+                        }
+                      ],
+                      "from": {
+                        "node": "table",
+                        "name": "payroll_documents",
+                        "alias": null
+                      },
+                      "filter": {
+                        "node": "binary",
+                        "left": {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "status"
+                          }
+                        },
+                        "operator": "eq",
+                        "right": {
+                          "node": "literal",
+                          "value": {
+                            "type": "text",
+                            "value": "paid"
+                          }
+                        }
+                      },
+                      "group_by": null,
+                      "having": null,
+                      "windows": [],
+                      "set_operations": [],
+                      "order_by": [],
+                      "limit": null,
+                      "offset": null,
+                      "expected_result_shape": []
+                    }
+                  }
+                ],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "employee"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "aggregate",
+                      "name": "SUM",
+                      "arguments": [
+                        {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        }
+                      ],
+                      "distinct": false,
+                      "filter": null,
+                      "order_by": []
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "cte",
+                  "name": "paid",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": {
+                  "grouping": "expressions",
+                  "expressions": [
+                    {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "employee"
+                      }
+                    }
+                  ]
+                },
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "WITH \"paid\" (\"employee\", \"amount\") AS (SELECT \"employee\", \"amount\" FROM \"payroll_documents\" WHERE (\"status\" = $1)) SELECT \"employee\", \"SUM\"(\"amount\") FROM \"paid\" GROUP BY \"employee\"",
+          "parameters": [
+            {
+              "type": "text",
+              "value": "paid"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-REL-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "star",
+                      "relation": null
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "exists",
+                  "query": {
+                    "ctes": [],
+                    "recursive": false,
+                    "distinct": false,
+                    "distinct_on": [],
+                    "projection": [
+                      {
+                        "expression": {
+                          "node": "literal",
+                          "value": {
+                            "type": "integer",
+                            "value": 1
+                          }
+                        },
+                        "alias": null
+                      }
+                    ],
+                    "from": {
+                      "node": "table",
+                      "name": "payroll_documents",
+                      "alias": null
+                    },
+                    "filter": {
+                      "node": "binary",
+                      "left": {
+                        "node": "binary",
+                        "left": {
+                          "node": "column",
+                          "column": {
+                            "relation": "payroll_documents",
+                            "name": "employee"
+                          }
+                        },
+                        "operator": "eq",
+                        "right": {
+                          "node": "column",
+                          "column": {
+                            "relation": "people",
+                            "name": "id"
+                          }
+                        }
+                      },
+                      "operator": "and",
+                      "right": {
+                        "node": "binary",
+                        "left": {
+                          "node": "column",
+                          "column": {
+                            "relation": "payroll_documents",
+                            "name": "amount"
+                          }
+                        },
+                        "operator": "gt",
+                        "right": {
+                          "node": "literal",
+                          "value": {
+                            "type": "decimal",
+                            "value": "100000.00"
+                          }
+                        }
+                      }
+                    },
+                    "group_by": null,
+                    "having": null,
+                    "windows": [],
+                    "set_operations": [],
+                    "order_by": [],
+                    "limit": null,
+                    "offset": null,
+                    "expected_result_shape": []
+                  },
+                  "negated": false
+                },
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT * FROM \"people\" WHERE EXISTS (SELECT $1 FROM \"payroll_documents\" WHERE ((\"payroll_documents\".\"employee\" = \"people\".\"id\") AND (\"payroll_documents\".\"amount\" > $2)))",
+          "parameters": [
+            {
+              "type": "integer",
+              "value": 1
+            },
+            {
+              "type": "decimal",
+              "value": "100000.00"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-REL-03",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "is_null",
+                  "expression": {
+                    "node": "column",
+                    "column": {
+                      "relation": null,
+                      "name": "deleted_at"
+                    }
+                  },
+                  "negated": false
+                },
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [
+                  {
+                    "operator": "union",
+                    "query": {
+                      "ctes": [],
+                      "recursive": false,
+                      "distinct": false,
+                      "distinct_on": [],
+                      "projection": [
+                        {
+                          "expression": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "employee"
+                            }
+                          },
+                          "alias": null
+                        }
+                      ],
+                      "from": {
+                        "node": "table",
+                        "name": "payroll_documents",
+                        "alias": null
+                      },
+                      "filter": null,
+                      "group_by": null,
+                      "having": null,
+                      "windows": [],
+                      "set_operations": [],
+                      "order_by": [],
+                      "limit": null,
+                      "offset": null,
+                      "expected_result_shape": []
+                    }
+                  }
+                ],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\" FROM \"people\" WHERE (\"deleted_at\" IS NULL) UNION SELECT \"employee\" FROM \"payroll_documents\"",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "is_null",
+                  "expression": {
+                    "node": "column",
+                    "column": {
+                      "relation": null,
+                      "name": "deleted_at"
+                    }
+                  },
+                  "negated": false
+                },
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [
+                  {
+                    "operator": "intersect",
+                    "query": {
+                      "ctes": [],
+                      "recursive": false,
+                      "distinct": false,
+                      "distinct_on": [],
+                      "projection": [
+                        {
+                          "expression": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "employee"
+                            }
+                          },
+                          "alias": null
+                        }
+                      ],
+                      "from": {
+                        "node": "table",
+                        "name": "payroll_documents",
+                        "alias": null
+                      },
+                      "filter": null,
+                      "group_by": null,
+                      "having": null,
+                      "windows": [],
+                      "set_operations": [],
+                      "order_by": [],
+                      "limit": null,
+                      "offset": null,
+                      "expected_result_shape": []
+                    }
+                  }
+                ],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\" FROM \"people\" WHERE (\"deleted_at\" IS NULL) INTERSECT SELECT \"employee\" FROM \"payroll_documents\"",
+          "parameters": []
+        },
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "is_null",
+                  "expression": {
+                    "node": "column",
+                    "column": {
+                      "relation": null,
+                      "name": "deleted_at"
+                    }
+                  },
+                  "negated": false
+                },
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [
+                  {
+                    "operator": "except",
+                    "query": {
+                      "ctes": [],
+                      "recursive": false,
+                      "distinct": false,
+                      "distinct_on": [],
+                      "projection": [
+                        {
+                          "expression": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "employee"
+                            }
+                          },
+                          "alias": null
+                        }
+                      ],
+                      "from": {
+                        "node": "table",
+                        "name": "payroll_documents",
+                        "alias": null
+                      },
+                      "filter": null,
+                      "group_by": null,
+                      "having": null,
+                      "windows": [],
+                      "set_operations": [],
+                      "order_by": [],
+                      "limit": null,
+                      "offset": null,
+                      "expected_result_shape": []
+                    }
+                  }
+                ],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\" FROM \"people\" WHERE (\"deleted_at\" IS NULL) EXCEPT SELECT \"employee\" FROM \"payroll_documents\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-WHERE-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "email"
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "people",
+                  "alias": null
+                },
+                "filter": {
+                  "node": "binary",
+                  "left": {
+                    "node": "binary",
+                    "left": {
+                      "node": "binary",
+                      "left": {
+                        "node": "binary",
+                        "left": {
+                          "node": "binary",
+                          "left": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "active"
+                            }
+                          },
+                          "operator": "eq",
+                          "right": {
+                            "node": "literal",
+                            "value": {
+                              "type": "boolean",
+                              "value": true
+                            }
+                          }
+                        },
+                        "operator": "and",
+                        "right": {
+                          "node": "binary",
+                          "left": {
+                            "node": "binary",
+                            "left": {
+                              "node": "column",
+                              "column": {
+                                "relation": null,
+                                "name": "hired_at"
+                              }
+                            },
+                            "operator": "gte",
+                            "right": {
+                              "node": "literal",
+                              "value": {
+                                "type": "date",
+                                "value": "2020-01-01"
+                              }
+                            }
+                          },
+                          "operator": "or",
+                          "right": {
+                            "node": "is_null",
+                            "expression": {
+                              "node": "column",
+                              "column": {
+                                "relation": null,
+                                "name": "hired_at"
+                              }
+                            },
+                            "negated": false
+                          }
+                        }
+                      },
+                      "operator": "and",
+                      "right": {
+                        "node": "binary",
+                        "left": {
+                          "node": "binary",
+                          "left": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "email"
+                            }
+                          },
+                          "operator": "like",
+                          "right": {
+                            "node": "literal",
+                            "value": {
+                              "type": "text",
+                              "value": "%@example.test"
+                            }
+                          }
+                        },
+                        "operator": "or",
+                        "right": {
+                          "node": "binary",
+                          "left": {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "email"
+                            }
+                          },
+                          "operator": "regexp",
+                          "right": {
+                            "node": "literal",
+                            "value": {
+                              "type": "text",
+                              "value": "^[a-z]+@corp\\.test$"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "operator": "and",
+                    "right": {
+                      "node": "is_null",
+                      "expression": {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "deleted_at"
+                        }
+                      },
+                      "negated": false
+                    }
+                  },
+                  "operator": "and",
+                  "right": {
+                    "node": "unary",
+                    "operator": "not",
+                    "expression": {
+                      "node": "in_list",
+                      "expression": {
+                        "node": "column",
+                        "column": {
+                          "relation": null,
+                          "name": "position"
+                        }
+                      },
+                      "values": [
+                        {
+                          "node": "literal",
+                          "value": {
+                            "type": "text",
+                            "value": "018c0e27-aa31-7000-8000-112233445566"
+                          }
+                        },
+                        {
+                          "node": "literal",
+                          "value": {
+                            "type": "text",
+                            "value": "018c0e27-aa31-7000-8000-222344556677"
+                          }
+                        }
+                      ],
+                      "negated": false
+                    }
+                  }
+                },
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "email"
+                      }
+                    },
+                    "direction": "asc",
+                    "nulls": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "direction": "asc",
+                    "nulls": null
+                  }
+                ],
+                "limit": 100,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\", \"email\" FROM \"people\" WHERE (((((\"active\" = $1) AND ((\"hired_at\" >= $2) OR (\"hired_at\" IS NULL))) AND ((\"email\" LIKE $3) OR (\"email\" REGEXP $4))) AND (\"deleted_at\" IS NULL)) AND NOT ((\"position\" IN ($5, $6)))) ORDER BY \"email\" ASC, \"id\" ASC LIMIT 100",
+          "parameters": [
+            {
+              "type": "boolean",
+              "value": true
+            },
+            {
+              "type": "date",
+              "value": "2020-01-01"
+            },
+            {
+              "type": "text",
+              "value": "%@example.test"
+            },
+            {
+              "type": "text",
+              "value": "^[a-z]+@corp\\.test$"
+            },
+            {
+              "type": "text",
+              "value": "018c0e27-aa31-7000-8000-112233445566"
+            },
+            {
+              "type": "text",
+              "value": "018c0e27-aa31-7000-8000-222344556677"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-WHERE-02",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "case",
+                      "operand": null,
+                      "branches": [
+                        {
+                          "when": {
+                            "node": "binary",
+                            "left": {
+                              "node": "column",
+                              "column": {
+                                "relation": null,
+                                "name": "amount"
+                              }
+                            },
+                            "operator": "gte",
+                            "right": {
+                              "node": "literal",
+                              "value": {
+                                "type": "decimal",
+                                "value": "100000.00"
+                              }
+                            }
+                          },
+                          "then": {
+                            "node": "literal",
+                            "value": {
+                              "type": "text",
+                              "value": "large"
+                            }
+                          }
+                        },
+                        {
+                          "when": {
+                            "node": "binary",
+                            "left": {
+                              "node": "column",
+                              "column": {
+                                "relation": null,
+                                "name": "amount"
+                              }
+                            },
+                            "operator": "gte",
+                            "right": {
+                              "node": "literal",
+                              "value": {
+                                "type": "decimal",
+                                "value": "10000.00"
+                              }
+                            }
+                          },
+                          "then": {
+                            "node": "literal",
+                            "value": {
+                              "type": "text",
+                              "value": "medium"
+                            }
+                          }
+                        }
+                      ],
+                      "otherwise": {
+                        "node": "literal",
+                        "value": {
+                          "type": "text",
+                          "value": "small"
+                        }
+                      }
+                    },
+                    "alias": "bucket"
+                  },
+                  {
+                    "expression": {
+                      "node": "cast",
+                      "expression": {
+                        "node": "binary",
+                        "left": {
+                          "node": "column",
+                          "column": {
+                            "relation": null,
+                            "name": "amount"
+                          }
+                        },
+                        "operator": "multiply",
+                        "right": {
+                          "node": "literal",
+                          "value": {
+                            "type": "decimal",
+                            "value": "1.13"
+                          }
+                        }
+                      },
+                      "data_type": {
+                        "type": "text"
+                      }
+                    },
+                    "alias": "gross_text"
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "payroll_documents",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\", CASE WHEN (\"amount\" >= $1) THEN $2 WHEN (\"amount\" >= $3) THEN $4 ELSE $5 END AS \"bucket\", CAST((\"amount\" * $6) AS TEXT) AS \"gross_text\" FROM \"payroll_documents\"",
+          "parameters": [
+            {
+              "type": "decimal",
+              "value": "100000.00"
+            },
+            {
+              "type": "text",
+              "value": "large"
+            },
+            {
+              "type": "decimal",
+              "value": "10000.00"
+            },
+            {
+              "type": "text",
+              "value": "medium"
+            },
+            {
+              "type": "text",
+              "value": "small"
+            },
+            {
+              "type": "decimal",
+              "value": "1.13"
+            }
+          ]
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    },
+    {
+      "id": "ORM-WINDOW-01",
+      "steps": [
+        {
+          "document": {
+            "ir": "radixdb.orm.v1",
+            "kind": "select",
+            "payload": {
+              "node": "select",
+              "query": {
+                "ctes": [],
+                "recursive": false,
+                "distinct": false,
+                "distinct_on": [],
+                "projection": [
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "id"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "employee"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "column",
+                      "column": {
+                        "relation": null,
+                        "name": "amount"
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "window",
+                      "function": {
+                        "node": "function",
+                        "name": "ROW_NUMBER",
+                        "arguments": []
+                      },
+                      "specification": {
+                        "name": null,
+                        "partition_by": [
+                          {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "employee"
+                            }
+                          }
+                        ],
+                        "order_by": [
+                          {
+                            "expression": {
+                              "node": "column",
+                              "column": {
+                                "relation": null,
+                                "name": "amount"
+                              }
+                            },
+                            "direction": "desc",
+                            "nulls": "last"
+                          }
+                        ],
+                        "frame": null
+                      }
+                    },
+                    "alias": null
+                  },
+                  {
+                    "expression": {
+                      "node": "window",
+                      "function": {
+                        "node": "aggregate",
+                        "name": "SUM",
+                        "arguments": [
+                          {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "amount"
+                            }
+                          }
+                        ],
+                        "distinct": false,
+                        "filter": null,
+                        "order_by": []
+                      },
+                      "specification": {
+                        "name": null,
+                        "partition_by": [
+                          {
+                            "node": "column",
+                            "column": {
+                              "relation": null,
+                              "name": "employee"
+                            }
+                          }
+                        ],
+                        "order_by": [
+                          {
+                            "expression": {
+                              "node": "column",
+                              "column": {
+                                "relation": null,
+                                "name": "period"
+                              }
+                            },
+                            "direction": "asc",
+                            "nulls": null
+                          }
+                        ],
+                        "frame": {
+                          "unit": "rows",
+                          "start": {
+                            "bound": "unbounded_preceding"
+                          },
+                          "end": {
+                            "bound": "current_row"
+                          }
+                        }
+                      }
+                    },
+                    "alias": null
+                  }
+                ],
+                "from": {
+                  "node": "table",
+                  "name": "payroll_documents",
+                  "alias": null
+                },
+                "filter": null,
+                "group_by": null,
+                "having": null,
+                "windows": [],
+                "set_operations": [],
+                "order_by": [],
+                "limit": null,
+                "offset": null,
+                "expected_result_shape": []
+              }
+            }
+          },
+          "sql": "SELECT \"id\", \"employee\", \"amount\", \"ROW_NUMBER\"() OVER (PARTITION BY \"employee\" ORDER BY \"amount\" DESC NULLS LAST), \"SUM\"(\"amount\") OVER (PARTITION BY \"employee\" ORDER BY \"period\" ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM \"payroll_documents\"",
+          "parameters": []
+        }
+      ],
+      "result": {
+        "kind": "semantic_oracle",
+        "oracle": "same_rows_types_errors_as_manual_sql"
+      }
+    }
+  ]
+}

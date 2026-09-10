@@ -1,0 +1,766 @@
+// Copyright 2026 RadixDB Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Predicate Pushdown Framework
+//!
+//! This module provides a clean, extensible architecture for predicate pushdown.
+//! Each pushdown rule is self-contained and implements the `PushdownRule` trait.
+//!
+//! ## Adding a New Pushdown Rule
+//!
+//! 1. Create a new struct implementing `PushdownRule`
+//! 2. Register it in `PushdownRegistry::new()`
+//! 3. Done!
+//!
+//! ## Example
+//!
+//! ```ignore
+//! pub struct MyCustomRule;
+//!
+//! impl PushdownRule for MyCustomRule {
+//!     fn name(&self) -> &'static str { "my_custom_rule" }
+//!
+//!     fn try_convert(
+//!         &self,
+//!         expr: &ast::Expression,
+//!         ctx: &PushdownContext<'_>,
+//!     ) -> PushdownResult {
+//!         // Check if this rule applies and convert
+//!     }
+//! }
+//! ```
+
+#[doc(hidden)]
+pub mod rules;
+
+use crate::context::ExecutionContext;
+use radixdb_core::{DataType, Schema, Value};
+use radixdb_sql::ast::{self as ast};
+use radixdb_storage::expression::Expression as StorageExpr;
+
+pub use rules::*;
+
+/// Result of a pushdown attempt
+#[derive(Debug)]
+pub enum PushdownResult {
+    /// Successfully converted to storage expression (fully pushed)
+    Converted(Box<dyn StorageExpr>),
+    /// Partially converted - some parts pushed, but still needs memory filter
+    Partial {
+        storage_expr: Box<dyn StorageExpr>,
+        residual: ast::Expression,
+    },
+    /// This rule doesn't apply to this expression (try next rule)
+    NotApplicable,
+    /// Expression cannot be pushed down (needs memory filter)
+    CannotPush,
+}
+
+#[derive(Debug)]
+pub struct PushdownPlan {
+    pub storage_expr: Option<Box<dyn StorageExpr>>,
+    pub residual: Option<ast::Expression>,
+}
+
+impl PushdownPlan {
+    pub fn needs_memory_filter(&self) -> bool {
+        self.residual.is_some()
+    }
+}
+
+/// Context for pushdown operations
+pub struct PushdownContext<'a> {
+    /// Schema for type coercion and column index lookup
+    pub schema: &'a Schema,
+    /// Execution context for parameter resolution
+    pub exec_ctx: Option<&'a ExecutionContext>,
+}
+
+impl<'a> PushdownContext<'a> {
+    pub fn new(schema: &'a Schema, exec_ctx: Option<&'a ExecutionContext>) -> Self {
+        Self { schema, exec_ctx }
+    }
+
+    /// Get column data type by name
+    pub fn column_type(&self, name: &str) -> Option<radixdb_core::DataType> {
+        self.schema
+            .column_index_map()
+            .get(name)
+            .and_then(|&idx| self.schema.columns.get(idx).map(|c| c.data_type))
+    }
+
+    /// Check if a column exists in the schema
+    pub fn has_column(&self, name: &str) -> bool {
+        self.schema.has_column(name)
+    }
+
+    /// Coerce value to column type if known
+    pub fn coerce_to_column_type(&self, column: &str, value: Value) -> Option<Value> {
+        if let Some(col_type) = self.column_type(column) {
+            // Comparisons have one canonical numeric identity across INTEGER,
+            // FLOAT and valid DECIMAL values. Coercing a predicate literal to
+            // an INTEGER/FLOAT column here can truncate, saturate or round it
+            // before the storage expression sees the original value. Preserve
+            // the physical numeric variant and let Value::compare apply the
+            // exact mixed-domain contract. DECIMAL columns retain their exact
+            // target coercion because it does not lose valid INTEGER/FLOAT
+            // literal identity.
+            let preserve_numeric_variant = matches!(col_type, DataType::Integer | DataType::Float)
+                && (matches!(value, Value::Integer(_) | Value::Float(_))
+                    || value.as_decimal_parts().is_some());
+            if preserve_numeric_variant {
+                return Some(value);
+            }
+            let source_was_null = value.is_null();
+            let coerced = value.into_coerce_to_type(col_type);
+            if !source_was_null && coerced.is_null() {
+                None
+            } else {
+                Some(coerced)
+            }
+        } else {
+            Some(value)
+        }
+    }
+}
+
+/// Trait for pushdown rules
+///
+/// Each rule is responsible for:
+/// 1. Checking if it can handle an expression
+/// 2. Converting the expression to a storage expression
+pub trait PushdownRule: Send + Sync {
+    /// Rule name for debugging and logging
+    fn name(&self) -> &'static str;
+
+    /// Try to convert an expression to a storage expression.
+    ///
+    /// Returns:
+    /// - `Converted(expr)` if successfully converted
+    /// - `NotApplicable` if this rule doesn't handle this expression type
+    /// - `CannotPush` if the expression matches but cannot be pushed down
+    fn try_convert(&self, expr: &ast::Expression, ctx: &PushdownContext<'_>) -> PushdownResult;
+}
+
+/// Registry of all pushdown rules
+///
+/// The registry tries rules in order and returns the first successful conversion.
+/// Rules are ordered from most specific to most general.
+pub struct PushdownRegistry {
+    rules: Vec<Box<dyn PushdownRule>>,
+}
+
+impl Default for PushdownRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PushdownRegistry {
+    /// Create a new registry with all built-in rules
+    pub fn new() -> Self {
+        let mut registry = Self { rules: vec![] };
+
+        // Register rules in priority order (most specific first)
+        // Logical operators (handle compound expressions)
+        registry.register(Box::new(LogicalAndRule));
+        registry.register(Box::new(LogicalOrRule));
+        registry.register(Box::new(LogicalNotRule));
+        registry.register(Box::new(LogicalXorRule));
+
+        // Specific expression types
+        registry.register(Box::new(BetweenRule));
+        registry.register(Box::new(InListRule));
+        registry.register(Box::new(LikeRule));
+        registry.register(Box::new(NullCheckRule));
+        registry.register(Box::new(BooleanCheckRule));
+
+        // Comparison operators (most common, should be fast)
+        registry.register(Box::new(ComparisonRule));
+
+        // Function expressions (LENGTH(col) > 5, etc.)
+        registry.register(Box::new(FunctionRule));
+
+        // Boolean literals (constant expressions)
+        registry.register(Box::new(BooleanLiteralRule));
+
+        registry
+    }
+
+    /// Register a custom pushdown rule
+    pub fn register(&mut self, rule: Box<dyn PushdownRule>) {
+        self.rules.push(rule);
+    }
+
+    /// Try to push down an expression to storage layer
+    ///
+    /// Returns (`Option<StorageExpr>`, needs_memory_filter)
+    pub fn try_pushdown(
+        &self,
+        expr: &ast::Expression,
+        schema: &Schema,
+        exec_ctx: Option<&ExecutionContext>,
+    ) -> (Option<Box<dyn StorageExpr>>, bool) {
+        let ctx = PushdownContext::new(schema, exec_ctx);
+        self.try_pushdown_with_ctx(expr, &ctx)
+    }
+
+    /// Internal pushdown with pre-built context (for recursive calls)
+    pub(crate) fn try_pushdown_with_ctx(
+        &self,
+        expr: &ast::Expression,
+        ctx: &PushdownContext<'_>,
+    ) -> (Option<Box<dyn StorageExpr>>, bool) {
+        let plan = self.try_pushdown_plan_with_ctx(expr, ctx);
+        let needs_memory_filter = plan.needs_memory_filter();
+        (plan.storage_expr, needs_memory_filter)
+    }
+
+    pub(crate) fn try_pushdown_plan_with_ctx(
+        &self,
+        expr: &ast::Expression,
+        ctx: &PushdownContext<'_>,
+    ) -> PushdownPlan {
+        for rule in &self.rules {
+            match rule.try_convert(expr, ctx) {
+                PushdownResult::Converted(storage_expr) => {
+                    return PushdownPlan {
+                        storage_expr: Some(storage_expr),
+                        residual: None,
+                    };
+                }
+                PushdownResult::Partial {
+                    storage_expr,
+                    residual,
+                } => {
+                    return PushdownPlan {
+                        storage_expr: Some(storage_expr),
+                        residual: Some(residual),
+                    };
+                }
+                PushdownResult::CannotPush => {
+                    return PushdownPlan {
+                        storage_expr: None,
+                        residual: Some(expr.clone()),
+                    };
+                }
+                PushdownResult::NotApplicable => {
+                    // Try next rule
+                    continue;
+                }
+            }
+        }
+
+        // No rule matched - need memory filter
+        PushdownPlan {
+            storage_expr: None,
+            residual: Some(expr.clone()),
+        }
+    }
+
+    /// Try to convert an expression, returning only the storage expression
+    /// (for internal use in compound rules)
+    pub(crate) fn convert_expr(
+        &self,
+        expr: &ast::Expression,
+        ctx: &PushdownContext<'_>,
+    ) -> Option<Box<dyn StorageExpr>> {
+        let plan = self.try_pushdown_plan_with_ctx(expr, ctx);
+        if plan.needs_memory_filter() {
+            None
+        } else {
+            plan.storage_expr
+        }
+    }
+}
+
+// Global registry instance (lazily initialized)
+use std::sync::OnceLock;
+
+static REGISTRY: OnceLock<PushdownRegistry> = OnceLock::new();
+
+/// Get the global pushdown registry
+pub fn registry() -> &'static PushdownRegistry {
+    REGISTRY.get_or_init(PushdownRegistry::new)
+}
+
+/// Convenience function to try pushdown using the global registry
+pub fn try_pushdown(
+    expr: &ast::Expression,
+    schema: &Schema,
+    exec_ctx: Option<&ExecutionContext>,
+) -> (Option<Box<dyn StorageExpr>>, bool) {
+    registry().try_pushdown(expr, schema, exec_ctx)
+}
+
+pub fn try_pushdown_plan(
+    expr: &ast::Expression,
+    schema: &Schema,
+    exec_ctx: Option<&ExecutionContext>,
+) -> PushdownPlan {
+    let ctx = PushdownContext::new(schema, exec_ctx);
+    registry().try_pushdown_plan_with_ctx(expr, &ctx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use radixdb_core::{DataType, Row, SchemaBuilder};
+    use radixdb_sql::token::{Position, Token, TokenType};
+
+    fn test_schema() -> Schema {
+        SchemaBuilder::new("test")
+            .add_primary_key("id", DataType::Integer)
+            .add("name", DataType::Text)
+            .add("age", DataType::Integer)
+            .add_nullable("email", DataType::Text)
+            .add("active", DataType::Boolean)
+            .add("price", DataType::Float)
+            .build()
+    }
+
+    fn test_row() -> Row {
+        Row::from_values(vec![
+            Value::integer(1),
+            Value::text("Alice"),
+            Value::integer(30),
+            Value::text("alice@example.com"),
+            Value::Boolean(true),
+            Value::Float(99.99),
+        ])
+    }
+
+    #[test]
+    fn test_pushdown_preserves_valid_numeric_literal_identity() {
+        let schema = SchemaBuilder::new("numeric_pushdown")
+            .add("integer_value", DataType::Integer)
+            .add("float_value", DataType::Float)
+            .add("decimal_value", DataType::Decimal)
+            .build();
+        let ctx = PushdownContext::new(&schema, None);
+
+        assert_eq!(
+            ctx.coerce_to_column_type("integer_value", Value::Float(0.5)),
+            Some(Value::Float(0.5))
+        );
+        let decimal_fraction = Value::decimal(15, 2, 1);
+        assert_eq!(
+            ctx.coerce_to_column_type("integer_value", decimal_fraction.clone()),
+            Some(decimal_fraction)
+        );
+        assert_eq!(
+            ctx.coerce_to_column_type("float_value", Value::Integer((1_i64 << 53) + 1)),
+            Some(Value::Integer((1_i64 << 53) + 1))
+        );
+        assert_eq!(
+            ctx.coerce_to_column_type("decimal_value", Value::Float(0.5)),
+            Some(Value::decimal(5, 1, 1))
+        );
+    }
+
+    fn dummy_token() -> Token {
+        Token::new(TokenType::Error, "", Position::new(0, 1, 1))
+    }
+
+    fn make_ident(name: &str) -> ast::Expression {
+        ast::Expression::Identifier(ast::Identifier::new(dummy_token(), name.to_string()))
+    }
+
+    fn make_int(value: i64) -> ast::Expression {
+        ast::Expression::IntegerLiteral(ast::IntegerLiteral {
+            token: dummy_token(),
+            value,
+        })
+    }
+
+    fn make_str(value: &str) -> ast::Expression {
+        ast::Expression::StringLiteral(ast::StringLiteral {
+            token: dummy_token(),
+            value: value.into(),
+            type_hint: None,
+        })
+    }
+
+    fn make_infix(left: ast::Expression, op: &str, right: ast::Expression) -> ast::Expression {
+        ast::Expression::Infix(ast::InfixExpression::new(
+            dummy_token(),
+            Box::new(left),
+            op,
+            Box::new(right),
+        ))
+    }
+
+    fn make_function(name: &str, arguments: Vec<ast::Expression>) -> ast::Expression {
+        ast::Expression::FunctionCall(Box::new(ast::FunctionCall {
+            token: dummy_token(),
+            function: name.into(),
+            arguments,
+            is_distinct: false,
+            order_by: vec![],
+            filter: None,
+        }))
+    }
+
+    #[test]
+    fn test_simple_equality() {
+        let schema = test_schema();
+        let expr = make_infix(make_ident("id"), "=", make_int(1));
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+
+        let mut expr = storage_expr.unwrap();
+        expr.prepare_for_schema(&schema);
+        assert!(expr.evaluate(&test_row()).unwrap());
+    }
+
+    #[test]
+    fn test_and_expression() {
+        let schema = test_schema();
+        let left = make_infix(make_ident("id"), "=", make_int(1));
+        let right = make_infix(make_ident("age"), ">", make_int(20));
+        let expr = make_infix(left, "AND", right);
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+
+        let mut expr = storage_expr.unwrap();
+        expr.prepare_for_schema(&schema);
+        assert!(expr.evaluate(&test_row()).unwrap());
+    }
+
+    #[test]
+    fn test_function_pushable() {
+        let schema = test_schema();
+        let func = ast::Expression::FunctionCall(Box::new(ast::FunctionCall {
+            token: dummy_token(),
+            function: "LENGTH".into(),
+            arguments: vec![make_ident("name")],
+            is_distinct: false,
+            order_by: vec![],
+            filter: None,
+        }));
+        let expr = make_infix(func, ">", make_int(5));
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        // Functions are now pushable to storage layer
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+    }
+
+    #[test]
+    fn test_full_pushdown_with_function() {
+        let schema = test_schema();
+        // id = 1 AND LENGTH(name) > 5
+        let pushable = make_infix(make_ident("id"), "=", make_int(1));
+        let func = ast::Expression::FunctionCall(Box::new(ast::FunctionCall {
+            token: dummy_token(),
+            function: "LENGTH".into(),
+            arguments: vec![make_ident("name")],
+            is_distinct: false,
+            order_by: vec![],
+            filter: None,
+        }));
+        let also_pushable = make_infix(func, ">=", make_int(5)); // "Alice" has length 5
+        let expr = make_infix(pushable, "AND", also_pushable);
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        // Both parts should be pushed now (functions are pushable)
+        assert!(storage_expr.is_some());
+        // No memory filter needed
+        assert!(!needs_mem);
+
+        let mut expr = storage_expr.unwrap();
+        expr.prepare_for_schema(&schema);
+        // id=1 AND LENGTH("Alice")>=5 should be true (1=1 AND 5>=5)
+        assert!(expr.evaluate(&test_row()).unwrap());
+    }
+
+    #[test]
+    fn test_between() {
+        let schema = test_schema();
+        let expr = ast::Expression::Between(ast::BetweenExpression {
+            token: dummy_token(),
+            expr: Box::new(make_ident("age")),
+            lower: Box::new(make_int(25)),
+            upper: Box::new(make_int(35)),
+            not: false,
+        });
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+
+        let mut expr = storage_expr.unwrap();
+        expr.prepare_for_schema(&schema);
+        assert!(expr.evaluate(&test_row()).unwrap()); // age = 30
+    }
+
+    #[test]
+    fn test_in_list() {
+        let schema = test_schema();
+        let expr = ast::Expression::In(ast::InExpression {
+            token: dummy_token(),
+            left: Box::new(make_ident("id")),
+            right: Box::new(ast::Expression::ExpressionList(Box::new(
+                ast::ExpressionList {
+                    token: dummy_token(),
+                    expressions: vec![make_int(1), make_int(2), make_int(3)],
+                },
+            ))),
+            not: false,
+        });
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+
+        let mut expr = storage_expr.unwrap();
+        expr.prepare_for_schema(&schema);
+        assert!(expr.evaluate(&test_row()).unwrap()); // id = 1
+    }
+
+    #[test]
+    fn test_like() {
+        let schema = test_schema();
+        let expr = ast::Expression::Like(ast::LikeExpression {
+            token: dummy_token(),
+            left: Box::new(make_ident("name")),
+            operator: "LIKE".into(),
+            pattern: Box::new(make_str("Ali%")),
+            escape: None,
+        });
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+
+        let mut expr = storage_expr.unwrap();
+        expr.prepare_for_schema(&schema);
+        assert!(expr.evaluate(&test_row()).unwrap()); // name = "Alice"
+    }
+
+    #[test]
+    fn test_is_null() {
+        let schema = test_schema();
+        let expr = make_infix(
+            make_ident("email"),
+            "IS",
+            ast::Expression::NullLiteral(ast::NullLiteral {
+                token: dummy_token(),
+            }),
+        );
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+
+        let mut expr = storage_expr.unwrap();
+        expr.prepare_for_schema(&schema);
+        // email is not null in test_row
+        assert!(!expr.evaluate(&test_row()).unwrap());
+    }
+
+    #[test]
+    fn test_or_fully_pushable() {
+        let schema = test_schema();
+        let left = make_infix(make_ident("id"), "=", make_int(1));
+        let right = make_infix(make_ident("id"), "=", make_int(2));
+        let expr = make_infix(left, "OR", right);
+
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+    }
+
+    #[test]
+    fn test_or_with_function_pushable() {
+        let schema = test_schema();
+        let left = make_infix(make_ident("id"), "=", make_int(1));
+        let func = ast::Expression::FunctionCall(Box::new(ast::FunctionCall {
+            token: dummy_token(),
+            function: "LENGTH".into(),
+            arguments: vec![make_ident("name")],
+            is_distinct: false,
+            order_by: vec![],
+            filter: None,
+        }));
+        let right = make_infix(func, ">", make_int(5));
+        let expr = make_infix(left, "OR", right);
+
+        // Both sides are pushable, so OR can be fully pushed
+        let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+        assert!(storage_expr.is_some());
+        assert!(!needs_mem);
+
+        let mut expr = storage_expr.unwrap();
+        expr.prepare_for_schema(&schema);
+        // id=1 OR LENGTH("Alice")>5 should be true (1=1, so left side is true)
+        assert!(expr.evaluate(&test_row()).unwrap());
+    }
+
+    #[test]
+    fn r4_batch_a_compounds_never_promote_partial_children() {
+        let schema = test_schema();
+        let partial = make_infix(
+            make_infix(make_ident("name"), "=", make_str("Alice")),
+            "AND",
+            make_infix(
+                make_infix(make_ident("age"), "+", make_int(1)),
+                "=",
+                make_int(31),
+            ),
+        );
+
+        let cases = [
+            (
+                "OR",
+                make_infix(
+                    make_infix(make_ident("id"), "=", make_int(2)),
+                    "OR",
+                    partial.clone(),
+                ),
+            ),
+            (
+                "NOT",
+                ast::Expression::Prefix(ast::PrefixExpression::new(
+                    dummy_token(),
+                    "NOT",
+                    Box::new(partial.clone()),
+                )),
+            ),
+            (
+                "XOR",
+                make_infix(
+                    make_infix(make_ident("id"), "=", make_int(2)),
+                    "XOR",
+                    partial,
+                ),
+            ),
+        ];
+
+        for (name, expr) in cases {
+            let (storage_expr, needs_mem) = try_pushdown(&expr, &schema, None);
+            assert!(needs_mem, "{name} must retain the complete residual");
+            assert!(
+                storage_expr.is_none(),
+                "{name} cannot safely publish a partial child as a complete predicate"
+            );
+        }
+    }
+
+    #[test]
+    fn r4_batch_a_not_preserves_composed_sql_unknown() {
+        let schema = test_schema();
+        let inner = make_infix(
+            make_infix(make_ident("email"), "=", make_str("nobody@example.com")),
+            "OR",
+            make_infix(make_ident("id"), "=", make_int(999)),
+        );
+        let predicate = ast::Expression::Prefix(ast::PrefixExpression::new(
+            dummy_token(),
+            "NOT",
+            Box::new(inner),
+        ));
+        let (storage_expr, needs_mem) = try_pushdown(&predicate, &schema, None);
+        assert!(!needs_mem);
+        let mut storage_expr = storage_expr.expect("predicate should be fully pushable");
+        storage_expr.prepare_for_schema(&schema);
+
+        let row = Row::from_values(vec![
+            Value::integer(1),
+            Value::text("Alice"),
+            Value::integer(30),
+            Value::null_unknown(),
+            Value::Boolean(true),
+            Value::Float(99.99),
+        ]);
+        assert!(
+            !storage_expr.evaluate(&row).unwrap(),
+            "NOT (UNKNOWN OR FALSE) must remain UNKNOWN and fail WHERE admission"
+        );
+    }
+
+    #[test]
+    fn r4_batch_a_unsupported_typed_domain_falls_back() {
+        let schema = SchemaBuilder::new("typed_pushdown")
+            .add_primary_key("id", DataType::Integer)
+            .add("payload", DataType::Bytes)
+            .build();
+        let predicate = make_infix(make_ident("payload"), "=", make_str("abc"));
+        let (storage_expr, needs_mem) = try_pushdown(&predicate, &schema, None);
+        assert!(needs_mem);
+        assert!(storage_expr.is_none());
+    }
+
+    #[test]
+    fn r4_batch_a_nested_function_columns_are_recursively_bound() {
+        let schema = test_schema();
+        let lower = make_function("LOWER", vec![make_ident("name")]);
+        let predicate = make_infix(make_function("LENGTH", vec![lower]), ">", make_int(3));
+        let (storage_expr, needs_mem) = try_pushdown(&predicate, &schema, None);
+        assert!(!needs_mem);
+        let mut storage_expr = storage_expr.expect("nested function should be pushable");
+        storage_expr.prepare_for_schema(&schema);
+        assert!(storage_expr.evaluate(&test_row()).unwrap());
+    }
+
+    #[test]
+    fn r4_batch_b_partial_plan_carries_only_unpushed_residual() {
+        let schema = test_schema();
+        let predicate = make_infix(
+            make_infix(make_ident("id"), "=", make_int(1)),
+            "AND",
+            make_infix(
+                make_infix(make_ident("age"), "+", make_int(1)),
+                ">",
+                make_int(30),
+            ),
+        );
+        let plan = try_pushdown_plan(&predicate, &schema, None);
+        assert!(plan.storage_expr.is_some());
+        let residual = plan.residual.expect("partial plan needs a residual");
+        assert!(residual.to_string().contains('+'));
+        assert!(!residual.to_string().contains("id = 1"));
+    }
+
+    #[test]
+    fn r4_batch_b_invalid_typed_literal_is_not_published_as_null() {
+        let schema = SchemaBuilder::new("typed_pushdown")
+            .add_primary_key("id", DataType::Integer)
+            .add("external_id", DataType::Uuid)
+            .build();
+        let predicate = make_infix(make_ident("external_id"), "=", make_str("not-a-uuid"));
+        let plan = try_pushdown_plan(&predicate, &schema, None);
+        assert!(plan.storage_expr.is_none());
+        assert!(plan.residual.is_some());
+    }
+
+    #[test]
+    fn r4_batch_b_case_function_like_is_not_rewritten_to_ilike() {
+        let schema = test_schema();
+        let predicate = ast::Expression::Like(ast::LikeExpression {
+            token: dummy_token(),
+            left: Box::new(make_function("LOWER", vec![make_ident("name")])),
+            pattern: Box::new(make_str("A%")),
+            operator: "LIKE".into(),
+            escape: None,
+        });
+        let plan = try_pushdown_plan(&predicate, &schema, None);
+        assert!(plan.storage_expr.is_none());
+        assert!(plan.residual.is_some());
+    }
+}

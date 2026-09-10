@@ -1,0 +1,16 @@
+[package]
+name = "radixdb-procedural"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "Verified bounded procedural runtime contracts for RadixDB"
+license-file = "../../LICENSE"
+publish = false
+
+[dependencies]
+radixdb-catalog = { path = "../radixdb-catalog" }
+radixdb-core = { path = "../radixdb-core" }
+radixdb-sql = { path = "../radixdb-sql" }
+
+[dev-dependencies]
+proptest = "1.4"

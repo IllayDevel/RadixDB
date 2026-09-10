@@ -1,0 +1,876 @@
+// Copyright 2026 RadixDB Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Canonical primitive type definitions for RadixDB
+//!
+//! This module defines the fundamental types: DataType, Operator, IndexType, IsolationLevel
+
+use std::fmt;
+use std::str::FromStr;
+
+use super::error::Error;
+
+/// SQL data types supported by RadixDB
+///
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(u8)]
+pub enum DataType {
+    /// NULL data type, used for unknown/unspecified types
+    #[default]
+    Null = 0,
+
+    /// 64-bit signed integer
+    Integer = 1,
+
+    /// 64-bit floating point number
+    Float = 2,
+
+    /// UTF-8 text string
+    Text = 3,
+
+    /// Boolean true/false
+    Boolean = 4,
+
+    /// Timestamp with timezone (stored as UTC)
+    Timestamp = 5,
+
+    /// JSON document
+    Json = 6,
+
+    /// Vector of f32 values for similarity search
+    /// Dimensions are stored in SchemaColumn.vector_dimensions
+    Vector = 7,
+
+    /// UUID value stored as 16 raw bytes
+    Uuid = 8,
+
+    /// Exact decimal value.
+    ///
+    /// The current schema stores precision/scale on each value payload rather
+    /// than as column metadata. This keeps the public TCP contract exact while
+    /// the SQL decimal operator surface is still intentionally small.
+    Decimal = 9,
+
+    /// Calendar date stored as days since Unix epoch.
+    Date = 10,
+
+    /// Raw byte string.
+    Bytes = 11,
+}
+
+/// Stable identity of one catalog-bound external scalar codec.
+///
+/// This is deliberately separate from [`DataType`]: plugins never receive a
+/// built-in numeric type tag and cannot extend the closed hot-path enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExternalTypeRef {
+    type_object_id: [u8; 16],
+    codec_version: u32,
+}
+
+impl ExternalTypeRef {
+    pub fn new(type_object_id: [u8; 16], codec_version: u32) -> Result<Self, Error> {
+        if type_object_id == [0; 16] {
+            return Err(Error::invalid_argument(
+                "external type object identity must be non-zero",
+            ));
+        }
+        if codec_version == 0 {
+            return Err(Error::invalid_argument(
+                "external type codec version must be at least one",
+            ));
+        }
+        Ok(Self {
+            type_object_id,
+            codec_version,
+        })
+    }
+
+    pub const fn type_object_id(self) -> [u8; 16] {
+        self.type_object_id
+    }
+
+    pub const fn codec_version(self) -> u32 {
+        self.codec_version
+    }
+}
+
+/// Logical scalar type identity used at generic SQL/runtime boundaries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LogicalTypeRef {
+    Builtin(DataType),
+    External(ExternalTypeRef),
+}
+
+impl From<DataType> for LogicalTypeRef {
+    fn from(value: DataType) -> Self {
+        Self::Builtin(value)
+    }
+}
+
+impl DataType {
+    /// Returns true if this type is numeric (INTEGER or FLOAT)
+    pub fn is_numeric(&self) -> bool {
+        matches!(self, DataType::Integer | DataType::Float)
+    }
+
+    /// Returns true if this type can be compared for ordering
+    pub fn is_orderable(&self) -> bool {
+        !matches!(self, DataType::Json | DataType::Vector)
+    }
+
+    /// Returns the type ID as u8 for serialization
+    #[inline(always)]
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+
+    /// Create DataType from u8 tag byte
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(DataType::Null),
+            1 => Some(DataType::Integer),
+            2 => Some(DataType::Float),
+            3 => Some(DataType::Text),
+            4 => Some(DataType::Boolean),
+            5 => Some(DataType::Timestamp),
+            6 => Some(DataType::Json),
+            7 => Some(DataType::Vector),
+            8 => Some(DataType::Uuid),
+            9 => Some(DataType::Decimal),
+            10 => Some(DataType::Date),
+            11 => Some(DataType::Bytes),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for DataType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DataType::Null => write!(f, "NULL"),
+            DataType::Integer => write!(f, "INTEGER"),
+            DataType::Float => write!(f, "FLOAT"),
+            DataType::Text => write!(f, "TEXT"),
+            DataType::Boolean => write!(f, "BOOLEAN"),
+            DataType::Timestamp => write!(f, "TIMESTAMP"),
+            DataType::Json => write!(f, "JSON"),
+            DataType::Vector => write!(f, "VECTOR"),
+            DataType::Uuid => write!(f, "UUID"),
+            DataType::Decimal => write!(f, "DECIMAL"),
+            DataType::Date => write!(f, "DATE"),
+            DataType::Bytes => write!(f, "BYTES"),
+        }
+    }
+}
+
+impl FromStr for DataType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let upper = s.trim().to_uppercase();
+        if upper.is_empty() {
+            return Err(Error::InvalidColumnType);
+        }
+        let (base_type, parameters) = if let Some((base, suffix)) = upper.split_once('(') {
+            let parameters = suffix.strip_suffix(')').ok_or(Error::InvalidColumnType)?;
+            if parameters.is_empty() || parameters.contains(['(', ')']) {
+                return Err(Error::InvalidColumnType);
+            }
+            (base.trim(), Some(parameters.trim()))
+        } else {
+            if upper.contains(')') {
+                return Err(Error::InvalidColumnType);
+            }
+            (upper.as_str(), None)
+        };
+
+        match (base_type, parameters) {
+            ("VECTOR", Some(parameters)) => {
+                let dimensions = parameters
+                    .parse::<u16>()
+                    .map_err(|_| Error::InvalidColumnType)?;
+                if dimensions == 0 {
+                    return Err(Error::InvalidColumnType);
+                }
+                Ok(DataType::Vector)
+            }
+            ("VECTOR", None) => Ok(DataType::Vector),
+            ("DECIMAL" | "NUMERIC", Some(parameters)) => {
+                let parts: Vec<_> = parameters.split(',').map(str::trim).collect();
+                if !(1..=2).contains(&parts.len()) {
+                    return Err(Error::InvalidColumnType);
+                }
+                let precision = parts[0]
+                    .parse::<u8>()
+                    .map_err(|_| Error::InvalidColumnType)?;
+                let scale = if parts.len() == 2 {
+                    parts[1]
+                        .parse::<u8>()
+                        .map_err(|_| Error::InvalidColumnType)?
+                } else {
+                    0
+                };
+                if !(1..=38).contains(&precision) || scale > precision {
+                    return Err(Error::InvalidColumnType);
+                }
+                Ok(DataType::Decimal)
+            }
+            ("VARCHAR" | "CHAR", Some(parameters)) => {
+                let length = parameters
+                    .parse::<usize>()
+                    .map_err(|_| Error::InvalidColumnType)?;
+                if length == 0 {
+                    return Err(Error::InvalidColumnType);
+                }
+                Ok(DataType::Text)
+            }
+            (_, Some(_)) => Err(Error::InvalidColumnType),
+            (base_type, None) => match base_type {
+                "NULL" => Ok(DataType::Null),
+                "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" => Ok(DataType::Integer),
+                "FLOAT" | "DOUBLE" | "REAL" => Ok(DataType::Float),
+                "DECIMAL" | "NUMERIC" => Ok(DataType::Decimal),
+                "TEXT" | "VARCHAR" | "CHAR" | "STRING" | "CLOB" => Ok(DataType::Text),
+                "BOOLEAN" | "BOOL" => Ok(DataType::Boolean),
+                "TIMESTAMP" | "DATETIME" | "TIME" => Ok(DataType::Timestamp),
+                "DATE" => Ok(DataType::Date),
+                "JSON" | "JSONB" => Ok(DataType::Json),
+                "UUID" => Ok(DataType::Uuid),
+                "BYTES" | "BLOB" | "BINARY" | "VARBINARY" => Ok(DataType::Bytes),
+                _ => Err(Error::InvalidColumnType),
+            },
+        }
+    }
+}
+
+/// Comparison operators for expressions
+///
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum Operator {
+    /// Equality (=)
+    Eq = 0,
+
+    /// Inequality (!=)
+    Ne = 1,
+
+    /// Greater than (>)
+    Gt = 2,
+
+    /// Greater than or equal (>=)
+    Gte = 3,
+
+    /// Less than (<)
+    Lt = 4,
+
+    /// Less than or equal (<=)
+    Lte = 5,
+
+    /// Pattern matching (LIKE)
+    Like = 6,
+
+    /// Value in set (IN)
+    In = 7,
+
+    /// Value not in set (NOT IN)
+    NotIn = 8,
+
+    /// IS NULL check
+    IsNull = 9,
+
+    /// IS NOT NULL check
+    IsNotNull = 10,
+}
+
+impl Operator {
+    /// Returns true if this operator needs a right-hand value
+    pub fn needs_value(&self) -> bool {
+        !matches!(self, Operator::IsNull | Operator::IsNotNull)
+    }
+
+    /// Returns true if this operator is a null check
+    pub fn is_null_check(&self) -> bool {
+        matches!(self, Operator::IsNull | Operator::IsNotNull)
+    }
+
+    /// Returns the negation of this operator, if applicable
+    pub fn negate(&self) -> Option<Self> {
+        match self {
+            Operator::Eq => Some(Operator::Ne),
+            Operator::Ne => Some(Operator::Eq),
+            Operator::Gt => Some(Operator::Lte),
+            Operator::Gte => Some(Operator::Lt),
+            Operator::Lt => Some(Operator::Gte),
+            Operator::Lte => Some(Operator::Gt),
+            Operator::In => Some(Operator::NotIn),
+            Operator::NotIn => Some(Operator::In),
+            Operator::IsNull => Some(Operator::IsNotNull),
+            Operator::IsNotNull => Some(Operator::IsNull),
+            Operator::Like => None, // LIKE doesn't have a simple negation
+        }
+    }
+
+    /// Returns the type ID as u8 for serialization
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+}
+
+impl fmt::Display for Operator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Operator::Eq => write!(f, "="),
+            Operator::Ne => write!(f, "!="),
+            Operator::Gt => write!(f, ">"),
+            Operator::Gte => write!(f, ">="),
+            Operator::Lt => write!(f, "<"),
+            Operator::Lte => write!(f, "<="),
+            Operator::Like => write!(f, "LIKE"),
+            Operator::In => write!(f, "IN"),
+            Operator::NotIn => write!(f, "NOT IN"),
+            Operator::IsNull => write!(f, "IS NULL"),
+            Operator::IsNotNull => write!(f, "IS NOT NULL"),
+        }
+    }
+}
+
+impl FromStr for Operator {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "=" | "==" => Ok(Operator::Eq),
+            "!=" | "<>" => Ok(Operator::Ne),
+            ">" => Ok(Operator::Gt),
+            ">=" => Ok(Operator::Gte),
+            "<" => Ok(Operator::Lt),
+            "<=" => Ok(Operator::Lte),
+            "LIKE" => Ok(Operator::Like),
+            "IN" => Ok(Operator::In),
+            "NOT IN" | "NOTIN" => Ok(Operator::NotIn),
+            "IS NULL" | "ISNULL" => Ok(Operator::IsNull),
+            "IS NOT NULL" | "ISNOTNULL" => Ok(Operator::IsNotNull),
+            _ => Err(Error::parse(format!("unknown operator: {}", s))),
+        }
+    }
+}
+
+/// Index types supported by the storage engine
+///
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum IndexType {
+    /// Bitmap index for low-cardinality columns (< 1000 distinct values)
+    /// Best for: BOOLEAN, status fields, categories
+    /// Uses RoaringBitmap for O(n/64) AND/OR operations
+    Bitmap,
+
+    /// B-tree index for range queries and ordered access
+    /// Best for: INTEGER, TIMESTAMP, DATE columns
+    /// Supports: <, <=, >, >=, BETWEEN, ORDER BY
+    BTree,
+
+    /// Hash index for fast O(1) equality lookups
+    /// Best for: TEXT, VARCHAR, UUID columns
+    /// Uses ahash - avoids O(strlen) comparisons
+    /// Note: Does NOT support range queries
+    Hash,
+
+    /// Multi-column composite index for queries on multiple columns
+    /// Hybrid: Hash for exact lookups (O(1)), lazy BTree for range queries
+    /// Best for: WHERE col1 = x AND col2 = y AND col3 = z
+    MultiColumn,
+
+    /// Primary key index backed by a hybrid bitset + I64Set
+    /// Automatically created for INTEGER PRIMARY KEY columns
+    /// O(1) existence checks, not user-creatable via CREATE INDEX
+    PrimaryKey,
+
+    /// HNSW (Hierarchical Navigable Small World) index for vector similarity search
+    /// Best for: VECTOR columns with approximate nearest neighbor queries
+    /// Supports: ORDER BY col <=> query_vec LIMIT k
+    Hnsw,
+}
+
+impl IndexType {
+    /// Returns the string representation used in SQL
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IndexType::Bitmap => "bitmap",
+            IndexType::BTree => "btree",
+            IndexType::Hash => "hash",
+            IndexType::MultiColumn => "multicolumn",
+            IndexType::PrimaryKey => "primarykey",
+            IndexType::Hnsw => "hnsw",
+        }
+    }
+}
+
+impl fmt::Display for IndexType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl FromStr for IndexType {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "bitmap" => Ok(IndexType::Bitmap),
+            "btree" | "b-tree" => Ok(IndexType::BTree),
+            "hash" => Ok(IndexType::Hash),
+            "multicolumn" | "multi-column" | "composite" => Ok(IndexType::MultiColumn),
+            "primarykey" | "primary-key" | "primary_key" => Ok(IndexType::PrimaryKey),
+            "hnsw" => Ok(IndexType::Hnsw),
+            _ => Err(Error::parse(format!("unknown index type: {}", s))),
+        }
+    }
+}
+
+/// Transaction isolation levels
+///
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+#[repr(u8)]
+pub enum IsolationLevel {
+    /// Read committed: transactions see only committed data
+
+    #[default]
+    ReadCommitted = 0,
+
+    /// Snapshot isolation (equivalent to Repeatable Read):
+    /// transactions see a consistent snapshot from the start
+    SnapshotIsolation = 1,
+}
+
+impl IsolationLevel {
+    /// Returns the type ID as u8 for serialization
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+
+    /// Create IsolationLevel from u8
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(IsolationLevel::ReadCommitted),
+            1 => Some(IsolationLevel::SnapshotIsolation),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for IsolationLevel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            IsolationLevel::ReadCommitted => write!(f, "READ COMMITTED"),
+            IsolationLevel::SnapshotIsolation => write!(f, "SNAPSHOT ISOLATION"),
+        }
+    }
+}
+
+impl FromStr for IsolationLevel {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "READ COMMITTED" | "READCOMMITTED" => Ok(IsolationLevel::ReadCommitted),
+            "SNAPSHOT ISOLATION"
+            | "SNAPSHOTISOLATION"
+            | "SNAPSHOTSISOLATION" // retained legacy typo
+            | "REPEATABLE READ"
+            | "REPEATABLEREAD" => {
+                Ok(IsolationLevel::SnapshotIsolation)
+            }
+            _ => Err(Error::parse(format!("unknown isolation level: {}", s))),
+        }
+    }
+}
+
+/// Foreign key referential actions
+///
+/// Defines what happens to child rows when the referenced parent row is
+/// deleted or updated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum ForeignKeyAction {
+    /// Block the operation if child rows exist (default)
+    Restrict = 0,
+
+    /// Propagate the operation to child rows
+    Cascade = 1,
+
+    /// Set the FK column to NULL in child rows
+    SetNull = 2,
+
+    /// Same as Restrict for immediate constraint checking
+    NoAction = 3,
+}
+
+impl ForeignKeyAction {
+    /// Returns the type ID as u8 for serialization
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+
+    /// Create ForeignKeyAction from u8
+    pub fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(ForeignKeyAction::Restrict),
+            1 => Some(ForeignKeyAction::Cascade),
+            2 => Some(ForeignKeyAction::SetNull),
+            3 => Some(ForeignKeyAction::NoAction),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for ForeignKeyAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ForeignKeyAction::Restrict => write!(f, "RESTRICT"),
+            ForeignKeyAction::Cascade => write!(f, "CASCADE"),
+            ForeignKeyAction::SetNull => write!(f, "SET NULL"),
+            ForeignKeyAction::NoAction => write!(f, "NO ACTION"),
+        }
+    }
+}
+
+/// Index entry representing a result from an index lookup
+///
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct IndexEntry {
+    /// Row ID in the table
+    pub row_id: i64,
+    /// Reference ID in the index
+    pub ref_id: i64,
+}
+
+impl IndexEntry {
+    /// Create a new index entry
+    pub fn new(row_id: i64, ref_id: i64) -> Self {
+        Self { row_id, ref_id }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // =========================================================================
+    // DataType tests
+    // =========================================================================
+
+    #[test]
+    fn test_datatype_size() {
+        assert_eq!(std::mem::size_of::<DataType>(), 1);
+    }
+
+    #[test]
+    fn test_datatype_display() {
+        assert_eq!(DataType::Null.to_string(), "NULL");
+        assert_eq!(DataType::Integer.to_string(), "INTEGER");
+        assert_eq!(DataType::Float.to_string(), "FLOAT");
+        assert_eq!(DataType::Text.to_string(), "TEXT");
+        assert_eq!(DataType::Boolean.to_string(), "BOOLEAN");
+        assert_eq!(DataType::Timestamp.to_string(), "TIMESTAMP");
+        assert_eq!(DataType::Json.to_string(), "JSON");
+        assert_eq!(DataType::Vector.to_string(), "VECTOR");
+        assert_eq!(DataType::Uuid.to_string(), "UUID");
+        assert_eq!(DataType::Decimal.to_string(), "DECIMAL");
+        assert_eq!(DataType::Date.to_string(), "DATE");
+        assert_eq!(DataType::Bytes.to_string(), "BYTES");
+    }
+
+    #[test]
+    fn test_datatype_from_str() {
+        assert_eq!("INTEGER".parse::<DataType>().unwrap(), DataType::Integer);
+        assert_eq!("INT".parse::<DataType>().unwrap(), DataType::Integer);
+        assert_eq!("BIGINT".parse::<DataType>().unwrap(), DataType::Integer);
+        assert_eq!("SMALLINT".parse::<DataType>().unwrap(), DataType::Integer);
+        assert_eq!("TINYINT".parse::<DataType>().unwrap(), DataType::Integer);
+        assert_eq!("float".parse::<DataType>().unwrap(), DataType::Float);
+        assert_eq!(
+            "DECIMAL(10,2)".parse::<DataType>().unwrap(),
+            DataType::Decimal
+        );
+        assert_eq!(
+            "NUMERIC(12)".parse::<DataType>().unwrap(),
+            DataType::Decimal
+        );
+        assert_eq!("TEXT".parse::<DataType>().unwrap(), DataType::Text);
+        assert_eq!("VARCHAR".parse::<DataType>().unwrap(), DataType::Text);
+        assert_eq!("VARCHAR(255)".parse::<DataType>().unwrap(), DataType::Text);
+        assert_eq!("CHAR(8)".parse::<DataType>().unwrap(), DataType::Text);
+        assert_eq!("CLOB".parse::<DataType>().unwrap(), DataType::Text);
+        assert_eq!("BOOLEAN".parse::<DataType>().unwrap(), DataType::Boolean);
+        assert_eq!("BOOL".parse::<DataType>().unwrap(), DataType::Boolean);
+        assert_eq!(
+            "TIMESTAMP".parse::<DataType>().unwrap(),
+            DataType::Timestamp
+        );
+        assert_eq!("DATE".parse::<DataType>().unwrap(), DataType::Date);
+        assert_eq!("TIME".parse::<DataType>().unwrap(), DataType::Timestamp);
+        assert_eq!("JSON".parse::<DataType>().unwrap(), DataType::Json);
+        assert_eq!("JSONB".parse::<DataType>().unwrap(), DataType::Json);
+        assert_eq!("UUID".parse::<DataType>().unwrap(), DataType::Uuid);
+        assert_eq!("VECTOR(768)".parse::<DataType>().unwrap(), DataType::Vector);
+        assert_eq!("vector(384)".parse::<DataType>().unwrap(), DataType::Vector);
+        assert_eq!("VECTOR".parse::<DataType>().unwrap(), DataType::Vector);
+        assert_eq!("BYTES".parse::<DataType>().unwrap(), DataType::Bytes);
+        assert_eq!("BLOB".parse::<DataType>().unwrap(), DataType::Bytes);
+        assert_eq!("BINARY".parse::<DataType>().unwrap(), DataType::Bytes);
+        assert_eq!("VARBINARY".parse::<DataType>().unwrap(), DataType::Bytes);
+        assert!("UNKNOWN".parse::<DataType>().is_err());
+    }
+
+    #[test]
+    fn datatype_from_str_rejects_malformed_parameter_suffixes() {
+        for invalid in [
+            "DECIMAL(garbage",
+            "DECIMAL()",
+            "DECIMAL(0)",
+            "DECIMAL(39)",
+            "DECIMAL(2,3)",
+            "DECIMAL(10,2)tail",
+            "VECTOR(-1)trailing",
+            "VECTOR(0)",
+            "VECTOR(anything)",
+            "VARCHAR(anything)",
+            "VARCHAR(0)",
+            "INTEGER(8)",
+        ] {
+            assert!(invalid.parse::<DataType>().is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn test_datatype_is_numeric() {
+        assert!(DataType::Integer.is_numeric());
+        assert!(DataType::Float.is_numeric());
+        assert!(!DataType::Text.is_numeric());
+        assert!(!DataType::Boolean.is_numeric());
+        assert!(!DataType::Timestamp.is_numeric());
+        assert!(!DataType::Json.is_numeric());
+        assert!(!DataType::Null.is_numeric());
+        assert!(!DataType::Vector.is_numeric());
+        assert!(!DataType::Uuid.is_numeric());
+        assert!(!DataType::Decimal.is_numeric());
+        assert!(!DataType::Date.is_numeric());
+        assert!(!DataType::Bytes.is_numeric());
+    }
+
+    #[test]
+    fn test_datatype_is_orderable() {
+        assert!(DataType::Integer.is_orderable());
+        assert!(DataType::Float.is_orderable());
+        assert!(DataType::Text.is_orderable());
+        assert!(DataType::Boolean.is_orderable());
+        assert!(DataType::Timestamp.is_orderable());
+        assert!(DataType::Uuid.is_orderable());
+        assert!(DataType::Decimal.is_orderable());
+        assert!(DataType::Date.is_orderable());
+        assert!(DataType::Bytes.is_orderable());
+        assert!(!DataType::Json.is_orderable());
+        assert!(!DataType::Vector.is_orderable());
+    }
+
+    #[test]
+    fn test_datatype_u8_conversion() {
+        for (i, dt) in [
+            DataType::Null,
+            DataType::Integer,
+            DataType::Float,
+            DataType::Text,
+            DataType::Boolean,
+            DataType::Timestamp,
+            DataType::Json,
+            DataType::Vector,
+            DataType::Uuid,
+            DataType::Decimal,
+            DataType::Date,
+            DataType::Bytes,
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(dt.as_u8(), i as u8);
+            assert_eq!(DataType::from_u8(i as u8), Some(*dt));
+        }
+        assert_eq!(DataType::from_u8(100), None);
+    }
+
+    // =========================================================================
+    // Operator tests
+    // =========================================================================
+
+    #[test]
+    fn test_operator_display() {
+        assert_eq!(Operator::Eq.to_string(), "=");
+        assert_eq!(Operator::Ne.to_string(), "!=");
+        assert_eq!(Operator::Gt.to_string(), ">");
+        assert_eq!(Operator::Gte.to_string(), ">=");
+        assert_eq!(Operator::Lt.to_string(), "<");
+        assert_eq!(Operator::Lte.to_string(), "<=");
+        assert_eq!(Operator::Like.to_string(), "LIKE");
+        assert_eq!(Operator::In.to_string(), "IN");
+        assert_eq!(Operator::NotIn.to_string(), "NOT IN");
+        assert_eq!(Operator::IsNull.to_string(), "IS NULL");
+        assert_eq!(Operator::IsNotNull.to_string(), "IS NOT NULL");
+    }
+
+    #[test]
+    fn test_operator_from_str() {
+        assert_eq!("=".parse::<Operator>().unwrap(), Operator::Eq);
+        assert_eq!("==".parse::<Operator>().unwrap(), Operator::Eq);
+        assert_eq!("!=".parse::<Operator>().unwrap(), Operator::Ne);
+        assert_eq!("<>".parse::<Operator>().unwrap(), Operator::Ne);
+        assert_eq!(">".parse::<Operator>().unwrap(), Operator::Gt);
+        assert_eq!(">=".parse::<Operator>().unwrap(), Operator::Gte);
+        assert_eq!("<".parse::<Operator>().unwrap(), Operator::Lt);
+        assert_eq!("<=".parse::<Operator>().unwrap(), Operator::Lte);
+        assert_eq!("LIKE".parse::<Operator>().unwrap(), Operator::Like);
+        assert_eq!("IN".parse::<Operator>().unwrap(), Operator::In);
+        assert_eq!("NOT IN".parse::<Operator>().unwrap(), Operator::NotIn);
+        assert_eq!("IS NULL".parse::<Operator>().unwrap(), Operator::IsNull);
+        assert_eq!(
+            "IS NOT NULL".parse::<Operator>().unwrap(),
+            Operator::IsNotNull
+        );
+    }
+
+    #[test]
+    fn test_operator_needs_value() {
+        assert!(Operator::Eq.needs_value());
+        assert!(Operator::Ne.needs_value());
+        assert!(Operator::Gt.needs_value());
+        assert!(Operator::Like.needs_value());
+        assert!(!Operator::IsNull.needs_value());
+        assert!(!Operator::IsNotNull.needs_value());
+    }
+
+    #[test]
+    fn test_operator_negate() {
+        assert_eq!(Operator::Eq.negate(), Some(Operator::Ne));
+        assert_eq!(Operator::Ne.negate(), Some(Operator::Eq));
+        assert_eq!(Operator::Gt.negate(), Some(Operator::Lte));
+        assert_eq!(Operator::Gte.negate(), Some(Operator::Lt));
+        assert_eq!(Operator::Lt.negate(), Some(Operator::Gte));
+        assert_eq!(Operator::Lte.negate(), Some(Operator::Gt));
+        assert_eq!(Operator::In.negate(), Some(Operator::NotIn));
+        assert_eq!(Operator::NotIn.negate(), Some(Operator::In));
+        assert_eq!(Operator::IsNull.negate(), Some(Operator::IsNotNull));
+        assert_eq!(Operator::IsNotNull.negate(), Some(Operator::IsNull));
+        assert_eq!(Operator::Like.negate(), None);
+    }
+
+    // =========================================================================
+    // IndexType tests
+    // =========================================================================
+
+    #[test]
+    fn test_indextype_display() {
+        assert_eq!(IndexType::Bitmap.to_string(), "bitmap");
+        assert_eq!(IndexType::BTree.to_string(), "btree");
+        assert_eq!(IndexType::Hash.to_string(), "hash");
+        assert_eq!(IndexType::Hnsw.to_string(), "hnsw");
+    }
+
+    #[test]
+    fn test_indextype_from_str() {
+        assert_eq!("bitmap".parse::<IndexType>().unwrap(), IndexType::Bitmap);
+        assert_eq!("btree".parse::<IndexType>().unwrap(), IndexType::BTree);
+        assert_eq!("b-tree".parse::<IndexType>().unwrap(), IndexType::BTree);
+        assert_eq!("hash".parse::<IndexType>().unwrap(), IndexType::Hash);
+        assert_eq!("hnsw".parse::<IndexType>().unwrap(), IndexType::Hnsw);
+        assert!("unknown".parse::<IndexType>().is_err());
+    }
+
+    // =========================================================================
+    // IsolationLevel tests
+    // =========================================================================
+
+    #[test]
+    fn test_isolationlevel_display() {
+        assert_eq!(IsolationLevel::ReadCommitted.to_string(), "READ COMMITTED");
+        assert_eq!(
+            IsolationLevel::SnapshotIsolation.to_string(),
+            "SNAPSHOT ISOLATION"
+        );
+    }
+
+    #[test]
+    fn test_isolationlevel_from_str() {
+        assert_eq!(
+            "READ COMMITTED".parse::<IsolationLevel>().unwrap(),
+            IsolationLevel::ReadCommitted
+        );
+        assert_eq!(
+            "SNAPSHOT ISOLATION".parse::<IsolationLevel>().unwrap(),
+            IsolationLevel::SnapshotIsolation
+        );
+        assert_eq!(
+            "REPEATABLE READ".parse::<IsolationLevel>().unwrap(),
+            IsolationLevel::SnapshotIsolation
+        );
+    }
+
+    #[test]
+    fn compact_snapshot_isolation_alias_is_spelled_correctly() {
+        assert_eq!(
+            "SNAPSHOTISOLATION".parse::<IsolationLevel>().unwrap(),
+            IsolationLevel::SnapshotIsolation
+        );
+        assert_eq!(
+            "SNAPSHOTSISOLATION".parse::<IsolationLevel>().unwrap(),
+            IsolationLevel::SnapshotIsolation
+        );
+    }
+
+    #[test]
+    fn test_isolationlevel_u8_conversion() {
+        assert_eq!(IsolationLevel::ReadCommitted.as_u8(), 0);
+        assert_eq!(IsolationLevel::SnapshotIsolation.as_u8(), 1);
+        assert_eq!(
+            IsolationLevel::from_u8(0),
+            Some(IsolationLevel::ReadCommitted)
+        );
+        assert_eq!(
+            IsolationLevel::from_u8(1),
+            Some(IsolationLevel::SnapshotIsolation)
+        );
+        assert_eq!(IsolationLevel::from_u8(2), None);
+    }
+
+    // =========================================================================
+    // IndexEntry tests
+    // =========================================================================
+
+    #[test]
+    fn test_index_entry() {
+        let entry = IndexEntry::new(42, 100);
+        assert_eq!(entry.row_id, 42);
+        assert_eq!(entry.ref_id, 100);
+    }
+
+    #[test]
+    fn test_default_values() {
+        assert_eq!(DataType::default(), DataType::Null);
+        assert_eq!(IsolationLevel::default(), IsolationLevel::ReadCommitted);
+    }
+}

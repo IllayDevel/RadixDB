@@ -1,0 +1,44 @@
+---
+title: Transactions
+description: Commit or roll back a change in the tutorial database.
+---
+import TutorialSql from '../../../../components/TutorialSql.astro';
+
+Use the same database and complete each block within one client session.
+The examples begin with Alice as the employee whose identifier is 1.
+
+## Roll Back a Change
+
+<TutorialSql name="rollback" />
+
+`BEGIN` opens an explicit transaction. The UPDATE changes the name within
+that transaction; `ROLLBACK` discards the change.
+
+<TutorialSql name="select" />
+
+The names remain Alice, Boris and Clara. The same result is visible after
+closing the client and reopening the file database.
+
+## Commit a Change
+
+<TutorialSql name="commit" />
+
+Run the SELECT again. Employee 1 is now Alicia; Boris and Clara are unchanged.
+`COMMIT` completes the transaction and makes its change persistent according
+to the configured durability mode.
+
+Do not split BEGIN and COMMIT between separate CLI processes. Closing a client
+is not a substitute for an explicit commit. These examples demonstrate a
+single-client transaction; they do not define concurrent isolation behavior.
+
+## Finish
+
+Enter `exit` after completing the transaction. You may keep the tutorial
+database for later exercises. To discard it, first inspect the value of
+`tutorial_dir` in the original shell and remove only the temporary directory
+created for this tutorial. Never run cleanup against a working database.
+
+The next step is a [server connection](../server-connection/). The local CLI opens files directly,
+so a TCP client is needed for that mode. Server installation, connection
+parameters and security restrictions are covered by the administration and
+client-interface parts of the manual.

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RadixDB soak</title>
+  <style>
+    body { background:#111827; color:#e5e7eb; font:14px system-ui; margin:0; padding:24px }
+    h1 { margin-top:0 } .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px }
+    .card { background:#1f2937; border:1px solid #374151; border-radius:8px; padding:14px }
+    .label { color:#9ca3af; font-size:12px } .value { font-size:22px; margin-top:5px }
+    table { width:100%; border-collapse:collapse } td,th { text-align:left; padding:7px; border-bottom:1px solid #374151 }
+    .passed { color:#34d399 } .failed { color:#f87171 }
+    .nav { display:inline-block; margin:0 0 16px; color:#93c5fd }
+  </style>
+</head>
+<body>
+  <h1>RadixDB soak</h1>
+  <a class="nav" id="diagnostics" href="#">Open intelligent diagnostics: semantic progress, engine, host, storage and incidents</a>
+  <div class="grid" id="summary"></div>
+  <div class="card" style="margin-top:12px"><table id="invariants"></table></div>
+  <script>
+    const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const bytes = value => {
+      const units = ['B','KiB','MiB','GiB','TiB']; let number = Number(value || 0); let unit = 0;
+      while (number >= 1024 && unit < units.length - 1) { number /= 1024; unit += 1; }
+      return `${number.toFixed(unit === 0 ? 0 : 2)} ${units[unit]}`;
+    };
+    document.getElementById('diagnostics').href = `${location.protocol}//${location.hostname}:18089/`;
+    async function refresh() {
+      const status = await fetch('/api/v1/status', {cache:'no-store'}).then(r => r.json());
+      const cards = [
+        ['Run', status.run_id], ['State', status.state], ['Phase', status.phase],
+        ['Elapsed', Math.round(status.elapsed_millis/1000)+'s'], ['TPS', status.current_tps.toFixed(1)],
+        ['Clients', status.active_clients+'/'+status.target_clients],
+        ['Commits', status.counters.transactions_committed], ['Rollbacks', status.counters.transactions_rolled_back],
+        ['Conflicts', status.counters.conflicts], ['RSS', bytes(status.resources.rss_bytes)],
+        ['Database', bytes(status.resources.database_bytes)],
+        ['DATA artifacts', bytes(status.resources.database_data_bytes)],
+        ['INDEX artifacts', bytes(status.resources.database_index_bytes)],
+        ['Catalog / manifests / CONTROL', bytes(status.resources.database_metadata_bytes)],
+        ['WAL', bytes(status.resources.database_wal_bytes)]
+      ];
+      document.getElementById('summary').innerHTML = cards.map(([k,v]) => `<div class="card"><div class="label">${esc(k)}</div><div class="value">${esc(v)}</div></div>`).join('');
+      document.getElementById('invariants').innerHTML = '<tr><th>Invariant</th><th>State</th><th>Checks</th><th>Detail</th></tr>' +
+        Object.values(status.invariants).map(i => `<tr><td>${esc(i.name)}</td><td class="${esc(i.state)}">${esc(i.state)}</td><td>${esc(i.checks)}</td><td>${esc(i.detail)}</td></tr>`).join('');
+    }
+    refresh(); setInterval(refresh, 5000);
+  </script>
+</body>
+</html>

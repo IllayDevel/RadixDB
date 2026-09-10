@@ -1,0 +1,18 @@
+[package]
+name = "radixdb-pair-plugin"
+version = "1.0.0"
+edition = "2021"
+rust-version = "1.97"
+publish = false
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+radixdb-plugin = { path = "../../../crates/radixdb-plugin" }
+
+[workspace]
+
+[profile.release]
+panic = "unwind"

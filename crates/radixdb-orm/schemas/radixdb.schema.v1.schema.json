@@ -1,0 +1,217 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://radixdb.dev/schema/radixdb.schema.v1.schema.json",
+  "title": "RadixDB schema descriptor v1",
+  "oneOf": [
+    { "$ref": "#/$defs/tableEnvelope" },
+    { "$ref": "#/$defs/databaseEnvelope" }
+  ],
+  "$defs": {
+    "tableEnvelope": {
+      "type": "object",
+      "required": ["descriptor", "kind", "payload"],
+      "properties": {
+        "descriptor": { "const": "radixdb.schema.v1" },
+        "kind": { "const": "table" },
+        "payload": { "$ref": "#/$defs/table" }
+      },
+      "additionalProperties": false
+    },
+    "databaseEnvelope": {
+      "type": "object",
+      "required": ["descriptor", "kind", "payload"],
+      "properties": {
+        "descriptor": { "const": "radixdb.schema.v1" },
+        "kind": { "const": "database" },
+        "payload": { "$ref": "#/$defs/database" }
+      },
+      "additionalProperties": false
+    },
+    "database": {
+      "type": "object",
+      "required": ["schema_generation", "fingerprint", "tables", "views"],
+      "properties": {
+        "schema_generation": { "type": "integer", "minimum": 0 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "tables": { "type": "array", "items": { "$ref": "#/$defs/table" } },
+        "views": { "type": "array", "items": { "$ref": "#/$defs/view" } },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      },
+      "additionalProperties": false
+    },
+    "table": {
+      "type": "object",
+      "required": ["catalog_id", "name", "schema_generation", "fingerprint", "created_at", "updated_at", "columns", "constraints", "indexes"],
+      "properties": {
+        "catalog_id": { "type": "string", "format": "uuid" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "schema_generation": { "type": "integer", "minimum": 0 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "columns": { "type": "array", "items": { "$ref": "#/$defs/column" } },
+        "constraints": { "type": "array", "items": { "$ref": "#/$defs/constraint" } },
+        "indexes": { "type": "array", "items": { "$ref": "#/$defs/index" } },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      },
+      "additionalProperties": false
+    },
+    "column": {
+      "type": "object",
+      "required": ["ordinal", "name", "data_type", "nullable", "auto_increment", "default_expression"],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "name": { "$ref": "#/$defs/identifier" },
+        "data_type": { "$ref": "#/$defs/dataType" },
+        "nullable": { "type": "boolean" },
+        "auto_increment": { "type": "boolean" },
+        "default_expression": { "type": ["string", "null"] },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      },
+      "additionalProperties": false
+    },
+    "dataType": {
+      "oneOf": [
+        { "$ref": "#/$defs/unitTypeNull" },
+        { "$ref": "#/$defs/unitTypeInteger" },
+        { "$ref": "#/$defs/unitTypeFloat" },
+        { "$ref": "#/$defs/unitTypeText" },
+        { "$ref": "#/$defs/unitTypeBoolean" },
+        { "$ref": "#/$defs/unitTypeTimestamp" },
+        { "$ref": "#/$defs/unitTypeDate" },
+        { "$ref": "#/$defs/unitTypeJson" },
+        { "$ref": "#/$defs/unitTypeUuid" },
+        { "$ref": "#/$defs/unitTypeBytes" },
+        { "$ref": "#/$defs/decimalType" },
+        { "$ref": "#/$defs/vectorType" }
+      ]
+    },
+    "unitTypeNull": { "type": "object", "required": ["type"], "properties": { "type": { "const": "null" } }, "additionalProperties": false },
+    "unitTypeInteger": { "type": "object", "required": ["type"], "properties": { "type": { "const": "integer" } }, "additionalProperties": false },
+    "unitTypeFloat": { "type": "object", "required": ["type"], "properties": { "type": { "const": "float" } }, "additionalProperties": false },
+    "unitTypeText": { "type": "object", "required": ["type"], "properties": { "type": { "const": "text" } }, "additionalProperties": false },
+    "unitTypeBoolean": { "type": "object", "required": ["type"], "properties": { "type": { "const": "boolean" } }, "additionalProperties": false },
+    "unitTypeTimestamp": { "type": "object", "required": ["type"], "properties": { "type": { "const": "timestamp" } }, "additionalProperties": false },
+    "unitTypeDate": { "type": "object", "required": ["type"], "properties": { "type": { "const": "date" } }, "additionalProperties": false },
+    "unitTypeJson": { "type": "object", "required": ["type"], "properties": { "type": { "const": "json" } }, "additionalProperties": false },
+    "unitTypeUuid": { "type": "object", "required": ["type"], "properties": { "type": { "const": "uuid" } }, "additionalProperties": false },
+    "unitTypeBytes": { "type": "object", "required": ["type"], "properties": { "type": { "const": "bytes" } }, "additionalProperties": false },
+    "decimalType": {
+      "type": "object",
+      "required": ["type", "precision", "scale"],
+      "properties": {
+        "type": { "const": "decimal" },
+        "precision": { "type": ["integer", "null"], "minimum": 1, "maximum": 38 },
+        "scale": { "type": ["integer", "null"], "minimum": 0, "maximum": 38 }
+      },
+      "additionalProperties": false
+    },
+    "vectorType": {
+      "type": "object",
+      "required": ["type", "dimensions"],
+      "properties": {
+        "type": { "const": "vector" },
+        "dimensions": { "type": "integer", "minimum": 1, "maximum": 65535 }
+      },
+      "additionalProperties": false
+    },
+    "constraint": {
+      "oneOf": [
+        { "$ref": "#/$defs/primaryKeyConstraint" },
+        { "$ref": "#/$defs/uniqueConstraint" },
+        { "$ref": "#/$defs/foreignKeyConstraint" },
+        { "$ref": "#/$defs/checkConstraint" }
+      ]
+    },
+    "primaryKeyConstraint": {
+      "type": "object",
+      "required": ["id", "name", "constraint_type", "columns"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "name": { "$ref": "#/$defs/identifier" },
+        "constraint_type": { "const": "primary_key" },
+        "columns": { "$ref": "#/$defs/identifiers" }
+      },
+      "additionalProperties": false
+    },
+    "uniqueConstraint": {
+      "type": "object",
+      "required": ["id", "name", "constraint_type", "columns", "owned_index"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "name": { "$ref": "#/$defs/identifier" },
+        "constraint_type": { "const": "unique" },
+        "columns": { "$ref": "#/$defs/identifiers" },
+        "owned_index": { "$ref": "#/$defs/identifier" }
+      },
+      "additionalProperties": false
+    },
+    "foreignKeyConstraint": {
+      "type": "object",
+      "required": ["id", "name", "constraint_type", "columns", "referenced_table", "referenced_columns", "on_delete", "on_update"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "name": { "$ref": "#/$defs/identifier" },
+        "constraint_type": { "const": "foreign_key" },
+        "columns": { "$ref": "#/$defs/identifiers" },
+        "referenced_table": { "$ref": "#/$defs/identifier" },
+        "referenced_columns": { "$ref": "#/$defs/identifiers" },
+        "on_delete": { "$ref": "#/$defs/fkAction" },
+        "on_update": { "$ref": "#/$defs/fkAction" }
+      },
+      "additionalProperties": false
+    },
+    "checkConstraint": {
+      "type": "object",
+      "required": ["id", "name", "constraint_type", "column", "expression", "ordinal"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "name": { "$ref": "#/$defs/identifier" },
+        "constraint_type": { "const": "check" },
+        "column": { "oneOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+        "expression": { "type": "string" },
+        "ordinal": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+      },
+      "additionalProperties": false
+    },
+    "fkAction": { "enum": ["restrict", "cascade", "set_null", "no_action"] },
+    "index": {
+      "type": "object",
+      "required": ["name", "method", "columns", "unique", "predicate", "options"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "method": { "type": "string", "minLength": 1 },
+        "columns": { "$ref": "#/$defs/identifiers" },
+        "unique": { "type": "boolean" },
+        "predicate": { "type": ["string", "null"] },
+        "options": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "view": {
+      "type": "object",
+      "required": ["name", "query", "dependencies", "result_columns"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "query": { "type": "string", "minLength": 1 },
+        "dependencies": { "type": "array", "items": { "$ref": "#/$defs/identifier" } },
+        "result_columns": { "type": "array", "items": { "$ref": "#/$defs/resultColumn" } }
+      },
+      "additionalProperties": false
+    },
+    "resultColumn": {
+      "type": "object",
+      "required": ["name", "data_type", "nullable"],
+      "properties": {
+        "name": { "type": "string" },
+        "data_type": { "$ref": "#/$defs/dataType" },
+        "nullable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "identifier": { "type": "string", "minLength": 1 },
+    "identifiers": { "type": "array", "items": { "$ref": "#/$defs/identifier" }, "minItems": 1 },
+    "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "extensions": { "type": "object", "additionalProperties": true }
+  }
+}

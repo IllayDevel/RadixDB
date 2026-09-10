@@ -1,0 +1,5 @@
+error: missing required `id`
+ --> tests/ui/missing_package_id.rs:4:1
+  |
+4 | mod plugin {}
+  | ^^^

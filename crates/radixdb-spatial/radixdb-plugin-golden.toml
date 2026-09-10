@@ -1,0 +1,27 @@
+format = 1
+package_id = "8f459a6d-5c31-4f5e-a03d-412c681ef120"
+
+[[types]]
+object_id = "14fe2ab4125b88be01a7ff1ae7d12527"
+codec_version = 1
+codec_fingerprint = "fbf2dba5d309b72624fe3c572b0b98f2a300b763afe55308840ba0ec5762a400"
+vectors = [
+    "00000000000000000000000000000000",
+    "000000000000f03f00000000000000c0",
+]
+
+[[types]]
+object_id = "d2af6e4ccb4642599d299d61286075a7"
+codec_version = 1
+codec_fingerprint = "7955b41b04bc168b41f6f7c957e898ce72fe437c2b3330298c4168d7d804f675"
+vectors = [
+    "0000000000000000000000000000000000000000000000000000000000000000",
+]
+
+[[types]]
+object_id = "ebf1af8eb082f70a05cd851930bac88c"
+codec_version = 1
+codec_fingerprint = "117873c615a0eed7c6cec218a01d4060d07e960c8ea846dd2507ec15fd8fdca8"
+vectors = [
+    "00000000",
+]

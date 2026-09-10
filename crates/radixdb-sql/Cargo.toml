@@ -1,0 +1,15 @@
+[package]
+name = "radixdb-sql"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "SQL syntax contracts and parser for RadixDB"
+license-file = "../../LICENSE"
+publish = false
+
+[dependencies]
+radixdb-core = { path = "../radixdb-core" }
+rustc-hash = "1.1"
+
+[dev-dependencies]
+proptest = "1.4"

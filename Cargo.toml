@@ -1,0 +1,294 @@
+[package]
+name = "radixdb"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+autobins = false
+autoexamples = false
+license-file = "LICENSE"
+
+[workspace]
+members = [
+    ".",
+    "crates/cargo-radixdb-plugin",
+    "crates/radixdb-api",
+    "crates/radixdb-catalog",
+    "crates/radixdb-client",
+    "crates/radixdb-core",
+    "crates/radixdb-executor",
+    "crates/radixdb-functions",
+    "crates/radixdb-join-workload",
+    "crates/radixdb-orm",
+    "crates/radixdb-plugin",
+    "crates/radixdb-plugin-abi",
+    "crates/radixdb-plugin-host",
+    "crates/radixdb-plugin-macros",
+    "crates/radixdb-procedural",
+    "crates/radixdb-protocol",
+    "crates/radixdb-sql",
+    "crates/radixdb-soak",
+    "crates/radixdb-storage",
+]
+exclude = ["crates/radixdb-spatial"]
+resolver = "2"
+
+[workspace.package]
+version = "1.1.0"
+rust-version = "1.97"
+
+[lib]
+name = "radixdb"
+path = "src/lib.rs"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "radixdb-cli"
+path = "src/bin/radixdb.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "radixdb-server"
+path = "src/bin/radixdb_server.rs"
+
+[[bin]]
+name = "radixdb-password"
+path = "src/bin/radixdb_password.rs"
+
+[[bin]]
+name = "radixdb-smoke-client"
+path = "src/bin/radixdb_smoke_client.rs"
+
+[[bin]]
+name = "radixdb-bench"
+path = "src/bin/radixdb_bench.rs"
+required-features = ["bench-harness"]
+
+# PG server will be enabled once implemented
+# [[bin]]
+# name = "radixdb-pgserver"
+# path = "src/bin/pgserver.rs"
+# required-features = ["pg-server"]
+
+[dependencies]
+# Error handling
+thiserror = "2.0"
+anyhow = { version = "1.0", optional = true }
+radixdb-client = { path = "crates/radixdb-client" }
+radixdb-api = { path = "crates/radixdb-api" }
+radixdb-core = { path = "crates/radixdb-core" }
+radixdb-executor = { path = "crates/radixdb-executor" }
+radixdb-functions = { path = "crates/radixdb-functions" }
+radixdb-orm = { path = "crates/radixdb-orm" }
+radixdb-plugin-host = { path = "crates/radixdb-plugin-host" }
+radixdb-protocol = { path = "crates/radixdb-protocol" }
+radixdb-sql = { path = "crates/radixdb-sql" }
+radixdb-storage = { path = "crates/radixdb-storage" }
+tokio = { version = "1", features = ["net", "rt", "time"], optional = true }
+
+# Concurrency
+parking_lot = { version = "0.12", features = ["arc_lock"] }
+arc-swap = "1"
+dashmap = "6"
+crossbeam = "0.8"
+rayon = { version = "1.8", optional = true }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = { version = "2", features = ["serde"] }
+toml = "0.8"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+signal-hook = "0.3"
+rustls = "0.23"
+rustls-pemfile = "2.2"
+
+# CLI (optional)
+clap = { version = "4.4", features = ["derive"], optional = true }
+rustyline = { version = "17.0", optional = true }
+comfy-table = { version = "7.2", optional = true }
+
+# Checksums and hashing
+crc32fast = "1.4"
+md-5 = "0.10"
+sha1 = "0.10"
+sha2 = "0.10"
+procfs = { version = "0.18", default-features = false, optional = true }
+
+# Compression
+lz4_flex = "0.13"
+
+# Test support
+tempfile = { version = "3.9", optional = true }
+
+# Utilities
+bytes = "1.5"
+base64 = "0.22"
+moka = { version = "0.12", features = ["sync"] }
+smallvec = "1.11"
+rustc-hash = "1.1"
+memchr = "2.6"
+regex = "1.10"
+csv = "1.3"  # CSV parsing for COPY FROM
+radsort = "0.1"  # Radix sort - O(n) for integer keys
+rand = "0.9"  # Random number generation for RANDOM() function
+uuid = { version = "1", features = ["v7", "fast-rng"] }  # UUIDv7 generation and UUID parsing
+ahash = "0.8"  # Fast hash for hash indexes (DOS-resistant)
+hashbrown = "0.16"  # HashMap with raw_entry API for efficient group-by
+roaring = "0.11"  # Compressed bitmap indexes (used by Lucene, Druid, Spark)
+lru = "0.16"  # O(1) LRU cache for compiled expression programs
+
+# Optional benchmark dependencies (for comparison benchmarks)
+rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+duckdb = { version = "1.4.3", features = ["bundled"], optional = true }
+postgres = { version = "0.19", optional = true }
+
+# Optional ANN benchmark dependencies (download + decompress datasets)
+ureq = { version = "2", optional = true }
+flate2 = { version = "1", optional = true }
+
+# Optional allocators
+mimalloc = { version = "0.1", default-features = false, optional = true }
+
+# Semantic embedding (optional — enables EMBED() SQL function)
+
+libc = "0.2"
+
+[dev-dependencies]
+criterion = { version = "0.8", features = ["html_reports"] }
+proptest = "1.4"
+tempfile = "3.9"
+dhat = "0.3"
+sqllogictest = "0.29"
+radixdb-core = { path = "crates/radixdb-core", features = ["test-failpoints"] }
+radixdb-executor = { path = "crates/radixdb-executor", features = ["test-hooks"] }
+radixdb-plugin-abi = { path = "crates/radixdb-plugin-abi" }
+radixdb-plugin-host = { path = "crates/radixdb-plugin-host", features = ["test-hooks"] }
+radixdb-storage = { path = "crates/radixdb-storage", features = ["test-hooks", "test-failpoints"] }
+rcgen = "0.14"
+
+[build-dependencies]
+sha2 = "0.10"
+
+[features]
+default = ["parallel", "mimalloc"]
+parallel = ["dep:rayon", "radixdb-api/parallel", "radixdb-executor/parallel", "radixdb-storage/parallel"]
+cli = ["dep:clap", "dep:rustyline", "dep:comfy-table"]
+bench-harness = [
+    "dep:postgres",
+    "dep:procfs",
+    "dep:rusqlite",
+    "radixdb-executor/bench-harness",
+    "radixdb-storage/bench-harness",
+]
+dhat-heap = ["radixdb-core/dhat-heap"]
+sqlite = ["dep:rusqlite"]
+prerelease-postgres = ["dep:postgres"]
+duckdb = ["dep:duckdb"]
+mimalloc = ["dep:mimalloc"]
+semantic = ["radixdb-functions/semantic"]
+ann-benchmark = ["dep:anyhow", "dep:ureq", "dep:flate2"]
+test-failpoints = ["radixdb-core/test-failpoints", "radixdb-executor/test-failpoints", "radixdb-storage/test-failpoints"]
+test-mutations = ["radixdb-executor/test-mutations", "radixdb-storage/test-mutations"]
+stress-tests = []
+test-filedb = ["dep:tempfile", "radixdb-api/test-filedb"]  # Routes memory:// databases to temporary persistent roots for storage-path testing
+orm-async-tests = ["dep:tokio", "radixdb-client/tokio"]
+
+[[example]]
+name = "benchmark_sqlite"
+required-features = ["sqlite"]
+
+[[example]]
+name = "benchmark_duckdb"
+required-features = ["duckdb"]
+
+[[example]]
+name = "benchmark"
+
+[[example]]
+name = "product_search"
+
+[[example]]
+name = "semantic_search"
+required-features = ["semantic"]
+
+[[example]]
+name = "vector_search_bench"
+
+[[example]]
+name = "ann_benchmark"
+required-features = ["ann-benchmark"]
+
+[profile.dev]
+debug = "line-tables-only"       # Faster incremental builds, keeps file:line backtraces
+split-debuginfo = "unpacked"     # Faster incremental linking on macOS
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+opt-level = 3
+debug = "line-tables-only"  # Backtraces with file:line, skip variable info
+
+# Maximum optimization profile (for published binaries / benchmarks)
+[profile.max]
+inherits = "release"
+lto = true            # Fat LTO for maximum runtime performance
+debug = false
+
+[[bench]]
+name = "select_by_id"
+path = "examples/select_by_id.rs"
+harness = false
+
+[[bench]]
+name = "update_by_id"
+path = "examples/update_by_id.rs"
+harness = false
+
+[[bench]]
+name = "delete_by_id"
+path = "examples/delete_by_id.rs"
+harness = false
+
+[[bench]]
+name = "select_complex"
+path = "examples/select_complex.rs"
+harness = false
+
+[[bench]]
+name = "update_complex"
+path = "examples/update_complex.rs"
+harness = false
+
+[[bench]]
+name = "delete_complex"
+path = "examples/delete_complex.rs"
+harness = false
+
+[[bench]]
+name = "orm_facade"
+path = "examples/orm_facade.rs"
+harness = false
+
+[[example]]
+name = "orm_allocations"
+path = "examples/orm_allocations.rs"
+required-features = ["dhat-heap"]
+
+[profile.bench]
+lto = "thin"
+codegen-units = 1
+
+# CI test profile: faster compile, less disk usage
+[profile.ci]
+inherits = "release"
+codegen-units = 16    # Parallel codegen
+debug = false         # No debug symbols needed for tests
+
+# Mutation testing profile: fast incremental builds
+[profile.mutants]
+inherits = "test"
+debug = "none"

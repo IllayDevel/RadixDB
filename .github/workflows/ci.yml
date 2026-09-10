@@ -1,0 +1,443 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  default-tests:
+    name: Full default test inventory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+      - name: Run workspace tests and all targets
+        run: cargo test --locked --workspace --all-targets --no-fail-fast
+
+      - name: Compile executable doctests and run public documentation owner
+        run: |
+          python3 scripts/check-doctest-contract.py
+          cargo test --locked --workspace --doc
+          cargo test --locked --test public_api_documentation_test
+
+  checks:
+    name: Format, lint, docs and targeted tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --locked --workspace --all-targets --features cli,bench-harness -- -D warnings
+
+      - name: Check tests and binaries
+        run: cargo check --locked --workspace --tests --bins --features cli,bench-harness
+
+      - name: Public contract tests
+        run: |
+          scripts/run-exact-test.sh parser::statements::tests::test_parse_create_table_with_parameterized_type_aliases --lib -p radixdb
+          scripts/run-exact-test.sh parser::statements::tests::test_parse_create_table_rejects_malformed_type_arguments --lib -p radixdb
+          cargo test --locked --test data_type_contract_test -- --nocapture
+          cargo test --locked --test partial_index_tcp_client_test -- --test-threads=1 --nocapture
+          cargo test --locked --test pragma_test -- --nocapture
+          scripts/run-exact-test.sh test_restore_no_snapshots_error --test pragma_restore_test
+          scripts/run-exact-test.sh test_restore_preserves_indexes --test pragma_restore_test
+          cargo test --locked --test copy_from_test --no-default-features -- --nocapture
+
+      - name: Rust client tests
+        run: |
+          cargo test --locked -p radixdb-client
+          cargo test --locked -p radixdb-client --features tokio
+
+      - name: Public build and example contract
+        run: bash scripts/check-public-build-contract.sh
+
+      - name: Unsafe owner evidence matrix
+        run: python3 scripts/check-unsafe-owner-matrix.py
+
+      - name: Immutable CI input and lockfile contract
+        run: |
+          python3 scripts/check-ci-reproducibility.py
+          git diff --exit-code -- Cargo.lock
+
+      - name: Markdown link check
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          roots = [
+              Path("README.md"),
+              Path("README.ru.md"),
+              Path("SECURITY.md"),
+              Path("SECURITY.ru.md"),
+              Path("CONTRIBUTING.md"),
+              Path("CONTRIBUTING.ru.md"),
+              Path("CODE_OF_CONDUCT.md"),
+              Path("CODE_OF_CONDUCT.ru.md"),
+              Path("doc/README.md"),
+              Path("doc/README.ru.md"),
+              Path("release"),
+              Path("examples/public"),
+              Path("crates/radixdb-client/README.md"),
+          ]
+          files = []
+          for root in roots:
+              if root.is_file():
+                  files.append(root)
+              elif root.is_dir():
+                  files.extend(sorted(root.rglob("*.md")))
+
+          link_re = re.compile(r"(?<!\\)!?\[[^\]]*\]\(([^)]+)\)")
+          missing = []
+          for path in files:
+              text = path.read_text(encoding="utf-8")
+              for match in link_re.finditer(text):
+                  target = match.group(1).strip()
+                  if not target or target.startswith(("#", "http://", "https://", "mailto:")):
+                      continue
+                  if "://" in target:
+                      continue
+                  target = target.split("#", 1)[0]
+                  if not target:
+                      continue
+                  resolved = (path.parent / target.replace("%20", " ")).resolve()
+                  if not resolved.exists():
+                      missing.append((str(path), target))
+
+          if missing:
+              for source, target in missing:
+                  print(f"{source} -> {target}")
+              raise SystemExit(1)
+          print(f"checked {len(files)} markdown files")
+          PY
+
+      - name: Public hygiene check
+        run: |
+          if git grep -n -E '/home/asd|S\)larisklops|thagi3Vey|idevel@|git-stor' -- \
+              README.md README.ru.md SECURITY.md CONTRIBUTING.md CODE_OF_CONDUCT.md \
+              doc/README.md doc/README.ru.md doc/src/content/docs \
+              release crates/radixdb-client/README.md examples/public; then
+            echo "public docs/examples contain local secrets or local paths" >&2
+            exit 1
+          fi
+          node doc/scripts/check-editorial.mjs
+
+      - name: Deny accidentally committed large files
+        run: |
+          git ls-files -z \
+            | xargs -0 du -b \
+            | awk '$1 > 50 * 1024 * 1024 { print; found = 1 } END { exit found ? 1 : 0 }'
+
+  documentation:
+    name: Astro manual contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+          cache-dependency-path: doc/package-lock.json
+
+      - name: Install documentation dependencies
+        working-directory: doc
+        run: npm ci
+
+      - name: Check content, translations and publication artifact
+        working-directory: doc
+        env:
+          CI: true
+          DOCS_ENFORCE_CLEAN: 1
+        run: |
+          npm run test:editorial
+          npm run test:cutover
+          npm run test:publication
+
+  feature-tests:
+    name: Optional feature regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+      - name: Differential oracle tests
+        run: cargo test --locked --test differential_oracle_test --features sqlite
+
+      - name: Failpoint I/O tests
+        run: cargo test --locked --test failpoint_io_test --features test-failpoints -- --test-threads=1
+
+      - name: Terminal failpoint tests
+        run: cargo test --locked --test r2_l06_batch_b_terminal_outcome_test --features test-failpoints -- --test-threads=1
+
+      - name: File-backed full inventory
+        run: cargo test --locked --workspace --all-targets --features test-filedb --no-fail-fast
+
+      - name: No-default-features product inventory
+        run: |
+          cargo check --locked --workspace --all-targets --no-default-features
+          cargo test --locked --test copy_from_test --no-default-features
+
+      - name: CLI binary unit tests
+        run: cargo test --locked --bin radixdb-cli --features cli
+
+      - name: Benchmark binary unit tests
+        run: cargo test --locked --bin radixdb-bench --features bench-harness
+
+  optional-feature-checks:
+    name: Optional feature compile (${{ matrix.feature }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: [duckdb, mimalloc, semantic, ann-benchmark, dhat-heap]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+      - name: Compile declared optional surface
+        run: cargo check --locked --workspace --all-targets --features "${{ matrix.feature }}"
+
+  linux-aarch64:
+    name: Linux aarch64 compile and emulated SIMD
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust and aarch64 target
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+      - name: Install aarch64 linker and emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-aarch64-linux-gnu libc6-dev-arm64-cross qemu-user
+
+      - name: Cross-check supported product surface
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo check --locked --workspace --lib --bins --target aarch64-unknown-linux-gnu --features cli
+
+      - name: Execute aarch64 SIMD distance contract under QEMU
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64 -L /usr/aarch64-linux-gnu
+        run: |
+          cargo test --locked --target aarch64-unknown-linux-gnu --lib \
+            storage::index::hnsw::tests::distance_kernels_match_scalar_contract_across_simd_tails \
+            -- --exact --test-threads=1
+
+  coverage:
+    name: Source and branch coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust with coverage tools
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: nightly-2026-07-07
+          components: llvm-tools-preview
+
+      - name: Install pinned cargo-llvm-cov
+        uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2
+        with:
+          tool: cargo-llvm-cov@0.9.0
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+      - name: Collect revision-bound coverage and enforce thresholds
+        run: |
+          cargo +nightly-2026-07-07 llvm-cov --locked --workspace --all-targets \
+            --features cli,bench-harness --branch --no-report
+          cargo +nightly-2026-07-07 llvm-cov report --locked --branch --json --summary-only \
+            --output-path coverage-summary.json
+          python3 scripts/check-coverage-thresholds.py coverage-summary.json
+          cargo +nightly-2026-07-07 llvm-cov report --locked --branch --lcov --output-path lcov.info
+
+      - name: Upload coverage evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: |
+            lcov.info
+            coverage-summary.json
+          if-no-files-found: error
+
+  performance-regression:
+    name: Paired performance regression
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+      - name: Build current and base benchmark binaries
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          cargo build --locked --release --bin radixdb-bench --features bench-harness
+          cp target/release/radixdb-bench /tmp/radixdb-bench-current
+          git worktree add --detach /tmp/radixdb-base "$BASE_SHA"
+          CARGO_TARGET_DIR=/tmp/radixdb-base-target \
+            cargo build --locked --release --bin radixdb-bench --features bench-harness \
+            --manifest-path /tmp/radixdb-base/Cargo.toml
+          cp /tmp/radixdb-base-target/release/radixdb-bench /tmp/radixdb-bench-base
+
+      - name: Run paired development-scale benchmark
+        run: |
+          run_base() {
+            /tmp/radixdb-bench-base --run --scale dev --participant server \
+              --root /tmp/radix-perf-base --run-id "$1"
+          }
+          run_current() {
+            /tmp/radixdb-bench-current --run --scale dev --participant server \
+              --root /tmp/radix-perf-current --run-id "$1"
+          }
+
+          run_base ci-base-warmup
+          run_current ci-current-warmup
+          base_files=()
+          current_files=()
+          for sample in 1 2 3 4 5; do
+            if (( sample % 2 == 1 )); then
+              run_base "ci-base-${sample}"
+              run_current "ci-current-${sample}"
+            else
+              run_current "ci-current-${sample}"
+              run_base "ci-base-${sample}"
+            fi
+            base_files+=("/tmp/radix-perf-base/results/ci-base-${sample}/results.json")
+            current_files+=("/tmp/radix-perf-current/results/ci-current-${sample}/results.json")
+          done
+          python3 scripts/check-performance-regression.py \
+            --base "${base_files[@]}" --current "${current_files[@]}"
+
+      - name: Retain raw performance evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: paired-performance-${{ github.event.pull_request.head.sha }}
+          path: |
+            /tmp/radix-perf-base/results
+            /tmp/radix-perf-current/results
+          if-no-files-found: error
+
+  release-build:
+    name: Release build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+        with:
+          toolchain: 1.97.0
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+      - name: Pin reproducible build timestamp to source revision
+        run: echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >>"${GITHUB_ENV}"
+
+      - name: Build release binaries
+        run: |
+          cargo build --locked --release \
+            --bin radixdb-server --bin radixdb-password --bin radixdb-cli \
+            --bin radixdb-smoke-client \
+            --features cli
+          cargo build --locked --release --bin radixdb-bench --features bench-harness
+
+      - name: Check release scripts
+        run: |
+          bash -n release/lib.sh release/start.sh release/stop.sh release/status.sh \
+            release/smoke-client.sh release/package-artifacts.sh \
+            release/install-systemd.sh release/uninstall-systemd.sh \
+            release/backup-external.sh release/restore-external.sh \
+            scripts/check-release-lifecycle.sh scripts/check-release-bundle.sh \
+            scripts/register-benchmark-postgres.sh
+
+      - name: Release lifecycle and provenance gate
+        id: release_bundle
+        run: |
+          RADIXDB_TEST_SERVER_BIN=target/release/radixdb-server \
+            scripts/check-release-lifecycle.sh
+          bundle_parent="$(mktemp -d)"
+          bundle="${bundle_parent}/radixdb-release"
+          scripts/check-release-bundle.sh "$bundle" \
+            target/release/radixdb-server target/release/radixdb-cli \
+            target/release/radixdb-smoke-client
+          echo "bundle=${bundle}" >>"${GITHUB_OUTPUT}"
+
+      - name: Upload verified release bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: radixdb-release-${{ github.sha }}
+          path: ${{ steps.release_bundle.outputs.bundle }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Public server/client runtime smoke
+        run: examples/public/rust-client/scripts/smoke.sh

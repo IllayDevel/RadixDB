@@ -1,0 +1,5 @@
+error: field type requires codec "u64-le"
+  --> tests/ui/unsupported_field_codec.rs:13:5
+   |
+13 |     #[radix_field(codec = "native-endian")]
+   |     ^

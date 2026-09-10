@@ -1,0 +1,256 @@
+version = "1.2"
+
+[[redirects]]
+source = "docs/README.md"
+routes = ["", "index.html"]
+target = "en/"
+
+[[redirects]]
+source = "docs/en/README.md"
+routes = ["en/", "en/index.html"]
+target = "en/"
+
+[[redirects]]
+source = "docs/ru/README.md"
+routes = ["ru/", "ru/index.html"]
+target = "ru/"
+
+[[redirects]]
+source = "docs/architecture/README.md"
+routes = ["architecture/", "architecture/index.html"]
+target = "en/internals/overview/"
+
+[[redirects]]
+source = "docs/architecture/crate-ownership.md"
+routes = ["architecture/crate-ownership.html", "architecture/crate-ownership/"]
+target = "en/internals/overview/"
+
+[[redirects]]
+source = "docs/benchmarks/README.md"
+routes = ["benchmarks/", "benchmarks/index.html"]
+target = "en/appendices/benchmarks/"
+
+[[redirects]]
+source = "docs/benchmarks/engine-results.md"
+routes = ["benchmarks/engine-results.html", "benchmarks/engine-results/"]
+target = "en/appendices/benchmarks/"
+
+[[redirects]]
+source = "docs/benchmarks/engine-results.ru.md"
+routes = ["benchmarks/engine-results.ru.html", "benchmarks/engine-results.ru/"]
+target = "ru/appendices/benchmarks/"
+
+[[redirects]]
+source = "docs/benchmarks/postgres-sqlite-radixdb-100m.md"
+routes = ["benchmarks/postgres-sqlite-radixdb-100m.html", "benchmarks/postgres-sqlite-radixdb-100m/"]
+target = "en/appendices/benchmarks/"
+
+[[redirects]]
+source = "docs/en/benchmarks.md"
+routes = ["en/benchmarks.html", "en/benchmarks/"]
+target = "en/appendices/benchmarks/"
+
+[[redirects]]
+source = "docs/en/cli.md"
+routes = ["en/cli.html", "en/cli/"]
+target = "en/reference/programs/cli/"
+
+[[redirects]]
+source = "docs/en/configuration.md"
+routes = ["en/configuration.html", "en/configuration/"]
+target = "en/administration/configuration/"
+
+[[redirects]]
+source = "docs/en/getting-started.md"
+routes = ["en/getting-started.html", "en/getting-started/"]
+target = "en/tutorial/getting-started/"
+
+[[redirects]]
+source = "docs/en/import-schema.md"
+routes = ["en/import-schema.html", "en/import-schema/"]
+target = "en/tutorial/first-database/"
+
+[[redirects]]
+source = "docs/en/indexes.md"
+routes = ["en/indexes.html", "en/indexes/"]
+target = "en/sql/indexes/"
+
+[[redirects]]
+source = "docs/en/install-opt-systemd.md"
+routes = ["en/install-opt-systemd.html", "en/install-opt-systemd/"]
+target = "en/administration/installation/"
+
+[[redirects]]
+source = "docs/en/join-planning.md"
+routes = ["en/join-planning.html", "en/join-planning/"]
+target = "en/sql/queries/"
+
+[[redirects]]
+source = "docs/en/limitations.md"
+routes = ["en/limitations.html", "en/limitations/"]
+target = "en/appendices/limits/"
+
+[[redirects]]
+source = "docs/en/maintenance.md"
+routes = ["en/maintenance.html", "en/maintenance/"]
+target = "en/administration/backup-restore/"
+
+[[redirects]]
+source = "docs/en/navigable-references.md"
+routes = ["en/navigable-references.html", "en/navigable-references/"]
+target = "en/sql/navigable-references/"
+
+[[redirects]]
+source = "docs/en/orm.md"
+routes = ["en/orm.html", "en/orm/"]
+target = "en/clients/orm/"
+
+[[redirects]]
+source = "docs/en/query-tour.md"
+routes = ["en/query-tour.html", "en/query-tour/"]
+target = "en/tutorial/relationships/"
+
+[[redirects]]
+source = "docs/en/radixtrade-demo.md"
+routes = ["en/radixtrade-demo.html", "en/radixtrade-demo/"]
+target = "en/tutorial/first-database/"
+
+[[redirects]]
+source = "docs/en/rust-client.md"
+routes = ["en/rust-client.html", "en/rust-client/"]
+target = "en/clients/rust-client/"
+
+[[redirects]]
+source = "docs/en/server.md"
+routes = ["en/server.html", "en/server/"]
+target = "en/administration/server/"
+
+[[redirects]]
+source = "docs/en/sql-feature-matrix.md"
+routes = ["en/sql-feature-matrix.html", "en/sql-feature-matrix/"]
+target = "en/appendices/compatibility/"
+
+[[redirects]]
+source = "docs/en/sql-quickstart.md"
+routes = ["en/sql-quickstart.html", "en/sql-quickstart/"]
+target = "en/tutorial/first-database/"
+
+[[redirects]]
+source = "docs/en/storage-compatibility.md"
+routes = ["en/storage-compatibility.html", "en/storage-compatibility/"]
+target = "en/administration/storage/"
+
+[[redirects]]
+source = "docs/en/troubleshooting.md"
+routes = ["en/troubleshooting.html", "en/troubleshooting/"]
+target = "en/administration/troubleshooting/"
+
+[[redirects]]
+source = "docs/en/types.md"
+routes = ["en/types.html", "en/types/"]
+target = "en/sql/types/"
+
+[[redirects]]
+source = "docs/ru/benchmarks.md"
+routes = ["ru/benchmarks.html", "ru/benchmarks/"]
+target = "ru/appendices/benchmarks/"
+
+[[redirects]]
+source = "docs/ru/cli.md"
+routes = ["ru/cli.html", "ru/cli/"]
+target = "ru/reference/programs/cli/"
+
+[[redirects]]
+source = "docs/ru/configuration.md"
+routes = ["ru/configuration.html", "ru/configuration/"]
+target = "ru/administration/configuration/"
+
+[[redirects]]
+source = "docs/ru/getting-started.md"
+routes = ["ru/getting-started.html", "ru/getting-started/"]
+target = "ru/tutorial/getting-started/"
+
+[[redirects]]
+source = "docs/ru/import-schema.md"
+routes = ["ru/import-schema.html", "ru/import-schema/"]
+target = "ru/tutorial/first-database/"
+
+[[redirects]]
+source = "docs/ru/indexes.md"
+routes = ["ru/indexes.html", "ru/indexes/"]
+target = "ru/sql/indexes/"
+
+[[redirects]]
+source = "docs/ru/install-opt-systemd.md"
+routes = ["ru/install-opt-systemd.html", "ru/install-opt-systemd/"]
+target = "ru/administration/installation/"
+
+[[redirects]]
+source = "docs/ru/join-planning.md"
+routes = ["ru/join-planning.html", "ru/join-planning/"]
+target = "ru/sql/queries/"
+
+[[redirects]]
+source = "docs/ru/limitations.md"
+routes = ["ru/limitations.html", "ru/limitations/"]
+target = "ru/appendices/limits/"
+
+[[redirects]]
+source = "docs/ru/maintenance.md"
+routes = ["ru/maintenance.html", "ru/maintenance/"]
+target = "ru/administration/backup-restore/"
+
+[[redirects]]
+source = "docs/ru/navigable-references.md"
+routes = ["ru/navigable-references.html", "ru/navigable-references/"]
+target = "ru/sql/navigable-references/"
+
+[[redirects]]
+source = "docs/ru/orm.md"
+routes = ["ru/orm.html", "ru/orm/"]
+target = "ru/clients/orm/"
+
+[[redirects]]
+source = "docs/ru/query-tour.md"
+routes = ["ru/query-tour.html", "ru/query-tour/"]
+target = "ru/tutorial/relationships/"
+
+[[redirects]]
+source = "docs/ru/radixtrade-demo.md"
+routes = ["ru/radixtrade-demo.html", "ru/radixtrade-demo/"]
+target = "ru/tutorial/first-database/"
+
+[[redirects]]
+source = "docs/ru/rust-client.md"
+routes = ["ru/rust-client.html", "ru/rust-client/"]
+target = "ru/clients/rust-client/"
+
+[[redirects]]
+source = "docs/ru/server.md"
+routes = ["ru/server.html", "ru/server/"]
+target = "ru/administration/server/"
+
+[[redirects]]
+source = "docs/ru/sql-feature-matrix.md"
+routes = ["ru/sql-feature-matrix.html", "ru/sql-feature-matrix/"]
+target = "ru/appendices/compatibility/"
+
+[[redirects]]
+source = "docs/ru/sql-quickstart.md"
+routes = ["ru/sql-quickstart.html", "ru/sql-quickstart/"]
+target = "ru/tutorial/first-database/"
+
+[[redirects]]
+source = "docs/ru/storage-compatibility.md"
+routes = ["ru/storage-compatibility.html", "ru/storage-compatibility/"]
+target = "ru/administration/storage/"
+
+[[redirects]]
+source = "docs/ru/troubleshooting.md"
+routes = ["ru/troubleshooting.html", "ru/troubleshooting/"]
+target = "ru/administration/troubleshooting/"
+
+[[redirects]]
+source = "docs/ru/types.md"
+routes = ["ru/types.html", "ru/types/"]
+target = "ru/sql/types/"

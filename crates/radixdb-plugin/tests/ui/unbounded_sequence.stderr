@@ -1,0 +1,5 @@
+error: bounded sequence requires max_items
+  --> tests/ui/unbounded_sequence.rs:13:5
+   |
+13 |     #[radix_field(codec = "u32-le")]
+   |     ^

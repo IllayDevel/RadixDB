@@ -1,0 +1,42 @@
+{
+  "name": "radixdb-documentation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --force --host 127.0.0.1",
+    "check:content": "node scripts/check-content.mjs && node --test scripts/check-content.test.mjs scripts/publication.test.mjs scripts/radixdb-sql-grammar.test.mjs",
+    "build": "npm run check:content && astro build --force",
+    "build:publication": "npm run build && node scripts/package-site.mjs",
+    "preview": "astro preview --host 127.0.0.1",
+    "test:browser": "playwright test",
+    "test:tutorial": "node scripts/test-tutorial.mjs",
+    "test:backup-restore": "node scripts/test-backup-restore.mjs",
+    "test:storage-memory": "node scripts/test-storage-memory.mjs",
+    "test:operations": "node scripts/test-operations.mjs",
+    "test:clients": "node scripts/test-clients.mjs",
+    "test:programming": "node scripts/test-programming.mjs",
+    "test:security": "node scripts/test-security.mjs",
+    "test:extensions": "node scripts/test-extensions.mjs",
+    "test:reference-programs": "node scripts/test-reference-programs.mjs",
+    "test:internals": "node scripts/test-internals.mjs",
+    "test:limits": "node scripts/test-limits.mjs",
+    "test:benchmarks-release": "node scripts/test-benchmarks-release.mjs",
+    "test:root-docs": "node scripts/test-root-docs.mjs",
+    "test:sql-reference": "node scripts/test-sql-reference.mjs",
+    "test:examples": "node scripts/test-examples.mjs",
+    "test:acceptance": "node scripts/test-acceptance.mjs",
+    "test:editorial": "node scripts/check-editorial.mjs",
+    "test:publication": "node scripts/test-publication.mjs",
+    "test:cutover": "node scripts/check-cutover.mjs",
+    "test:structure": "npm run check:content && astro build --force && playwright test -g 'rendered manual links and anchors resolve|root redirect and SQL command reference remain navigable'"
+  },
+  "dependencies": {
+    "@astrojs/markdown-satteri": "0.4.0",
+    "@astrojs/starlight": "0.42.0",
+    "astro": "7.3.1",
+    "shiki": "4.4.3",
+    "smol-toml": "1.8.0"
+  },
+  "devDependencies": { "@playwright/test": "1.63.0", "pagefind": "1.5.2" },
+  "engines": { "node": ">=22.12.0" }
+}

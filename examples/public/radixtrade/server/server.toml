@@ -1,0 +1,17 @@
+# Minimal RadixTrade demo server config.
+# Copy this file and adjust data_dir/listen address for your machine.
+
+[server]
+bind_ip = "127.0.0.1"
+port = 15441
+data_dir = "examples/public/radixtrade/runtime/server-data"
+max_connections = 64
+copy_max_transaction_bytes = 536870912
+max_compaction_jobs = 1
+storage_cpu_workers = 0
+page_cache_level = 0
+page_cache_max_bytes = 0
+page_cache_memory_reserve = 0
+
+# Immutable-artifact scan defaults used by the current release profile.
+read_queue_depth = 1

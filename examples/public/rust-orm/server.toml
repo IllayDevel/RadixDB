@@ -1,0 +1,13 @@
+[server]
+bind_ip = "127.0.0.1"
+port = 16441
+data_dir = "examples/public/rust-orm/runtime/server-data"
+max_connections = 32
+copy_max_transaction_bytes = 536870912
+max_compaction_jobs = 1
+storage_cpu_workers = 0
+page_cache_level = 0
+page_cache_max_bytes = 0
+page_cache_memory_reserve = 0
+
+read_queue_depth = 1

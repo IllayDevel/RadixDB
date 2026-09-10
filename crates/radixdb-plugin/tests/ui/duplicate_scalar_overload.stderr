@@ -1,0 +1,5 @@
+error: duplicate scalar overload `same_name(i64)`
+  --> tests/ui/duplicate_scalar_overload.rs:24:5
+   |
+24 |     #[radixdb_scalar(
+   |     ^

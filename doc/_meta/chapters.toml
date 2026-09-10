@@ -1,0 +1,866 @@
+target_version = "1.2"
+locales = ["en", "ru"]
+
+[[chapters]]
+id = "tutorial-server-connection"
+path = "tutorial/server-connection.md"
+order = 15.5
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server/launcher.rs", "src/server/config.rs", "examples/public/rust-client/basic.rs"]
+tests = ["npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "clients-overview"
+path = "clients/overview.md"
+order = 35.5
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-api", "crates/radixdb-client", "crates/radixdb-orm", "examples/public/rust-client/basic.rs"]
+tests = ["npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "manual-index"
+path = "index.md"
+order = 0
+status = "verified"
+feature_status = "accepted"
+sources = ["README.md", "doc/src/content/docs/en/index.md", "doc/src/content/docs/ru/index.md"]
+tests = ["npm run build"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = ["docs/README.md", "docs/en/README.md", "docs/ru/README.md"]
+
+[[chapters]]
+id = "glossary"
+path = "appendices/glossary.md"
+order = 900
+status = "verified"
+feature_status = "accepted"
+sources = ["doc/src/content/docs/en/appendices/glossary.md", "doc/src/content/docs/ru/appendices/glossary.md"]
+tests = ["npm run build"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "preface-what-is-radixdb"
+path = "preface/what-is-radixdb.md"
+order = 10
+status = "verified"
+feature_status = "implemented"
+sources = ["README.md","Cargo.toml","LICENSE","NOTICE"]
+tests = ["npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "preface-conventions"
+path = "preface/conventions.md"
+order = 11
+status = "verified"
+feature_status = "implemented"
+sources = ["README.md","Cargo.toml","LICENSE","NOTICE"]
+tests = ["npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "tutorial-getting-started"
+path = "tutorial/getting-started.md"
+order = 12
+status = "verified"
+feature_status = "implemented"
+sources = ["src/cli/mod.rs","doc/examples/tutorial"]
+tests = ["npm run build", "npm run test:browser", "npm run test:tutorial"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "tutorial-first-database"
+path = "tutorial/first-database.mdx"
+order = 13
+status = "verified"
+feature_status = "implemented"
+sources = ["src/cli/mod.rs", "doc/examples/tutorial/setup.sql", "doc/examples/tutorial/select.sql"]
+tests = ["npm run test:tutorial", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = ["docs/en/sql-quickstart.md", "docs/ru/sql-quickstart.md"]
+
+[[chapters]]
+id = "tutorial-relationships"
+path = "tutorial/relationships.mdx"
+order = 14
+status = "verified"
+feature_status = "implemented"
+sources = ["src/cli/mod.rs","doc/examples/tutorial"]
+tests = ["npm run build", "npm run test:browser", "npm run test:tutorial"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "tutorial-transactions"
+path = "tutorial/transactions.mdx"
+order = 15
+status = "verified"
+feature_status = "implemented"
+sources = ["src/cli/mod.rs","doc/examples/tutorial"]
+tests = ["npm run build", "npm run test:browser", "npm run test:tutorial"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-syntax"
+path = "sql/syntax.md"
+order = 16
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["npm run build", "npm run test:browser", "node scripts/test-syntax.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-types"
+path = "sql/types.md"
+order = 17
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["node scripts/test-values.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-expressions"
+path = "sql/expressions.md"
+order = 18
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["node scripts/test-values.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-ddl"
+path = "sql/ddl.md"
+order = 19
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["node scripts/test-schema.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-dml"
+path = "sql/dml.md"
+order = 20
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["node scripts/test-dml.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-indexes"
+path = "sql/indexes.md"
+order = 21
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["node scripts/test-schema.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-queries"
+path = "sql/queries.md"
+order = 22
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["node scripts/test-queries.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-transactions"
+path = "sql/transactions.md"
+order = 23
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["node scripts/test-transactions.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "sql-navigable-references"
+path = "sql/navigable-references.md"
+order = 24
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","crates/radixdb-functions","tests"]
+tests = ["node scripts/test-navigation.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-installation"
+path = "administration/installation.md"
+order = 25
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server", "src/bin/radixdb_password.rs", "crates/radixdb-storage", "release"]
+tests = ["node scripts/test-administration-server.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-server"
+path = "administration/server.md"
+order = 26
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server", "src/bin/radixdb_password.rs", "crates/radixdb-storage", "release"]
+tests = ["node scripts/test-administration-server.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-configuration"
+path = "administration/configuration.md"
+order = 27
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server", "src/bin/radixdb_password.rs", "crates/radixdb-executor/src/credentials.rs", "crates/radixdb-storage", "release"]
+tests = ["node scripts/test-configuration.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-storage"
+path = "administration/storage.md"
+order = 28
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-storage/src/config.rs","crates/radixdb-storage/src/v6/data","crates/radixdb-storage/src/mvcc/engine","doc/public/evidence/performance/CA_80_7_100M_COMPARATIVE_REPORT.md"]
+tests = ["node scripts/test-storage-memory.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-memory"
+path = "administration/memory.md"
+order = 29
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server/config.rs","crates/radixdb-storage/src/config.rs","crates/radixdb-storage/src/page_cache","doc/public/evidence/performance/CA_80_5C_MICRO_DEVICE_20K_REPORT.md","doc/public/evidence/performance/CA_80_7_100M_COMPARATIVE_REPORT.md","doc/public/evidence/reliability/CA_90_3_6H_ACCEPTANCE_REPORT.md"]
+tests = ["node scripts/test-storage-memory.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-backup-restore"
+path = "administration/backup-restore.md"
+order = 30
+status = "verified"
+feature_status = "implemented"
+sources = ["release/backup-external.sh","release/restore-external.sh","crates/radixdb-storage/src/mvcc/engine/physical_snapshot.rs","crates/radixdb-storage/src/v6/snapshot","src/sql_dump.rs"]
+tests = ["node scripts/test-backup-restore.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-upgrading"
+path = "administration/upgrading.md"
+order = 31
+status = "verified"
+feature_status = "implemented"
+sources = ["src/sql_dump.rs","src/cli/mod.rs","tests/catalog_artifact_sql_migration_oracle.rs","tests/catalog_artifact_migration_rehearsal.rs"]
+tests = ["node scripts/test-operations.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-monitoring"
+path = "administration/monitoring.md"
+order = 32
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server/session/status.rs","crates/radixdb-protocol/src/lib.rs","crates/radixdb-storage/src/mvcc/engine/runtime.rs","tests/server_status_test.rs","release/status.sh"]
+tests = ["node scripts/test-operations.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-troubleshooting"
+path = "administration/troubleshooting.md"
+order = 33
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server/session/status.rs","crates/radixdb-storage/src/config.rs","crates/radixdb-storage/src/mvcc/wal_manager","crates/radixdb-storage/tests/complete_recovery.rs","tests/failpoint_io_test.rs"]
+tests = ["node scripts/test-operations.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-authentication"
+path = "administration/authentication.md"
+order = 34
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server/session.rs", "src/server/config.rs", "src/bin/radixdb_password.rs", "crates/radixdb-executor/src/credentials.rs", "crates/radixdb-client", "crates/radixdb-protocol", "doc/examples/security/authentication.rs"]
+tests = ["npm run test:security", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-access-control"
+path = "administration/access-control.md"
+order = 35
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/ast/security.rs", "crates/radixdb-catalog/src/payload/security.rs", "crates/radixdb-executor/src/authorization.rs", "crates/radixdb-executor/src/catalog/security.rs", "doc/examples/security/acl.rs"]
+tests = ["npm run test:security", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "clients-embedded-rust"
+path = "clients/embedded-rust.md"
+order = 36
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-api", "doc/examples/clients/embedded.rs"]
+tests = ["npm run test:clients", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "clients-rust-client"
+path = "clients/rust-client.md"
+order = 37
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-client", "examples/public/rust-client", "doc/examples/clients/tcp.rs"]
+tests = ["npm run test:clients", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = ["docs/en/rust-client.md", "docs/ru/rust-client.md"]
+
+[[chapters]]
+id = "clients-orm"
+path = "clients/orm.md"
+order = 38
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-api", "crates/radixdb-client", "crates/radixdb-orm", "examples/public/rust-orm", "doc/examples/clients/orm.rs"]
+tests = ["npm run test:clients", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = ["docs/en/orm.md", "docs/ru/orm.md"]
+
+[[chapters]]
+id = "programming-pl-sql"
+path = "programming/pl-sql.md"
+order = 39
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql", "crates/radixdb-procedural", "crates/radixdb-executor/src/procedural", "doc/examples/programming/server_programming.rs"]
+tests = ["npm run test:programming", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "programming-routines"
+path = "programming/routines.md"
+order = 40
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql", "crates/radixdb-procedural", "crates/radixdb-executor/src/procedural", "doc/examples/programming/server_programming.rs"]
+tests = ["npm run test:programming", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "programming-triggers"
+path = "programming/triggers.md"
+order = 41
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql", "crates/radixdb-procedural", "crates/radixdb-executor/src/procedural", "doc/examples/programming/server_programming.rs"]
+tests = ["npm run test:programming", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "programming-jobs"
+path = "programming/jobs.md"
+order = 42
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql", "crates/radixdb-procedural", "crates/radixdb-executor/src/procedural", "doc/examples/programming/server_programming.rs"]
+tests = ["npm run test:programming", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "programming-routine-security"
+path = "programming/routine-security.md"
+order = 43
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-procedural", "crates/radixdb-executor/src/authorization.rs", "crates/radixdb-executor/src/procedural", "doc/examples/security/acl.rs"]
+tests = ["npm run test:security", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "internals-overview"
+path = "internals/overview.md"
+order = 44
+status = "verified"
+feature_status = "implemented"
+sources = ["Cargo.toml", "crates/radixdb-api/src/database.rs", "crates/radixdb-executor/src/dispatch", "src/server/session.rs"]
+tests = ["npm run test:internals", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "internals-storage"
+path = "internals/storage.md"
+order = 45
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-storage/src/mvcc", "crates/radixdb-storage/src/v6", "crates/radixdb-storage/tests/atomic_generation_publication.rs"]
+tests = ["npm run test:internals", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "internals-protocol"
+path = "internals/protocol.md"
+order = 46
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-protocol/src/lib.rs", "crates/radixdb-client/src/lib.rs", "src/server/session.rs", "src/server/config.rs"]
+tests = ["npm run test:internals", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "appendices-compatibility"
+path = "appendices/compatibility.md"
+order = 47
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql","crates/radixdb-executor","doc/src/content/docs","tests"]
+tests = ["node scripts/test-feature-matrix.mjs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "appendices-limits"
+path = "appendices/limits.md"
+order = 48
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-catalog/src", "crates/radixdb-storage/src/v6", "crates/radixdb-protocol/src/lib.rs", "src/server/config.rs", "release/server.toml", "doc/public/evidence"]
+tests = ["npm run test:limits", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "appendices-benchmarks"
+path = "appendices/benchmarks.md"
+order = 49
+status = "verified"
+feature_status = "implemented"
+sources = ["doc/public/evidence/performance/CA_80_7_100M_COMPARATIVE_REPORT.md", "doc/public/evidence/performance/RADIXDB_1_2_100M_VALIDATION.md", "doc/public/evidence/reliability/CA_90_3_6H_ACCEPTANCE_REPORT.md"]
+tests = ["npm run test:benchmarks-release", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "appendices-release-notes"
+path = "appendices/release-notes.md"
+order = 50
+status = "verified"
+feature_status = "implemented"
+sources = ["CHANGELOG.md", "crates/radixdb-protocol/src/lib.rs", "crates/radixdb-catalog/src"]
+tests = ["npm run test:benchmarks-release", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "appendices-evidence"
+path = "appendices/evidence.md"
+order = 49.5
+status = "verified"
+feature_status = "accepted"
+sources = ["doc/public/evidence"]
+tests = ["npm run test:benchmarks-release", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-index"
+path = "reference/sql/index.md"
+order = 51
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql", "crates/radixdb-executor", "doc/src/content/docs/en/appendices/compatibility.md"]
+tests = ["npm run test:sql-reference", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-select"
+path = "reference/sql/select.md"
+order = 52
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/query.rs", "crates/radixdb-executor/src/query", "crates/radixdb-executor/src/authorization.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-queries.mjs", "node scripts/test-navigation.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-insert"
+path = "reference/sql/insert.md"
+order = 53
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/dml.rs", "crates/radixdb-executor/src/mutation", "crates/radixdb-executor/src/authorization.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-dml.mjs", "node scripts/test-navigation.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-update"
+path = "reference/sql/update.md"
+order = 54
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/dml.rs", "crates/radixdb-executor/src/mutation", "crates/radixdb-executor/src/authorization.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-dml.mjs", "node scripts/test-navigation.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-delete"
+path = "reference/sql/delete.md"
+order = 55
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/dml.rs", "crates/radixdb-executor/src/mutation", "crates/radixdb-executor/src/authorization.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-dml.mjs", "node scripts/test-navigation.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-create-table"
+path = "reference/sql/create-table.md"
+order = 56
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/ddl.rs", "crates/radixdb-executor/src/mutation/ddl.rs", "crates/radixdb-executor/src/catalog/security.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-schema.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-alter-table"
+path = "reference/sql/alter-table.md"
+order = 57
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/ddl.rs", "crates/radixdb-executor/src/mutation/ddl.rs", "crates/radixdb-executor/src/catalog/security.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-schema.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-drop-table"
+path = "reference/sql/drop-table.md"
+order = 58
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/ddl.rs", "crates/radixdb-executor/src/mutation/ddl.rs", "crates/radixdb-executor/src/catalog/security.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-schema.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-create-index"
+path = "reference/sql/create-index.md"
+order = 59
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/ddl.rs", "crates/radixdb-executor/src/catalog/index.rs", "crates/radixdb-executor/src/catalog/security.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-schema.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-alter-index"
+path = "reference/sql/alter-index.md"
+order = 60
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/ddl.rs", "crates/radixdb-executor/src/catalog/index.rs", "crates/radixdb-executor/src/catalog/security.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-schema.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-drop-index"
+path = "reference/sql/drop-index.md"
+order = 61
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/ddl.rs", "crates/radixdb-executor/src/catalog/index.rs", "crates/radixdb-executor/src/catalog/security.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-schema.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-describe"
+path = "reference/sql/describe.md"
+order = 62
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/control.rs", "crates/radixdb-executor/src/show.rs", "crates/radixdb-executor/src/authorization.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-schema.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-show"
+path = "reference/sql/show.md"
+order = 63
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/control.rs", "crates/radixdb-executor/src/show.rs", "crates/radixdb-executor/src/authorization.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-schema.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-begin"
+path = "reference/sql/begin.md"
+order = 64
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/control.rs", "crates/radixdb-executor/src/dispatch/transaction.rs", "src/cli/mod.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-transactions.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-commit"
+path = "reference/sql/commit.md"
+order = 65
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/control.rs", "crates/radixdb-executor/src/dispatch/transaction.rs", "src/cli/mod.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-transactions.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-rollback"
+path = "reference/sql/rollback.md"
+order = 66
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/control.rs", "crates/radixdb-executor/src/dispatch/transaction.rs", "src/cli/mod.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-transactions.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-savepoint"
+path = "reference/sql/savepoint.md"
+order = 67
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/control.rs", "crates/radixdb-executor/src/dispatch/transaction.rs", "src/cli/mod.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-transactions.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-release-savepoint"
+path = "reference/sql/release-savepoint.md"
+order = 68
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/control.rs", "crates/radixdb-executor/src/dispatch/transaction.rs", "src/cli/mod.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-transactions.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-set"
+path = "reference/sql/set.md"
+order = 69
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/control.rs", "crates/radixdb-executor/src/query/utility.rs"]
+tests = ["npm run test:sql-reference", "node scripts/test-transactions.mjs"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-programs-cli"
+path = "reference/programs/cli.md"
+order = 70
+status = "verified"
+feature_status = "implemented"
+sources = ["src/cli/mod.rs", "crates/radixdb-api/src/database.rs", "doc/src/content/docs/en/reference/programs/cli.md"]
+tests = ["npm run test:reference-programs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-programs-server"
+path = "reference/programs/server.md"
+order = 71
+status = "verified"
+feature_status = "implemented"
+sources = ["src/bin/radixdb_server.rs", "src/bin/radixdb_password.rs", "src/server/launcher.rs", "src/server/config.rs", "crates/radixdb-executor/src/credentials.rs", "doc/src/content/docs/en/reference/programs/server.md"]
+tests = ["npm run test:reference-programs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-configuration-index"
+path = "reference/configuration/index.md"
+order = 72
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server/config.rs", "crates/radixdb-api/src/database.rs", "crates/radixdb-storage/src/config.rs", "doc/src/content/docs/en/reference/configuration/index.md"]
+tests = ["npm run test:reference-programs", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "administration-extensions"
+path = "administration/extensions.md"
+order = 27.5
+status = "verified"
+feature_status = "implemented"
+sources = ["src/server/config.rs", "src/server/launcher.rs", "crates/radixdb-plugin-host", "crates/radixdb-executor/src/catalog/extension.rs", "crates/radixdb-executor/src/catalog/runtime.rs"]
+tests = ["npm run test:extensions", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "programming-native-extensions"
+path = "programming/native-extensions.md"
+order = 43.5
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-plugin", "crates/radixdb-plugin-macros", "crates/radixdb-plugin-abi", "crates/radixdb-spatial", "examples/public/rust-plugin"]
+tests = ["npm run test:extensions", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-sql-extensions"
+path = "reference/sql/extensions.md"
+order = 69.5
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-sql/src/statements/ddl.rs", "crates/radixdb-sql/src/statements/operator.rs", "crates/radixdb-executor/src/catalog/extension.rs", "crates/radixdb-executor/src/mutation/extension.rs", "crates/radixdb-catalog/src/payload/extension.rs"]
+tests = ["npm run test:extensions", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
+id = "reference-programs-cargo-radixdb-plugin"
+path = "reference/programs/cargo-radixdb-plugin.md"
+order = 71.5
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/cargo-radixdb-plugin", "crates/radixdb-plugin-host", "crates/radixdb-plugin", "examples/public/rust-plugin"]
+tests = ["npm run test:extensions", "npm run build", "npm run test:browser"]
+verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+reviewer = "Codex"
+legacy_paths = []

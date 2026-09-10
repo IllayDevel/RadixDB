@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://radixdb.dev/schema/radixdb.orm.v1.schema.json",
+  "title": "RadixDB ORM IR v1",
+  "type": "object",
+  "required": ["ir", "kind", "payload"],
+  "properties": {
+    "ir": { "const": "radixdb.orm.v1" },
+    "kind": { "enum": ["catalog", "ddl", "select", "insert", "upsert", "update", "delete", "explain", "transaction"] },
+    "payload": { "$ref": "#/$defs/operation" }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "oneOf": [
+        { "properties": { "kind": { "const": "catalog" }, "payload": { "$ref": "#/$defs/catalogOperationEnvelope" } } },
+        { "properties": { "kind": { "const": "ddl" }, "payload": { "$ref": "#/$defs/ddlOperationEnvelope" } } },
+        { "properties": { "kind": { "const": "select" }, "payload": { "$ref": "#/$defs/selectOperationEnvelope" } } },
+        { "properties": { "kind": { "const": "insert" }, "payload": { "$ref": "#/$defs/insertOperationEnvelope" } } },
+        { "properties": { "kind": { "const": "upsert" }, "payload": { "$ref": "#/$defs/upsertOperationEnvelope" } } },
+        { "properties": { "kind": { "const": "update" }, "payload": { "$ref": "#/$defs/updateOperationEnvelope" } } },
+        { "properties": { "kind": { "const": "delete" }, "payload": { "$ref": "#/$defs/deleteOperationEnvelope" } } },
+        { "properties": { "kind": { "const": "explain" }, "payload": { "$ref": "#/$defs/explainOperationEnvelope" } } },
+        { "properties": { "kind": { "const": "transaction" }, "payload": { "$ref": "#/$defs/transactionOperationEnvelope" } } }
+      ]
+    }
+  ],
+  "$defs": {
+    "operation": {
+      "oneOf": [
+        { "$ref": "#/$defs/catalogOperationEnvelope" },
+        { "$ref": "#/$defs/ddlOperationEnvelope" },
+        { "$ref": "#/$defs/selectOperationEnvelope" },
+        { "$ref": "#/$defs/insertOperationEnvelope" },
+        { "$ref": "#/$defs/upsertOperationEnvelope" },
+        { "$ref": "#/$defs/updateOperationEnvelope" },
+        { "$ref": "#/$defs/deleteOperationEnvelope" },
+        { "$ref": "#/$defs/explainOperationEnvelope" },
+        { "$ref": "#/$defs/transactionOperationEnvelope" }
+      ]
+    },
+    "catalogOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "operation"],
+      "properties": { "node": { "const": "catalog" }, "operation": { "$ref": "#/$defs/catalogOperation" } },
+      "additionalProperties": false
+    },
+    "ddlOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "operation"],
+      "properties": { "node": { "const": "ddl" }, "operation": { "$ref": "#/$defs/ddlOperation" } },
+      "additionalProperties": false
+    },
+    "selectOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "query"],
+      "properties": { "node": { "const": "select" }, "query": { "$ref": "#/$defs/select" } },
+      "additionalProperties": false
+    },
+    "insertOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "statement"],
+      "properties": { "node": { "const": "insert" }, "statement": { "$ref": "#/$defs/insert" } },
+      "additionalProperties": false
+    },
+    "upsertOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "statement"],
+      "properties": { "node": { "const": "upsert" }, "statement": { "$ref": "#/$defs/upsert" } },
+      "additionalProperties": false
+    },
+    "updateOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "statement"],
+      "properties": { "node": { "const": "update" }, "statement": { "$ref": "#/$defs/update" } },
+      "additionalProperties": false
+    },
+    "deleteOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "statement"],
+      "properties": { "node": { "const": "delete" }, "statement": { "$ref": "#/$defs/delete" } },
+      "additionalProperties": false
+    },
+    "explainOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "statement"],
+      "properties": { "node": { "const": "explain" }, "statement": { "$ref": "#/$defs/explain" } },
+      "additionalProperties": false
+    },
+    "transactionOperationEnvelope": {
+      "type": "object",
+      "required": ["node", "statement"],
+      "properties": { "node": { "const": "transaction" }, "statement": { "$ref": "#/$defs/transactionOperation" } },
+      "additionalProperties": false
+    },
+    "catalogOperation": {
+      "oneOf": [
+        { "$ref": "#/$defs/catalogListTables" },
+        { "$ref": "#/$defs/catalogDescribeTable" },
+        { "$ref": "#/$defs/catalogDescribeDatabase" },
+        { "$ref": "#/$defs/catalogShowIndexes" }
+      ]
+    },
+    "catalogListTables": { "type": "object", "required": ["operation"], "properties": { "operation": { "const": "list_tables" } }, "additionalProperties": false },
+    "catalogDescribeDatabase": { "type": "object", "required": ["operation"], "properties": { "operation": { "const": "describe_database" } }, "additionalProperties": false },
+    "catalogDescribeTable": { "type": "object", "required": ["operation", "table"], "properties": { "operation": { "const": "describe_table" }, "table": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false },
+    "catalogShowIndexes": { "type": "object", "required": ["operation", "table"], "properties": { "operation": { "const": "show_indexes" }, "table": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false },
+    "typedValue": {
+      "oneOf": [
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "null" }, "value": { "$ref": "#/$defs/dataType" } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "integer" }, "value": { "type": "integer", "minimum": -9223372036854775808, "maximum": 9223372036854775807 } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "float" }, "value": { "oneOf": [{ "type": "number" }, { "enum": ["nan", "positive_infinity", "negative_infinity"] }] } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "text" }, "value": { "type": "string" } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "boolean" }, "value": { "type": "boolean" } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "timestamp" }, "value": { "type": "string", "format": "date-time" } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "date" }, "value": { "type": "string", "format": "date" } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "json" }, "value": true }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "uuid" }, "value": { "type": "string", "format": "uuid" } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "bytes" }, "value": { "type": "string", "contentEncoding": "base64" } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "decimal" }, "value": { "type": "string", "pattern": "^[+-]?[0-9]+(?:[.][0-9]*)?$" } }, "additionalProperties": false },
+        { "type": "object", "required": ["type", "value"], "properties": { "type": { "const": "vector" }, "value": { "type": "array", "items": { "type": "number" }, "maxItems": 65535 } }, "additionalProperties": false }
+      ]
+    },
+    "dataType": {
+      "oneOf": [
+        { "$ref": "#/$defs/unitTypeNull" },
+        { "$ref": "#/$defs/unitTypeInteger" },
+        { "$ref": "#/$defs/unitTypeFloat" },
+        { "$ref": "#/$defs/unitTypeText" },
+        { "$ref": "#/$defs/unitTypeBoolean" },
+        { "$ref": "#/$defs/unitTypeTimestamp" },
+        { "$ref": "#/$defs/unitTypeDate" },
+        { "$ref": "#/$defs/unitTypeJson" },
+        { "$ref": "#/$defs/unitTypeUuid" },
+        { "$ref": "#/$defs/unitTypeBytes" },
+        { "$ref": "#/$defs/decimalType" },
+        { "$ref": "#/$defs/vectorType" }
+      ]
+    },
+    "unitTypeNull": { "type": "object", "required": ["type"], "properties": { "type": { "const": "null" } }, "additionalProperties": false },
+    "unitTypeInteger": { "type": "object", "required": ["type"], "properties": { "type": { "const": "integer" } }, "additionalProperties": false },
+    "unitTypeFloat": { "type": "object", "required": ["type"], "properties": { "type": { "const": "float" } }, "additionalProperties": false },
+    "unitTypeText": { "type": "object", "required": ["type"], "properties": { "type": { "const": "text" } }, "additionalProperties": false },
+    "unitTypeBoolean": { "type": "object", "required": ["type"], "properties": { "type": { "const": "boolean" } }, "additionalProperties": false },
+    "unitTypeTimestamp": { "type": "object", "required": ["type"], "properties": { "type": { "const": "timestamp" } }, "additionalProperties": false },
+    "unitTypeDate": { "type": "object", "required": ["type"], "properties": { "type": { "const": "date" } }, "additionalProperties": false },
+    "unitTypeJson": { "type": "object", "required": ["type"], "properties": { "type": { "const": "json" } }, "additionalProperties": false },
+    "unitTypeUuid": { "type": "object", "required": ["type"], "properties": { "type": { "const": "uuid" } }, "additionalProperties": false },
+    "unitTypeBytes": { "type": "object", "required": ["type"], "properties": { "type": { "const": "bytes" } }, "additionalProperties": false },
+    "decimalType": { "type": "object", "required": ["type", "precision", "scale"], "properties": { "type": { "const": "decimal" }, "precision": { "type": ["integer", "null"], "minimum": 1, "maximum": 38 }, "scale": { "type": ["integer", "null"], "minimum": 0, "maximum": 38 } }, "additionalProperties": false },
+    "vectorType": { "type": "object", "required": ["type", "dimensions"], "properties": { "type": { "const": "vector" }, "dimensions": { "type": "integer", "minimum": 1, "maximum": 65535 } }, "additionalProperties": false },
+    "expression": {
+      "oneOf": [
+        { "$ref": "#/$defs/columnExpression" },
+        { "$ref": "#/$defs/literalExpression" },
+        { "$ref": "#/$defs/starExpression" },
+        { "$ref": "#/$defs/unaryExpression" },
+        { "$ref": "#/$defs/binaryExpression" },
+        { "$ref": "#/$defs/functionExpression" },
+        { "$ref": "#/$defs/aggregateExpression" },
+        { "$ref": "#/$defs/windowExpression" },
+        { "$ref": "#/$defs/castExpression" },
+        { "$ref": "#/$defs/caseExpression" },
+        { "$ref": "#/$defs/isNullExpression" },
+        { "$ref": "#/$defs/betweenExpression" },
+        { "$ref": "#/$defs/inListExpression" },
+        { "$ref": "#/$defs/inSubqueryExpression" },
+        { "$ref": "#/$defs/existsExpression" },
+        { "$ref": "#/$defs/scalarSubqueryExpression" },
+        { "$ref": "#/$defs/tupleExpression" },
+        { "$ref": "#/$defs/navigationExpression" },
+        { "$ref": "#/$defs/groupingExpression" }
+      ]
+    },
+    "columnExpression": { "type": "object", "required": ["node", "column"], "properties": { "node": { "const": "column" }, "column": { "$ref": "#/$defs/columnRef" } }, "additionalProperties": false },
+    "literalExpression": { "type": "object", "required": ["node", "value"], "properties": { "node": { "const": "literal" }, "value": { "$ref": "#/$defs/typedValue" } }, "additionalProperties": false },
+    "starExpression": { "type": "object", "required": ["node", "relation"], "properties": { "node": { "const": "star" }, "relation": { "type": ["string", "null"] } }, "additionalProperties": false },
+    "unaryExpression": { "type": "object", "required": ["node", "operator", "expression"], "properties": { "node": { "const": "unary" }, "operator": { "enum": ["not", "negate", "positive"] }, "expression": { "$ref": "#/$defs/expression" } }, "additionalProperties": false },
+    "binaryExpression": { "type": "object", "required": ["node", "left", "operator", "right"], "properties": { "node": { "const": "binary" }, "left": { "$ref": "#/$defs/expression" }, "operator": { "$ref": "#/$defs/binaryOperator" }, "right": { "$ref": "#/$defs/expression" } }, "additionalProperties": false },
+    "functionExpression": { "type": "object", "required": ["node", "name", "arguments"], "properties": { "node": { "const": "function" }, "name": { "$ref": "#/$defs/identifier" }, "arguments": { "$ref": "#/$defs/expressions" } }, "additionalProperties": false },
+    "aggregateExpression": { "type": "object", "required": ["node", "name", "arguments", "distinct", "filter", "order_by"], "properties": { "node": { "const": "aggregate" }, "name": { "$ref": "#/$defs/identifier" }, "arguments": { "$ref": "#/$defs/expressions" }, "distinct": { "type": "boolean" }, "filter": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] }, "order_by": { "$ref": "#/$defs/orderByList" } }, "additionalProperties": false },
+    "windowExpression": { "type": "object", "required": ["node", "function", "specification"], "properties": { "node": { "const": "window" }, "function": { "$ref": "#/$defs/expression" }, "specification": { "$ref": "#/$defs/windowSpecification" } }, "additionalProperties": false },
+    "castExpression": { "type": "object", "required": ["node", "expression", "data_type"], "properties": { "node": { "const": "cast" }, "expression": { "$ref": "#/$defs/expression" }, "data_type": { "$ref": "#/$defs/dataType" } }, "additionalProperties": false },
+    "caseExpression": { "type": "object", "required": ["node", "operand", "branches", "otherwise"], "properties": { "node": { "const": "case" }, "operand": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] }, "branches": { "type": "array", "items": { "$ref": "#/$defs/caseBranch" } }, "otherwise": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] } }, "additionalProperties": false },
+    "isNullExpression": { "type": "object", "required": ["node", "expression", "negated"], "properties": { "node": { "const": "is_null" }, "expression": { "$ref": "#/$defs/expression" }, "negated": { "type": "boolean" } }, "additionalProperties": false },
+    "betweenExpression": { "type": "object", "required": ["node", "expression", "lower", "upper", "negated"], "properties": { "node": { "const": "between" }, "expression": { "$ref": "#/$defs/expression" }, "lower": { "$ref": "#/$defs/expression" }, "upper": { "$ref": "#/$defs/expression" }, "negated": { "type": "boolean" } }, "additionalProperties": false },
+    "inListExpression": { "type": "object", "required": ["node", "expression", "values", "negated"], "properties": { "node": { "const": "in_list" }, "expression": { "$ref": "#/$defs/expression" }, "values": { "$ref": "#/$defs/expressions" }, "negated": { "type": "boolean" } }, "additionalProperties": false },
+    "inSubqueryExpression": { "type": "object", "required": ["node", "expression", "query", "negated"], "properties": { "node": { "const": "in_subquery" }, "expression": { "$ref": "#/$defs/expression" }, "query": { "$ref": "#/$defs/select" }, "negated": { "type": "boolean" } }, "additionalProperties": false },
+    "existsExpression": { "type": "object", "required": ["node", "query", "negated"], "properties": { "node": { "const": "exists" }, "query": { "$ref": "#/$defs/select" }, "negated": { "type": "boolean" } }, "additionalProperties": false },
+    "scalarSubqueryExpression": { "type": "object", "required": ["node", "query"], "properties": { "node": { "const": "scalar_subquery" }, "query": { "$ref": "#/$defs/select" } }, "additionalProperties": false },
+    "tupleExpression": { "type": "object", "required": ["node", "values"], "properties": { "node": { "const": "tuple" }, "values": { "$ref": "#/$defs/expressions" } }, "additionalProperties": false },
+    "navigationExpression": { "type": "object", "required": ["node", "root", "path"], "properties": { "node": { "const": "navigation" }, "root": { "$ref": "#/$defs/identifier" }, "path": { "$ref": "#/$defs/identifiers" } }, "additionalProperties": false },
+    "groupingExpression": { "type": "object", "required": ["node", "expressions"], "properties": { "node": { "const": "grouping" }, "expressions": { "$ref": "#/$defs/expressions" } }, "additionalProperties": false },
+    "columnRef": { "type": "object", "required": ["relation", "name"], "properties": { "relation": { "type": ["string", "null"] }, "name": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false },
+    "caseBranch": { "type": "object", "required": ["when", "then"], "properties": { "when": { "$ref": "#/$defs/expression" }, "then": { "$ref": "#/$defs/expression" } }, "additionalProperties": false },
+    "binaryOperator": { "enum": ["eq", "ne", "lt", "lte", "gt", "gte", "and", "or", "xor", "add", "subtract", "multiply", "divide", "modulo", "like", "not_like", "glob", "regexp", "is_distinct_from", "is_not_distinct_from"] },
+    "expressions": { "type": "array", "items": { "$ref": "#/$defs/expression" } },
+    "projection": { "type": "object", "required": ["expression", "alias"], "properties": { "expression": { "$ref": "#/$defs/expression" }, "alias": { "type": ["string", "null"] } }, "additionalProperties": false },
+    "projections": { "type": "array", "items": { "$ref": "#/$defs/projection" } },
+    "orderBy": { "type": "object", "required": ["expression", "direction", "nulls"], "properties": { "expression": { "$ref": "#/$defs/expression" }, "direction": { "enum": ["asc", "desc"] }, "nulls": { "type": ["string", "null"], "enum": ["first", "last", null] } }, "additionalProperties": false },
+    "orderByList": { "type": "array", "items": { "$ref": "#/$defs/orderBy" } },
+    "windowFrameBound": {
+      "oneOf": [
+        { "type": "object", "required": ["bound"], "properties": { "bound": { "enum": ["unbounded_preceding", "current_row", "unbounded_following"] } }, "additionalProperties": false },
+        { "type": "object", "required": ["bound", "offset"], "properties": { "bound": { "enum": ["preceding", "following"] }, "offset": { "type": "integer", "minimum": 0 } }, "additionalProperties": false }
+      ]
+    },
+    "windowFrame": { "type": "object", "required": ["unit", "start", "end"], "properties": { "unit": { "enum": ["rows", "range"] }, "start": { "$ref": "#/$defs/windowFrameBound" }, "end": { "oneOf": [{ "$ref": "#/$defs/windowFrameBound" }, { "type": "null" }] } }, "additionalProperties": false },
+    "windowSpecification": { "type": "object", "required": ["name", "partition_by", "order_by", "frame"], "properties": { "name": { "type": ["string", "null"] }, "partition_by": { "$ref": "#/$defs/expressions" }, "order_by": { "$ref": "#/$defs/orderByList" }, "frame": { "oneOf": [{ "$ref": "#/$defs/windowFrame" }, { "type": "null" }] } }, "additionalProperties": false },
+    "namedWindow": { "type": "object", "required": ["name", "specification"], "properties": { "name": { "$ref": "#/$defs/identifier" }, "specification": { "$ref": "#/$defs/windowSpecification" } }, "additionalProperties": false },
+    "relation": {
+      "oneOf": [
+        { "$ref": "#/$defs/tableRelation" },
+        { "$ref": "#/$defs/cteRelation" },
+        { "$ref": "#/$defs/derivedRelation" },
+        { "$ref": "#/$defs/valuesRelation" },
+        { "$ref": "#/$defs/joinRelation" }
+      ]
+    },
+    "tableRelation": { "type": "object", "required": ["node", "name", "alias"], "properties": { "node": { "const": "table" }, "name": { "$ref": "#/$defs/identifier" }, "alias": { "type": ["string", "null"] } }, "additionalProperties": false },
+    "cteRelation": { "type": "object", "required": ["node", "name", "alias"], "properties": { "node": { "const": "cte" }, "name": { "$ref": "#/$defs/identifier" }, "alias": { "type": ["string", "null"] } }, "additionalProperties": false },
+    "derivedRelation": { "type": "object", "required": ["node", "query", "alias"], "properties": { "node": { "const": "derived" }, "query": { "$ref": "#/$defs/select" }, "alias": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false },
+    "valuesRelation": { "type": "object", "required": ["node", "rows", "alias", "columns"], "properties": { "node": { "const": "values" }, "rows": { "$ref": "#/$defs/expressionRows" }, "alias": { "$ref": "#/$defs/identifier" }, "columns": { "$ref": "#/$defs/identifiers" } }, "additionalProperties": false },
+    "joinRelation": { "type": "object", "required": ["node", "left", "right", "kind", "on"], "properties": { "node": { "const": "join" }, "left": { "$ref": "#/$defs/relation" }, "right": { "$ref": "#/$defs/relation" }, "kind": { "enum": ["inner", "left", "right", "full", "cross"] }, "on": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] } }, "additionalProperties": false },
+    "grouping": {
+      "oneOf": [
+        { "type": "object", "required": ["grouping", "expressions"], "properties": { "grouping": { "enum": ["expressions", "rollup", "cube"] }, "expressions": { "$ref": "#/$defs/expressions" } }, "additionalProperties": false },
+        { "type": "object", "required": ["grouping", "sets"], "properties": { "grouping": { "const": "sets" }, "sets": { "type": "array", "items": { "$ref": "#/$defs/expressions" } } }, "additionalProperties": false }
+      ]
+    },
+    "cte": { "type": "object", "required": ["name", "columns", "query"], "properties": { "name": { "$ref": "#/$defs/identifier" }, "columns": { "type": "array", "items": { "$ref": "#/$defs/identifier" } }, "query": { "$ref": "#/$defs/select" } }, "additionalProperties": false },
+    "setArm": { "type": "object", "required": ["operator", "query"], "properties": { "operator": { "enum": ["union", "union_all", "intersect", "except"] }, "query": { "$ref": "#/$defs/select" } }, "additionalProperties": false },
+    "select": {
+      "type": "object",
+      "required": ["ctes", "recursive", "distinct", "distinct_on", "projection", "from", "filter", "group_by", "having", "windows", "set_operations", "order_by", "limit", "offset", "expected_result_shape"],
+      "properties": {
+        "ctes": { "type": "array", "items": { "$ref": "#/$defs/cte" } },
+        "recursive": { "type": "boolean" },
+        "distinct": { "type": "boolean" },
+        "distinct_on": { "$ref": "#/$defs/expressions" },
+        "projection": { "$ref": "#/$defs/projections" },
+        "from": { "oneOf": [{ "$ref": "#/$defs/relation" }, { "type": "null" }] },
+        "filter": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] },
+        "group_by": { "oneOf": [{ "$ref": "#/$defs/grouping" }, { "type": "null" }] },
+        "having": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] },
+        "windows": { "type": "array", "items": { "$ref": "#/$defs/namedWindow" } },
+        "set_operations": { "type": "array", "items": { "$ref": "#/$defs/setArm" } },
+        "order_by": { "$ref": "#/$defs/orderByList" },
+        "limit": { "type": ["integer", "null"], "minimum": 0 },
+        "offset": { "type": ["integer", "null"], "minimum": 0 },
+        "expected_result_shape": { "type": "array", "items": { "$ref": "#/$defs/resultColumn" } }
+      },
+      "additionalProperties": false
+    },
+    "assignment": { "type": "object", "required": ["column", "value"], "properties": { "column": { "$ref": "#/$defs/identifier" }, "value": { "$ref": "#/$defs/expression" } }, "additionalProperties": false },
+    "assignments": { "type": "array", "items": { "$ref": "#/$defs/assignment" } },
+    "insert": { "type": "object", "required": ["table", "columns", "rows", "source", "returning"], "properties": { "table": { "$ref": "#/$defs/identifier" }, "columns": { "$ref": "#/$defs/identifiers" }, "rows": { "$ref": "#/$defs/expressionRows" }, "source": { "oneOf": [{ "$ref": "#/$defs/select" }, { "type": "null" }] }, "returning": { "$ref": "#/$defs/projections" } }, "additionalProperties": false },
+    "upsert": { "type": "object", "required": ["insert", "conflict_columns", "assignments"], "properties": { "insert": { "$ref": "#/$defs/insert" }, "conflict_columns": { "$ref": "#/$defs/identifiers" }, "assignments": { "$ref": "#/$defs/assignments" } }, "additionalProperties": false },
+    "update": { "type": "object", "required": ["table", "alias", "assignments", "from", "filter", "returning"], "properties": { "table": { "$ref": "#/$defs/identifier" }, "alias": { "type": ["string", "null"] }, "assignments": { "$ref": "#/$defs/assignments" }, "from": { "oneOf": [{ "$ref": "#/$defs/relation" }, { "type": "null" }] }, "filter": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] }, "returning": { "$ref": "#/$defs/projections" } }, "additionalProperties": false },
+    "delete": { "type": "object", "required": ["table", "alias", "using", "filter", "all_rows", "returning"], "properties": { "table": { "$ref": "#/$defs/identifier" }, "alias": { "type": ["string", "null"] }, "using": { "oneOf": [{ "$ref": "#/$defs/relation" }, { "type": "null" }] }, "filter": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] }, "all_rows": { "type": "boolean" }, "returning": { "$ref": "#/$defs/projections" } }, "additionalProperties": false },
+    "explain": { "type": "object", "required": ["analyze", "operation"], "properties": { "analyze": { "type": "boolean" }, "operation": { "$ref": "#/$defs/operation" } }, "additionalProperties": false },
+    "transactionOperation": {
+      "oneOf": [
+        { "type": "object", "required": ["operation"], "properties": { "operation": { "enum": ["begin", "commit", "rollback"] } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "name"], "properties": { "operation": { "enum": ["savepoint", "rollback_to_savepoint", "release_savepoint"] }, "name": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false }
+      ]
+    },
+    "columnDefinition": {
+      "type": "object",
+      "required": ["name", "data_type", "nullable", "primary_key", "unique", "auto_increment", "default", "check", "reference"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "data_type": { "$ref": "#/$defs/dataType" },
+        "nullable": { "type": "boolean" },
+        "primary_key": { "type": "boolean" },
+        "unique": { "type": "boolean" },
+        "auto_increment": { "type": "boolean" },
+        "default": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] },
+        "check": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] },
+        "reference": { "oneOf": [{ "$ref": "#/$defs/referenceDefinition" }, { "type": "null" }] },
+        "extensions": { "$ref": "#/$defs/extensions" }
+      },
+      "additionalProperties": false
+    },
+    "referenceDefinition": { "type": "object", "required": ["table", "column", "on_delete", "on_update"], "properties": { "table": { "$ref": "#/$defs/identifier" }, "column": { "$ref": "#/$defs/identifier" }, "on_delete": { "$ref": "#/$defs/fkAction" }, "on_update": { "$ref": "#/$defs/fkAction" } }, "additionalProperties": false },
+    "constraintDefinition": {
+      "oneOf": [
+        { "type": "object", "required": ["constraint", "columns"], "properties": { "constraint": { "enum": ["primary_key", "unique"] }, "columns": { "$ref": "#/$defs/identifiers" } }, "additionalProperties": false },
+        { "type": "object", "required": ["constraint", "columns", "referenced_table", "referenced_columns", "on_delete", "on_update"], "properties": { "constraint": { "const": "foreign_key" }, "columns": { "$ref": "#/$defs/identifiers" }, "referenced_table": { "$ref": "#/$defs/identifier" }, "referenced_columns": { "$ref": "#/$defs/identifiers" }, "on_delete": { "$ref": "#/$defs/fkAction" }, "on_update": { "$ref": "#/$defs/fkAction" } }, "additionalProperties": false },
+        { "type": "object", "required": ["constraint", "expression"], "properties": { "constraint": { "const": "check" }, "expression": { "$ref": "#/$defs/expression" } }, "additionalProperties": false }
+      ]
+    },
+    "indexDefinition": { "type": "object", "required": ["name", "table", "columns", "unique", "if_not_exists", "method", "predicate"], "properties": { "name": { "$ref": "#/$defs/identifier" }, "table": { "$ref": "#/$defs/identifier" }, "columns": { "$ref": "#/$defs/identifiers" }, "unique": { "type": "boolean" }, "if_not_exists": { "type": "boolean" }, "method": { "type": ["string", "null"] }, "predicate": { "oneOf": [{ "$ref": "#/$defs/expression" }, { "type": "null" }] }, "options": { "type": "object", "additionalProperties": { "$ref": "#/$defs/typedValue" } } }, "additionalProperties": false },
+    "alterTableAction": {
+      "oneOf": [
+        { "type": "object", "required": ["operation", "column"], "properties": { "operation": { "enum": ["add_column", "modify_column"] }, "column": { "$ref": "#/$defs/columnDefinition" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "column"], "properties": { "operation": { "const": "drop_column" }, "column": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "from", "to"], "properties": { "operation": { "const": "rename_column" }, "from": { "$ref": "#/$defs/identifier" }, "to": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "to"], "properties": { "operation": { "const": "rename_table" }, "to": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "constraint"], "properties": { "operation": { "const": "add_constraint" }, "constraint": { "$ref": "#/$defs/constraintDefinition" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "name", "if_exists"], "properties": { "operation": { "const": "drop_constraint" }, "name": { "$ref": "#/$defs/identifier" }, "if_exists": { "type": "boolean" } }, "additionalProperties": false }
+      ]
+    },
+    "ddlOperation": {
+      "oneOf": [
+        { "type": "object", "required": ["operation", "table", "if_not_exists", "columns", "constraints"], "properties": { "operation": { "const": "create_table" }, "table": { "$ref": "#/$defs/identifier" }, "if_not_exists": { "type": "boolean" }, "columns": { "type": "array", "items": { "$ref": "#/$defs/columnDefinition" }, "minItems": 1 }, "constraints": { "type": "array", "items": { "$ref": "#/$defs/constraintDefinition" } } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "table", "if_not_exists", "query"], "properties": { "operation": { "const": "create_table_as" }, "table": { "$ref": "#/$defs/identifier" }, "if_not_exists": { "type": "boolean" }, "query": { "$ref": "#/$defs/select" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "table", "action"], "properties": { "operation": { "const": "alter_table" }, "table": { "$ref": "#/$defs/identifier" }, "action": { "$ref": "#/$defs/alterTableAction" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "table", "if_exists"], "properties": { "operation": { "const": "drop_table" }, "table": { "$ref": "#/$defs/identifier" }, "if_exists": { "type": "boolean" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "table"], "properties": { "operation": { "const": "truncate_table" }, "table": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "index"], "properties": { "operation": { "const": "create_index" }, "index": { "$ref": "#/$defs/indexDefinition" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "table", "index", "if_exists"], "properties": { "operation": { "const": "drop_index" }, "table": { "$ref": "#/$defs/identifier" }, "index": { "$ref": "#/$defs/identifier" }, "if_exists": { "type": "boolean" } }, "additionalProperties": false },
+        { "type": "object", "required": ["operation", "index", "new_name"], "properties": { "operation": { "const": "alter_index" }, "index": { "$ref": "#/$defs/identifier" }, "new_name": { "$ref": "#/$defs/identifier" } }, "additionalProperties": false }
+      ]
+    },
+    "resultColumn": { "type": "object", "required": ["name", "data_type", "nullable"], "properties": { "name": { "type": "string" }, "data_type": { "$ref": "#/$defs/dataType" }, "nullable": { "type": "boolean" } }, "additionalProperties": false },
+    "expressionRows": { "type": "array", "items": { "$ref": "#/$defs/expressions" } },
+    "fkAction": { "enum": ["restrict", "cascade", "set_null", "no_action"] },
+    "identifier": { "type": "string", "minLength": 1 },
+    "identifiers": { "type": "array", "items": { "$ref": "#/$defs/identifier" }, "minItems": 1 },
+    "extensions": { "type": "object", "additionalProperties": true }
+  }
+}

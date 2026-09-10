@@ -1,0 +1,8 @@
+---
+import { Code } from '@astrojs/starlight/components';
+interface Props { name: string }
+const sources = import.meta.glob('../../examples/tutorial/*.sql', { query: '?raw', import: 'default', eager: true });
+const source = sources[`../../examples/tutorial/${Astro.props.name}.sql`];
+if (typeof source !== 'string') throw new Error(`Unknown tutorial example: ${Astro.props.name}`);
+---
+<Code code={source.trimEnd()} lang="radixdb-sql" />

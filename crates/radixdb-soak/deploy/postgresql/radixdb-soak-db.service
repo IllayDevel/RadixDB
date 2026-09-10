@@ -1,0 +1,34 @@
+[Unit]
+Description=Isolated PostgreSQL database for the RadixDB A/B soak
+After=network.target
+
+[Service]
+Type=simple
+User=radixdb-soak
+Group=radixdb-soak
+Slice=radixdb-soak.slice
+WorkingDirectory=/storage/radixdb-soak
+RuntimeDirectory=radixdb-soak-postgresql
+RuntimeDirectoryMode=0700
+ExecStart=/storage/radixdb-soak/postgresql/bin/postgres -D /storage/radixdb-soak/postgresql/data/current -c config_file=/etc/radixdb-soak/postgresql.conf -c hba_file=/etc/radixdb-soak/pg_hba.conf
+Restart=always
+RestartSec=2s
+TimeoutStartSec=60s
+TimeoutStopSec=25m
+KillSignal=SIGINT
+LimitNOFILE=65536
+TasksMax=512
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/storage/radixdb-soak /run/radixdb-soak-postgresql
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

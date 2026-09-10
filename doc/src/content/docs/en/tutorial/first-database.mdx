@@ -1,0 +1,67 @@
+---
+title: Your First Database
+description: Create tables and read data in a local RadixDB database.
+---
+import TutorialSql from '../../../../components/TutorialSql.astro';
+
+This chapter uses the local command-line client, `radixdb-cli`. It opens the
+database directly; no database server or network connection is required.
+The example contains two tables: departments and employees. Each employee
+may belong to a department.
+
+## Open a Local Database
+
+Use a newly created directory for the exercise. In a Unix shell, with
+`radixdb-cli` available on `PATH`, run:
+
+```sh
+tutorial_dir=$(mktemp -d)
+radixdb-cli -d "file://$tutorial_dir/database?sync_mode=full"
+```
+
+The `file://` address selects persistent storage. Keep the shell variable
+`tutorial_dir` for subsequent sessions. The database directory is created
+inside it. `sync_mode=full` explicitly selects full synchronization for this
+exercise; it is not a guarantee against physical loss of the storage device.
+
+In the tested 1.2 baseline, the startup banner does not reflect a sync
+mode supplied in the address. Use the address shown here; the separate
+`--sync full` flag is not functional in that build.
+
+The alternative `memory://` address creates a process-local database that
+does not survive the process. Do not use separate in-memory sessions for
+successive steps of this tutorial.
+
+## Define Tables and Insert Rows
+
+Enter the following statements in the client. A semicolon terminates each
+statement. Run this setup once in the new database:
+
+<TutorialSql name="setup" />
+
+`PRIMARY KEY` identifies each row. `NOT NULL` requires a value.
+The `REFERENCES` clause declares the relationship between an employee's
+`department_id` and a department's `id`. Clara has no department; her
+`department_id` is `NULL`, which represents the absence of a value.
+
+## Read the Data
+
+<TutorialSql name="select" />
+
+| id | name |
+| --- | --- |
+| 1 | Alice |
+| 2 | Boris |
+| 3 | Clara |
+
+`ORDER BY` makes the row order explicit. Without an ordering clause, do not
+rely on the order in which a query happens to return rows.
+
+## Finish the Session
+
+Enter `exit` to close the client. Reopen the same `file://` address and run
+the SELECT again: the committed rows remain in the database. Keep this
+database for the following relationship and transaction exercises.
+
+The English and Russian pages use the same SQL files. The tutorial runner
+executes those files against the pinned 1.2 verification baseline.

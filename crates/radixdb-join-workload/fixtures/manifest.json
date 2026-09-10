@@ -1,0 +1,40 @@
+{
+  "source_commit": "60c4e70ea5b5e036c8f5b23466e6ebe3600e1eea",
+  "source_path": "_work/v2/RADIXDB_HEAVY_JOIN_WORKLOAD.md",
+  "source_sha256": "2b3cfef9ceb09b224af888a35ca4728d1c0a6f1f4492ae7f5951677dea34e043",
+  "schema_generation": "0069",
+  "fixtures": [
+    {
+      "path": "schema.sql",
+      "sha256": "c499afbf6170026b4f00ab9e9432581c76b49be276a049bac450d606bff06cfb"
+    },
+    {
+      "path": "q1-message-push.sql",
+      "sha256": "443b7d4ae8eb4725f840059880905d3af9174d501944c2349a1d6c50cfb056b0"
+    },
+    {
+      "path": "q2-call-push.sql",
+      "sha256": "dfa567d9cfbdd479817c62e63624ff937da56bfb3a1b87eedc460ca10d5184f1"
+    },
+    {
+      "path": "q3-stream-push.sql",
+      "sha256": "fea1f1d7292b6b8c7ff7bb4e82825057e04139f783b9074c40941e934283d5ca"
+    },
+    {
+      "path": "q4-publication-recipients.sql",
+      "sha256": "190ab70b049ce0d1254e667936b4694446bbedcab403e284d3fa7648dc8ccb61"
+    },
+    {
+      "path": "q5-snapshot-users.sql",
+      "sha256": "e10fbe12313ab2bb3986bdddce40d58fc72b92ddd37c164cd1888af89b031e55"
+    },
+    {
+      "path": "q6-snapshot-members.sql",
+      "sha256": "45eec9da6a368219d4cb58a8b90a8f8f4fa0f5972ffd0978b084fa7d3d308c55"
+    },
+    {
+      "path": "c1-outbox-poll.sql",
+      "sha256": "056b1c70ba4a289ce2623f0cad3d79f4a8aa4e0003bee30bd837d2b60fc93b93"
+    }
+  ]
+}

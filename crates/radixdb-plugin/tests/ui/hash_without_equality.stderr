@@ -1,0 +1,5 @@
+error: hash callback requires an explicit equality callback
+ --> tests/ui/hash_without_equality.rs:4:1
+  |
+4 | #[radix_type(
+  | ^

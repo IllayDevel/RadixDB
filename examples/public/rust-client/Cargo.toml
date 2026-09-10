@@ -1,0 +1,24 @@
+[package]
+name = "radixdb-public-rust-client-examples"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+publish = false
+license = "Apache-2.0"
+
+[workspace]
+
+[dependencies]
+radixdb-client = { path = "../../../crates/radixdb-client" }
+
+[[bin]]
+name = "basic"
+path = "basic.rs"
+
+[[bin]]
+name = "parameters"
+path = "parameters.rs"
+
+[[bin]]
+name = "import_radixtrade"
+path = "import_radixtrade.rs"

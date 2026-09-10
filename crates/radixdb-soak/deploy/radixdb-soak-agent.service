@@ -1,0 +1,35 @@
+[Unit]
+Description=RadixDB remote soak workload and status agent
+After=network.target radixdb-soak-db.service radixdb-soak-observer.service
+Wants=radixdb-soak-db.service radixdb-soak-observer.service
+
+[Service]
+Type=simple
+User=radixdb-soak
+Group=radixdb-soak
+Slice=radixdb-soak.slice
+WorkingDirectory=/storage/radixdb-soak
+EnvironmentFile=/etc/radixdb-soak/run.env
+LoadCredential=status-auth:/etc/radixdb-soak/status-auth.env
+RuntimeDirectory=radixdb-soak
+RuntimeDirectoryMode=0700
+ExecStart=/storage/radixdb-soak/current/bin/radixdb-soak run --config /etc/radixdb-soak/soak.toml --run-id ${SOAK_RUN_ID}
+Restart=no
+TimeoutStartSec=infinity
+TimeoutStopSec=5m
+KillSignal=SIGINT
+NoNewPrivileges=true
+PrivateTmp=false
+TemporaryFileSystem=/tmp:rw /var/tmp:rw
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/storage/radixdb-soak
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

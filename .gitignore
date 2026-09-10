@@ -1,0 +1,45 @@
+# Build artifacts
+/target/
+/tools/
+**/*.rs.bk
+__pycache__/
+*.py[cod]
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Profiling
+flamegraph*.svg
+profile.json
+*.json.gz
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test databases
+*.db
+*.sqlite
+
+# Runtime database lock/WAL artifacts
+db.lock/
+
+# Coverage
+coverage.txt
+*.profraw
+*.profdata
+cobertura.xml
+tarpaulin-report.html
+
+# Local development
+TODO.md
+*.disabled
+deny.toml
+.secret/
+
+# Documentation build artifacts
+docs/_site/
+docs/.jekyll-cache/

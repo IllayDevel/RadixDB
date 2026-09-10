@@ -1,0 +1,45 @@
+[package]
+name = "radixdb-storage"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "Storage contracts and physical persistence engine for RadixDB"
+license-file = "../../LICENSE"
+publish = false
+
+[features]
+default = []
+bench-harness = []
+parallel = ["dep:rayon"]
+test-hooks = []
+test-failpoints = []
+test-mutations = []
+
+[dependencies]
+radixdb-core = { path = "../radixdb-core" }
+radixdb-catalog = { path = "../radixdb-catalog" }
+chrono = "0.4"
+ahash = "0.8"
+arc-swap = "1"
+bytes = "1.5"
+crossbeam = "0.8"
+crc32fast = "1.4"
+lru = "0.16"
+memchr = "2.6"
+moka = { version = "0.12", features = ["sync"] }
+parking_lot = { version = "0.12", features = ["arc_lock"] }
+rayon = { version = "1.8", optional = true }
+regex = "1.10"
+roaring = "0.11"
+rustc-hash = "1.1"
+serde = { version = "1.0", features = ["derive"] }
+sha2 = "0.10"
+smallvec = "1.11"
+libc = "0.2"
+lz4_flex = "0.13"
+uuid = "1"
+
+[dev-dependencies]
+radixdb-core = { path = "../radixdb-core", features = ["test-failpoints"] }
+serde_json = "1"
+tempfile = "3.9"

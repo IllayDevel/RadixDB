@@ -1,0 +1,414 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # 3 AM UTC daily
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Which suite to run'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto        # Scheduled behavior: one heavy suite + light suites
+          - all         # Everything (for manual sweeps)
+          - mutation    # Mutation testing only
+          - miri        # Miri only
+          - stress      # Stress tests only
+          - sanitizers  # TSAN + ASAN only
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ github.event.inputs.suite || 'scheduled' }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  heavy_plan:
+    name: Select Heavy Suite
+    runs-on: ubuntu-latest
+    outputs:
+      run_mutation: ${{ steps.select.outputs.run_mutation }}
+      run_miri: ${{ steps.select.outputs.run_miri }}
+      mutation_shard: ${{ steps.select.outputs.mutation_shard }}
+      miri_group: ${{ steps.select.outputs.miri_group }}
+      mutation_shards: ${{ steps.select.outputs.mutation_shards }}
+      miri_groups: ${{ steps.select.outputs.miri_groups }}
+    steps:
+    - id: select
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        SUITE_INPUT: ${{ github.event.inputs.suite }}
+      run: |
+        suite="${SUITE_INPUT:-auto}"
+        run_mutation=false
+        run_miri=false
+        epoch_day=$(( $(date -u +%s) / 86400 ))
+        mutation_shard=$(( epoch_day % 24 ))
+        miri_group=$(( epoch_day % 5 ))
+        mutation_shards="[${mutation_shard}]"
+        miri_groups="[${miri_group}]"
+
+        if [ "$EVENT_NAME" = "schedule" ] || [ "$suite" = "auto" ]; then
+          # Both run every night with rotating shards/groups
+          run_mutation=true
+          run_miri=true
+        else
+          case "$suite" in
+            all)
+              run_mutation=true
+              run_miri=true
+              mutation_shards='[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]'
+              miri_groups='[0,1,2,3,4]'
+              ;;
+            mutation)
+              run_mutation=true
+              mutation_shards='[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23]'
+              ;;
+            miri)
+              run_miri=true
+              miri_groups='[0,1,2,3,4]'
+              ;;
+          esac
+        fi
+
+        echo "run_mutation=$run_mutation" >> "$GITHUB_OUTPUT"
+        echo "run_miri=$run_miri" >> "$GITHUB_OUTPUT"
+        echo "mutation_shard=$mutation_shard" >> "$GITHUB_OUTPUT"
+        echo "miri_group=$miri_group" >> "$GITHUB_OUTPUT"
+        echo "mutation_shards=$mutation_shards" >> "$GITHUB_OUTPUT"
+        echo "miri_groups=$miri_groups" >> "$GITHUB_OUTPUT"
+
+  stress-tests:
+    name: Stress Tests
+    if: >-
+      github.event_name == 'schedule'
+      || github.event.inputs.suite == 'auto'
+      || github.event.inputs.suite == 'all'
+      || github.event.inputs.suite == 'stress'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      with:
+        toolchain: 1.97.0
+
+    - name: Cache
+      uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+    - name: Crash soak tests
+      run: cargo test --locked --test crash_soak_test --features stress-tests
+      timeout-minutes: 30
+
+    - name: Metamorphic property tests
+      run: cargo test --locked --test metamorphic_test --features stress-tests
+      timeout-minutes: 15
+
+    - name: Concurrency history tests
+      run: cargo test --locked --test concurrency_history_test --features stress-tests
+      timeout-minutes: 15
+
+  thread-sanitizer:
+    name: Thread Sanitizer
+    if: >-
+      github.event_name == 'schedule'
+      || github.event.inputs.suite == 'auto'
+      || github.event.inputs.suite == 'all'
+      || github.event.inputs.suite == 'sanitizers'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      with:
+        toolchain: nightly-2026-07-07
+        components: rust-src
+
+    - name: Cache
+      uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+    - name: Run with ThreadSanitizer
+      run: |
+        echo 'race:std::alloc::System' > /tmp/tsan_suppressions.txt
+        RUSTFLAGS="-Zsanitizer=thread" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std --target x86_64-unknown-linux-gnu \
+          --test dirty_read_test \
+          --test mvcc_isolation_sql_test \
+          --test parallel_execution_tests \
+          --test wire_runtime_contract_test \
+          --test r8_write_pipeline_test
+      timeout-minutes: 45
+      env:
+        TSAN_OPTIONS: "second_deadlock_stack=1 suppressions=/tmp/tsan_suppressions.txt"
+
+  address-sanitizer:
+    name: Address Sanitizer
+    if: >-
+      github.event_name == 'schedule'
+      || github.event.inputs.suite == 'auto'
+      || github.event.inputs.suite == 'all'
+      || github.event.inputs.suite == 'sanitizers'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      with:
+        toolchain: nightly-2026-07-07
+        components: rust-src
+
+    - name: Cache
+      uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+    - name: Run with AddressSanitizer
+      run: |
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std --target x86_64-unknown-linux-gnu \
+          --test durability_test \
+          --test snapshot_recovery_test \
+          --test persistence_test \
+          --test hnsw_index_test \
+          --test wire_scalar_roundtrip_test
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-storage --lib v6::
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-executor --lib
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-storage --lib index::
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-sql --lib
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-functions --lib scalar::semantic::
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-plugin-abi \
+          -p radixdb-plugin -p radixdb-plugin-host -p radixdb-plugin-macros --lib
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p cargo-radixdb-plugin --all-targets
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-soak --lib
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-join-workload --all-targets
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu --bin radixdb-bench --features bench-harness
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu --lib sql_dump::
+      timeout-minutes: 60
+      env:
+        ASAN_OPTIONS: "detect_leaks=1:halt_on_error=1"
+
+  mutation:
+    name: Mutation Testing (budgeted shard)
+    needs: heavy_plan
+    if: needs.heavy_plan.outputs.run_mutation == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.heavy_plan.outputs.mutation_shards) }}
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      with:
+        toolchain: 1.97.0
+
+    - name: Cache
+      uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+    - name: Install cargo-mutants and nextest
+      uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2
+      with:
+        tool: cargo-mutants@27.1.0,cargo-nextest@0.9.143
+
+    - name: Run mutation testing (rotating shard)
+      run: |
+        SHARD_INDEX=${{ matrix.shard }}
+        TOTAL_SHARDS=24
+        echo "Running shard ${SHARD_INDEX}/${TOTAL_SHARDS}"
+
+        cargo mutants --cargo-arg=--locked --package radixdb \
+          --in-place \
+          --timeout 420 \
+          --shard "${SHARD_INDEX}/${TOTAL_SHARDS}" \
+          -f src/executor/expression/ \
+          -f src/executor/aggregation.rs \
+          -f src/executor/subquery.rs \
+          -f src/functions/scalar/ \
+          -f src/storage/mvcc/transaction.rs \
+          -f src/storage/mvcc/registry.rs \
+          -- --lib --tests
+      timeout-minutes: 100
+
+    - name: Upload mutation report
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: mutation-${{ github.sha }}-shard-${{ matrix.shard }}-of-24
+        path: mutants.out/
+        if-no-files-found: error
+
+  miri:
+    name: Miri
+    needs: heavy_plan
+    if: needs.heavy_plan.outputs.run_miri == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ${{ fromJSON(needs.heavy_plan.outputs.miri_groups) }}
+    steps:
+    - name: Free disk space
+      run: |
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /opt/ghc
+        sudo rm -rf /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: Install Rust nightly with Miri
+      uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772
+      with:
+        toolchain: nightly-2026-07-07
+        components: miri
+
+    - name: Install nextest
+      uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2
+      with:
+        tool: cargo-nextest@0.9.143
+
+    - name: Cache
+      uses: Swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c # v2
+
+    - name: Run Miri (rotating module group)
+      run: |
+        GROUP=${{ matrix.group }}
+        echo "Miri group: ${GROUP}/5"
+
+        # Rotate through 5 module groups (full cycle every 5 days):
+        #   0: compact_arc + compact_vec + smart_string (fast, unsafe data structures)
+        #   1: i64_map                                  (map ownership and key storage)
+        #   2: cow_btree (excluding deep-tree tests)    (unsafe, moderate speed)
+        #   3: row_vec + value                          (row/scalar ownership)
+        #   4: cow_btree deep-tree tests only           (slowest tests, ~5-10 min each)
+        case "$GROUP" in
+          0) FILTER='test(/^(compact_arc|compact_vec|smart_string)::/)' ;;
+          1) FILTER='test(/^i64_map::/)' ;;
+          2) FILTER='test(/^cow_btree::/) - test(/deep_tree/)' ;;
+          3) FILTER='test(/^(row_vec|value)::/)' ;;
+          4) FILTER='test(/^cow_btree::.*deep_tree/)' ;;
+        esac
+
+        echo "Filter: $FILTER"
+        cargo nextest list --locked --lib -E "$FILTER" --message-format json > /tmp/miri-selection.json
+        python3 - <<'PY'
+        import json
+
+        with open('/tmp/miri-selection.json', encoding='utf-8') as source:
+            inventory = json.load(source)
+        selected = sum(
+            1
+            for suite in inventory.get('rust-suites', {}).values()
+            for testcase in suite.get('testcases', {}).values()
+            if testcase.get('filter-match', {}).get('status') == 'matches'
+        )
+        if selected == 0:
+            raise SystemExit('Miri rotation selected zero tests')
+        print(f'Miri selected tests: {selected}')
+        PY
+        cargo +nightly-2026-07-07 miri nextest run --locked --lib -E "$FILTER" --no-fail-fast
+      env:
+        MIRIFLAGS: "-Zmiri-disable-isolation"
+
+    - name: Upload Miri group evidence
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: miri-${{ github.sha }}-group-${{ matrix.group }}-of-5
+        path: /tmp/miri-selection.json
+        if-no-files-found: error
+
+  complete-cycle-manifest:
+    name: Complete manual mutation and Miri cycle
+    needs: [heavy_plan, mutation, miri]
+    if: >-
+      always()
+      && github.event_name == 'workflow_dispatch'
+      && github.event.inputs.suite == 'all'
+      && needs.mutation.result == 'success'
+      && needs.miri.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record one-revision complete cycle
+        run: |
+          cat > cycle-manifest.json <<JSON
+          {
+            "revision": "${GITHUB_SHA}",
+            "mutation_shards": 24,
+            "miri_groups": 5,
+            "mutation_result": "${{ needs.mutation.result }}",
+            "miri_result": "${{ needs.miri.result }}"
+          }
+          JSON
+
+      - name: Upload complete-cycle manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: nightly-complete-cycle-${{ github.sha }}
+          path: cycle-manifest.json
+          if-no-files-found: error
+          retention-days: 30

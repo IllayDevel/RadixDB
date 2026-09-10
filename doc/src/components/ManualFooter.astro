@@ -1,0 +1,25 @@
+---
+import DefaultFooter from '@astrojs/starlight/components/Footer.astro';
+import VersionSelect from './VersionSelect.astro';
+const metadata = JSON.parse(import.meta.env.PUBLIC_DOCS_BUILD);
+const ru = Astro.locals.starlightRoute.lang === 'ru';
+---
+<nav class="project-links" aria-label={ru ? 'Ссылки проекта' : 'Project links'}>
+  <a href="https://radixdb.org">radixdb.org</a>
+  <a href="mailto:dev@radixdb.org">dev@radixdb.org</a>
+  <span>{ru ? 'Спонсор разработки' : 'Development sponsor'}: <a href="http://light-soft.info/">Light Soft</a></span>
+</nav>
+<aside class="build-info" aria-label={ru ? 'Версия документации' : 'Documentation version'}>
+  <VersionSelect />
+  <span>{ru ? 'Документация' : 'Documentation'}: {metadata.target} {metadata.channel}</span>
+  <span>{ru ? 'Манифест приложения' : 'Application manifest'}: {metadata.application}</span>
+  <span>Git: <code>{metadata.revision.slice(0, 12)}</code>{metadata.dirty ? (ru ? ' (рабочие изменения)' : ' (working changes)') : ''}</span>
+</aside>
+<noscript><div><img src="https://mc.yandex.ru/watch/112445210" class="metrika-pixel" alt="" /></div></noscript>
+<DefaultFooter />
+<style>
+  .project-links { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin-block: 2rem 0; font-size: .875rem; }
+  .build-info { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin-block: 2rem; padding-block: 1rem; border-top: 1px solid var(--sl-color-gray-5); font-size: .875rem; color: var(--sl-color-gray-2); }
+  .build-info span { overflow-wrap: anywhere; }
+  .metrika-pixel { position: absolute; left: -9999px; width: 1px; height: 1px; }
+</style>

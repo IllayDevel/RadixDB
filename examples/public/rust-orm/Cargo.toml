@@ -1,0 +1,34 @@
+[package]
+name = "radixdb-public-rust-orm-example"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+publish = false
+license = "Apache-2.0"
+
+[workspace]
+
+[features]
+default = []
+generated-app = []
+
+[dependencies]
+radixdb-client = { path = "../../../crates/radixdb-client" }
+radixdb-orm = { path = "../../../crates/radixdb-orm" }
+
+[[bin]]
+name = "orm_quickstart"
+path = "orm_quickstart.rs"
+
+[[bin]]
+name = "bootstrap"
+path = "bootstrap.rs"
+
+[[bin]]
+name = "export_schema"
+path = "export_schema.rs"
+
+[[bin]]
+name = "trading_company"
+path = "trading_company.rs"
+required-features = ["generated-app"]

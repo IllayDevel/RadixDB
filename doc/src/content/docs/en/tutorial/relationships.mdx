@@ -1,0 +1,44 @@
+---
+title: Relationships and Queries
+description: Read department names with a join or a navigable reference.
+---
+import TutorialSql from '../../../../components/TutorialSql.astro';
+
+Continue in the database created in [Your First Database](../first-database/).
+Its three employees include Clara, whose department is not specified.
+
+## Join the Tables
+
+A foreign key stores the department identifier. To read its name, combine
+employees and departments using a join:
+
+<TutorialSql name="join" />
+
+| name | department |
+| --- | --- |
+| Alice | Engineering |
+| Boris | Support |
+| Clara | NULL |
+
+`LEFT JOIN` retains each employee even if there is no matching department.
+The selected department name is then `NULL`. An inner join would omit
+employees without a matching department.
+
+## Follow a Declared Relationship
+
+RadixDB can derive the same relationship from the declared foreign key:
+
+<TutorialSql name="navigation" />
+
+The result is the same table. The alias `e` selects the employee row,
+`department_id` is its foreign-key column, and `name` belongs to the referenced
+department. Reading `e.department_id` alone still returns the key value.
+
+Navigation is a query notation, not an object stored in the column. This
+example follows one declared relationship and does not establish support
+for arbitrary graph traversal or updates through a path.
+
+The SQL chapter [Navigable References](../../sql/navigable-references/) covers
+transitive paths, NULL, grouping, diagnostics and the permanent write boundary.
+
+Continue with [transactions](../transactions/).

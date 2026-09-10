@@ -1,0 +1,31 @@
+{
+  "manifest": "radixdb.orm.conformance.v1",
+  "ir_version": "radixdb.orm.v1",
+  "descriptor_version": "radixdb.schema.v1",
+  "identifier_case": {
+    "catalog": "preserve",
+    "json": "snake_case",
+    "generated_types": "PascalCase",
+    "generated_fields": "snake_case"
+  },
+  "required_artifacts": [
+    "radixdb.orm.v1.schema.json",
+    "radixdb.schema.v1.schema.json",
+    "radixdb.gui.table-form.v1.schema.json",
+    "radixdb.orm.v1.fixtures.json"
+  ],
+  "required_gates": [
+    "json_round_trip",
+    "sql_parameter_golden",
+    "unknown_version_fail_closed",
+    "raw_orm_raw_same_session",
+    "generated_dynamic_ir_parity",
+    "schema_fingerprint_fail_closed"
+  ],
+  "compatibility": {
+    "unknown_major_version": "reject",
+    "unknown_required_node": "reject",
+    "unknown_gui_extension": "preserve_ignore_for_sql",
+    "values_in_logs": "redact"
+  }
+}

@@ -1,0 +1,2677 @@
+// Copyright 2026 RadixDB Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Index-based Query Optimizations
+//!
+//! This module contains optimizations that leverage indexes to speed up queries:
+//! - MIN/MAX on indexed columns (O(1) instead of O(n))
+//! - COUNT(*) using row_count() (O(1) instead of O(n))
+//! - ORDER BY + LIMIT using index-ordered scan
+//! - IN list/subquery/hashset using index probe
+//! - Window function pre-sorting detection
+
+use std::sync::Arc;
+
+use radixdb_core::{CompactArc, I64Set};
+use radixdb_core::{Result, Row, RowVec, Value, ValueSet};
+use radixdb_sql::ast::*;
+use radixdb_storage::traits::{Index, QueryResult, Table};
+
+use super::context::{
+    cache_in_subquery, extract_table_names_for_cache, get_cached_in_subquery, ExecutionContext,
+};
+use super::expression::{ExpressionEval, RowFilter};
+use super::planner::QueryPlanner;
+use super::query_classification::QueryClassification;
+use super::result::ExecutorResult;
+use crate::lookup_key::exact_integer_pk_value;
+
+/// Narrow callbacks joining independently bounded optimizer helpers to the
+/// concrete executor owner.
+#[doc(hidden)]
+pub trait IndexOptimizerHost {
+    fn index_project_rows(
+        &self,
+        select_exprs: &[Expression],
+        rows: RowVec,
+        all_columns: &[String],
+        ctx: &ExecutionContext,
+    ) -> Result<RowVec>;
+
+    fn index_project_rows_with_alias(
+        &self,
+        select_exprs: &[Expression],
+        rows: RowVec,
+        all_columns: &[String],
+        all_columns_lower: Option<&[String]>,
+        ctx: &ExecutionContext,
+        table_alias: Option<&str>,
+    ) -> Result<RowVec>;
+
+    fn index_output_column_names(
+        &self,
+        select_exprs: &[Expression],
+        all_columns: &[String],
+        table_alias: Option<&str>,
+    ) -> Vec<String>;
+
+    fn index_query_planner(&self) -> &QueryPlanner;
+
+    fn index_execute_select(
+        &self,
+        stmt: &SelectStatement,
+        ctx: &ExecutionContext,
+    ) -> Result<Box<dyn QueryResult>>;
+
+    fn index_process_where_subqueries(
+        &self,
+        expr: &Expression,
+        ctx: &ExecutionContext,
+    ) -> Result<Expression>;
+
+    fn index_has_subqueries(expr: &Expression) -> bool;
+
+    fn index_is_subquery_correlated(subquery: &SelectStatement) -> bool;
+}
+
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntegerPkKeysetBound {
+    After(i64),
+    From(i64),
+    Empty,
+}
+
+impl IntegerPkKeysetBound {
+    /// Return the stronger of two lower bounds without converting an exclusive
+    /// bound into an adjacent inclusive value. Avoiding `value + 1` keeps the
+    /// full i64 domain exact at `i64::MAX`.
+    fn strongest_lower(self, right: Self) -> Self {
+        match (self, right) {
+            (Self::Empty, _) | (_, Self::Empty) => Self::Empty,
+            (Self::After(left), Self::After(right)) => Self::After(left.max(right)),
+            (Self::From(left), Self::From(right)) => Self::From(left.max(right)),
+            (Self::After(exclusive), Self::From(inclusive)) => {
+                if exclusive >= inclusive {
+                    Self::After(exclusive)
+                } else {
+                    Self::From(inclusive)
+                }
+            }
+            (Self::From(inclusive), Self::After(exclusive)) => {
+                if exclusive >= inclusive {
+                    Self::After(exclusive)
+                } else {
+                    Self::From(inclusive)
+                }
+            }
+        }
+    }
+
+    fn from_parts(start_after: Option<i64>, start_from: Option<i64>) -> Option<Self> {
+        match (start_after, start_from) {
+            (Some(after), Some(from)) => Some(Self::After(after).strongest_lower(Self::From(from))),
+            (Some(after), None) => Some(Self::After(after)),
+            (None, Some(from)) => Some(Self::From(from)),
+            (None, None) => None,
+        }
+    }
+
+    fn into_parts(self) -> (Option<i64>, Option<i64>, bool) {
+        match self {
+            Self::After(value) => (Some(value), None, false),
+            Self::From(value) => (None, Some(value), false),
+            Self::Empty => (None, None, true),
+        }
+    }
+}
+
+/// Pre-compiled projection slot for vector search results.
+/// Built once, applied per row — avoids per-row expression compilation.
+#[doc(hidden)]
+pub enum VectorProjectionSlot {
+    /// SELECT * — copy all columns from base row
+    Star,
+    /// Column reference by index
+    Column(usize),
+    /// Pre-computed distance value
+    Distance,
+    /// Pre-compiled expression evaluator (boxed to reduce enum size)
+    Compiled(Box<ExpressionEval>),
+}
+
+/// Index-access planning and execution shortcuts shared by executor hosts.
+#[doc(hidden)]
+pub trait IndexOptimizerExt: IndexOptimizerHost {
+    /// Try to optimize simple MIN/MAX aggregates using index
+    ///
+    /// For queries like `SELECT MIN(col) FROM table` or `SELECT MAX(col) FROM table`
+    /// without WHERE or GROUP BY, use the index's O(1) min/max lookup instead of O(n) scan.
+    #[allow(clippy::type_complexity)]
+    fn try_min_max_index_optimization(
+        &self,
+        stmt: &SelectStatement,
+        table: &dyn Table,
+        _all_columns: &[String],
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        // Only optimize single MIN or MAX without DISTINCT
+        if stmt.columns.len() != 1 {
+            return Ok(None);
+        }
+
+        let col_expr = &stmt.columns[0];
+
+        // Extract function info (handle aliased case too)
+        let (func, alias) = match col_expr {
+            Expression::FunctionCall(func) => (func, None),
+            Expression::Aliased(aliased) => {
+                if let Expression::FunctionCall(func) = aliased.expression.as_ref() {
+                    (func, Some(aliased.alias.value.to_string()))
+                } else {
+                    return Ok(None);
+                }
+            }
+            _ => return Ok(None),
+        };
+
+        // Check if it's MIN or MAX
+        // OPTIMIZATION: func.function is already uppercase from parsing
+        if func.function != "MIN" && func.function != "MAX" {
+            return Ok(None);
+        }
+
+        // The shortcut owns only the exact, unfiltered scalar shape. FILTER,
+        // HAVING, DISTINCT, and malformed arity must use normal aggregate
+        // binding/execution rather than being silently discarded here.
+        if func.is_distinct
+            || func.filter.is_some()
+            || func.arguments.len() != 1
+            || stmt.having.is_some()
+        {
+            return Ok(None);
+        }
+
+        let column_name = match &func.arguments[0] {
+            Expression::Identifier(id) => id.value.to_string(),
+            Expression::QualifiedIdentifier(qid) => qid.name.value.to_string(),
+            _ => return Ok(None),
+        };
+
+        // Try to get value from index
+        let value = if func.function == "MIN" {
+            table.get_index_min_value(&column_name)
+        } else {
+            table.get_index_max_value(&column_name)
+        };
+
+        if let Some(val) = value {
+            // Build result - wrap columns in CompactArc once for zero-copy sharing
+            let col_name = alias.unwrap_or_else(|| format!("{}({})", func.function, column_name));
+            let columns = CompactArc::new(vec![col_name]);
+            let mut rows = RowVec::with_capacity(1);
+            rows.push((0, Row::from_values(vec![val])));
+            let result: Box<dyn QueryResult> = Box::new(ExecutorResult::with_arc_columns(
+                CompactArc::clone(&columns),
+                rows,
+            ));
+            return Ok(Some((result, columns)));
+        }
+
+        Ok(None)
+    }
+
+    /// Try to optimize simple COUNT(*) queries using table row_count
+    ///
+    /// For queries like `SELECT COUNT(*) FROM table` without WHERE or GROUP BY,
+    /// use the table's O(1) row_count() method instead of O(n) scan.
+    #[allow(clippy::type_complexity)]
+    fn try_count_star_optimization(
+        &self,
+        stmt: &SelectStatement,
+        table: &dyn Table,
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        // Only optimize single COUNT(*) without DISTINCT
+        if stmt.columns.len() != 1 {
+            return Ok(None);
+        }
+
+        let col_expr = &stmt.columns[0];
+
+        // Extract function info (handle aliased case too)
+        let (func, alias) = match col_expr {
+            Expression::FunctionCall(func) => (func, None),
+            Expression::Aliased(aliased) => {
+                if let Expression::FunctionCall(func) = aliased.expression.as_ref() {
+                    (func, Some(aliased.alias.value.to_string()))
+                } else {
+                    return Ok(None);
+                }
+            }
+            _ => return Ok(None),
+        };
+
+        // Check if it's COUNT
+        // OPTIMIZATION: func.function is already uppercase from parsing
+        if func.function != "COUNT" {
+            return Ok(None);
+        }
+
+        // Don't optimize DISTINCT
+        if func.is_distinct || stmt.having.is_some() {
+            return Ok(None);
+        }
+
+        // Don't optimize if FILTER clause is present - requires row-by-row evaluation
+        if func.filter.is_some() {
+            return Ok(None);
+        }
+
+        // Must be COUNT(*) - either empty args or Star expression
+        let is_count_star = func.arguments.is_empty()
+            || (func.arguments.len() == 1 && matches!(func.arguments[0], Expression::Star(_)));
+
+        if !is_count_star {
+            return Ok(None);
+        }
+
+        // Use table's row_count method (O(1) instead of O(n))
+        let count = table.row_count();
+
+        // Build result - wrap columns in CompactArc once for zero-copy sharing
+        let col_name = alias.unwrap_or_else(|| "COUNT(*)".to_string());
+        let columns = CompactArc::new(vec![col_name]);
+        let mut rows = RowVec::with_capacity(1);
+        rows.push((0, Row::from_values(vec![Value::Integer(count as i64)])));
+        let result: Box<dyn QueryResult> = Box::new(ExecutorResult::with_arc_columns(
+            CompactArc::clone(&columns),
+            rows,
+        ));
+        Ok(Some((result, columns)))
+    }
+
+    /// Try to optimize ORDER BY + LIMIT using index-ordered scan
+    ///
+    /// For queries like `SELECT * FROM table ORDER BY col LIMIT 10`,
+    /// use the index to get rows in sorted order directly (O(limit) instead of O(n log n)).
+    #[allow(clippy::type_complexity)]
+    fn try_order_by_index_optimization(
+        &self,
+        stmt: &SelectStatement,
+        table: &dyn Table,
+        all_columns: &[String],
+        ctx: &ExecutionContext,
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        // Get the ORDER BY column name
+        let order_by = &stmt.order_by[0];
+        let column_name = match &order_by.expression {
+            Expression::Identifier(id) => id.value.clone(),
+            Expression::QualifiedIdentifier(qid) => qid.name.value.clone(),
+            _ => return Ok(None), // Can't optimize complex ORDER BY expressions
+        };
+
+        // Determine sort order
+        let ascending = order_by.ascending;
+
+        // The current hot B-tree API exposes structural Value ordering, where
+        // NULL is the minimum value.  Therefore it proves ASC NULLS FIRST and
+        // DESC NULLS LAST, but not PostgreSQL's opposite defaults.  A nullable
+        // column with a mismatching SQL NULL placement must take the ordinary
+        // sort path; otherwise LIMIT can return the wrong rows, not merely a
+        // differently ordered tie.
+        let requested_nulls_first = order_by.nulls_first.unwrap_or(!ascending);
+        let structural_nulls_first = ascending;
+        if requested_nulls_first != structural_nulls_first
+            && table
+                .schema()
+                .find_column(&column_name)
+                .is_some_and(|(_, column)| column.nullable)
+        {
+            return Ok(None);
+        }
+
+        // Evaluate limit and offset
+        let limit = if let Some(ref limit_expr) = stmt.limit {
+            match ExpressionEval::compile(limit_expr, &[])
+                .ok()
+                .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+            {
+                Some(Value::Integer(l)) => l as usize,
+                Some(Value::Float(f)) => f as usize,
+                _ => return Ok(None),
+            }
+        } else {
+            return Ok(None);
+        };
+
+        let offset = if let Some(ref offset_expr) = stmt.offset {
+            match ExpressionEval::compile(offset_expr, &[])
+                .ok()
+                .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+            {
+                Some(Value::Integer(o)) => o as usize,
+                Some(Value::Float(f)) => f as usize,
+                _ => 0,
+            }
+        } else {
+            0
+        };
+
+        // Try to use index-ordered scan
+        if let Some(rows) =
+            table.collect_rows_ordered_by_index(&column_name, ascending, limit, offset)
+        {
+            // Project rows according to SELECT expressions
+            let projected_rows = self.index_project_rows(&stmt.columns, rows, all_columns, ctx)?;
+
+            // Note: This optimization path doesn't have table_alias available,
+            // so we pass None. The prefix-based matching will still work for JOINs.
+            let output_columns =
+                CompactArc::new(self.index_output_column_names(&stmt.columns, all_columns, None));
+
+            let result = ExecutorResult::with_arc_columns(
+                CompactArc::clone(&output_columns),
+                projected_rows,
+            );
+            return Ok(Some((Box::new(result), output_columns)));
+        }
+
+        Ok(None)
+    }
+
+    /// Keyset pagination optimization for PRIMARY KEY columns
+    ///
+    /// For queries like `SELECT * FROM table WHERE id > X ORDER BY id LIMIT Y`,
+    /// uses the PK's natural ordering to start iteration from X and return only Y rows.
+    /// This provides O(limit) complexity instead of O(n) for full table scans.
+    #[allow(clippy::type_complexity)]
+    fn try_keyset_pagination_optimization(
+        &self,
+        stmt: &SelectStatement,
+        where_expr: Option<&Expression>,
+        table: &dyn Table,
+        all_columns: &[String],
+        table_alias: Option<&str>,
+        ctx: &ExecutionContext,
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        // Must have WHERE clause
+        let where_clause = match where_expr {
+            Some(expr) => expr,
+            None => return Ok(None),
+        };
+
+        // Get the ORDER BY column name - must be single column
+        let order_by = &stmt.order_by[0];
+        let order_column = match &order_by.expression {
+            Expression::Identifier(id) => id.value.clone(),
+            Expression::QualifiedIdentifier(qid) => qid.name.value.clone(),
+            _ => return Ok(None),
+        };
+
+        // Must be ascending order (most common case for keyset pagination)
+        let ascending = order_by.ascending;
+
+        // Get table schema to check if ORDER BY is on PK
+        let schema = table.schema();
+        let pk_indices = schema.primary_key_indices();
+        if pk_indices.len() != 1 {
+            return Ok(None); // Only single-column PK supported
+        }
+
+        let pk_idx = pk_indices[0];
+        if schema.columns[pk_idx].data_type != radixdb_core::DataType::Integer {
+            return Ok(None);
+        }
+        let pk_column = &schema.columns[pk_idx].name;
+
+        // ORDER BY must be on PK column
+        if !order_column.eq_ignore_ascii_case(pk_column) {
+            return Ok(None);
+        }
+
+        // Extract keyset condition from WHERE clause
+        // Supports: id > X, id >= X, id < X, id <= X
+        let (start_after, start_from, is_pure_keyset, is_empty) =
+            self.extract_pk_keyset_bounds(where_clause, pk_column, ctx)?;
+
+        if is_empty && is_pure_keyset {
+            let output_columns = CompactArc::new(self.index_output_column_names(
+                &stmt.columns,
+                all_columns,
+                table_alias,
+            ));
+            return Ok(Some((
+                Box::new(ExecutorResult::with_arc_columns(
+                    CompactArc::clone(&output_columns),
+                    RowVec::new(),
+                )),
+                output_columns,
+            )));
+        }
+
+        // Must have at least one bound AND be a pure keyset predicate
+        // (no additional predicates like `AND status = 'active'`)
+        if start_after.is_none() && start_from.is_none() {
+            return Ok(None);
+        }
+        if !is_pure_keyset {
+            return Ok(None);
+        }
+
+        // Evaluate limit
+        let limit = if let Some(ref limit_expr) = stmt.limit {
+            match ExpressionEval::compile(limit_expr, &[])
+                .ok()
+                .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+            {
+                Some(Value::Integer(l)) => l as usize,
+                Some(Value::Float(f)) => f as usize,
+                _ => return Ok(None),
+            }
+        } else {
+            return Ok(None);
+        };
+
+        // Use keyset pagination from storage layer
+        if let Some(rows) = table.collect_rows_pk_keyset(start_after, start_from, ascending, limit)
+        {
+            // Project rows according to SELECT expressions
+            // Use schema cache for lowercase column names
+            let all_columns_lower = schema.column_names_lower_arc();
+            let projected_rows = self.index_project_rows_with_alias(
+                &stmt.columns,
+                rows,
+                all_columns,
+                Some(&all_columns_lower),
+                ctx,
+                table_alias,
+            )?;
+            let output_columns = CompactArc::new(self.index_output_column_names(
+                &stmt.columns,
+                all_columns,
+                table_alias,
+            ));
+
+            let result = ExecutorResult::with_arc_columns(
+                CompactArc::clone(&output_columns),
+                projected_rows,
+            );
+            return Ok(Some((Box::new(result), output_columns)));
+        }
+
+        Ok(None)
+    }
+
+    /// Execute a bounded equality-prefix + range query in composite-index order.
+    #[allow(clippy::type_complexity)]
+    fn try_composite_ordered_range_optimization(
+        &self,
+        stmt: &SelectStatement,
+        where_expr: &dyn radixdb_storage::expression::Expression,
+        table: &dyn Table,
+        all_columns: &[String],
+        table_alias: Option<&str>,
+        ctx: &ExecutionContext,
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        let order_by = &stmt.order_by[0];
+        let order_column = match &order_by.expression {
+            Expression::Identifier(id) => id.value.as_str(),
+            Expression::QualifiedIdentifier(qid) => qid.name.value.as_str(),
+            _ => return Ok(None),
+        };
+        let limit = match stmt
+            .limit
+            .as_ref()
+            .and_then(|expr| ExpressionEval::compile(expr, &[]).ok())
+            .and_then(|expr| expr.with_context(ctx).eval_slice(&Row::new()).ok())
+        {
+            Some(Value::Integer(value)) if value >= 0 => value as usize,
+            Some(Value::Float(value)) if value >= 0.0 => value as usize,
+            _ => return Ok(None),
+        };
+        let offset = match stmt
+            .offset
+            .as_ref()
+            .and_then(|expr| ExpressionEval::compile(expr, &[]).ok())
+            .and_then(|expr| expr.with_context(ctx).eval_slice(&Row::new()).ok())
+        {
+            Some(Value::Integer(value)) if value >= 0 => value as usize,
+            Some(Value::Float(value)) if value >= 0.0 => value as usize,
+            None => 0,
+            _ => return Ok(None),
+        };
+
+        let Some(rows) = table.collect_rows_composite_ordered_range(
+            where_expr,
+            order_column,
+            order_by.ascending,
+            limit,
+            offset,
+        ) else {
+            return Ok(None);
+        };
+        let rows = rows?;
+        let lower = table.schema().column_names_lower_arc();
+        let projected_rows = self.index_project_rows_with_alias(
+            &stmt.columns,
+            rows,
+            all_columns,
+            Some(&lower),
+            ctx,
+            table_alias,
+        )?;
+        let output_columns = CompactArc::new(self.index_output_column_names(
+            &stmt.columns,
+            all_columns,
+            table_alias,
+        ));
+        let result =
+            ExecutorResult::with_arc_columns(CompactArc::clone(&output_columns), projected_rows);
+        Ok(Some((Box::new(result), output_columns)))
+    }
+
+    /// Extract PK keyset bounds from a WHERE clause
+    ///
+    /// Returns (start_after, start_from, is_pure_keyset) where:
+    /// - start_after is for `id > X` (exclusive bound)
+    /// - start_from is for `id >= X` (inclusive bound)
+    /// - is_pure_keyset is true if the expression ONLY contains keyset predicates
+    ///   (no additional predicates like `AND status = 'active'`)
+    fn extract_pk_keyset_bounds(
+        &self,
+        expr: &Expression,
+        pk_column: &str,
+        ctx: &ExecutionContext,
+    ) -> Result<(Option<i64>, Option<i64>, bool, bool)> {
+        if let Expression::Infix(infix) = expr {
+            let op = infix.operator.as_str();
+
+            // Handle comparison operators
+            match op {
+                ">" | ">=" | "<" | "<=" => {
+                    // Check if left side is the PK column
+                    let left_is_pk = match &*infix.left {
+                        Expression::Identifier(id) => id.value.eq_ignore_ascii_case(pk_column),
+                        Expression::QualifiedIdentifier(qid) => {
+                            qid.name.value.eq_ignore_ascii_case(pk_column)
+                        }
+                        _ => false,
+                    };
+
+                    if left_is_pk {
+                        // pk OP value
+                        if matches!(op, ">" | ">=") {
+                            if let Some(value) = self.eval_pk_keyset_scalar(&infix.right, ctx) {
+                                if let Some(bound) =
+                                    Self::integer_pk_keyset_lower_bound(&value, op == ">=")
+                                {
+                                    return Ok(match bound {
+                                        IntegerPkKeysetBound::After(value) => {
+                                            (Some(value), None, true, false)
+                                        }
+                                        IntegerPkKeysetBound::From(value) => {
+                                            (None, Some(value), true, false)
+                                        }
+                                        IntegerPkKeysetBound::Empty => (None, None, true, true),
+                                    });
+                                }
+                            }
+                        }
+                    } else {
+                        // value OP pk (reversed)
+                        let right_is_pk = match &*infix.right {
+                            Expression::Identifier(id) => id.value.eq_ignore_ascii_case(pk_column),
+                            Expression::QualifiedIdentifier(qid) => {
+                                qid.name.value.eq_ignore_ascii_case(pk_column)
+                            }
+                            _ => false,
+                        };
+
+                        if right_is_pk && matches!(op, "<" | "<=") {
+                            if let Some(value) = self.eval_pk_keyset_scalar(&infix.left, ctx) {
+                                if let Some(bound) =
+                                    Self::integer_pk_keyset_lower_bound(&value, op == "<=")
+                                {
+                                    return Ok(match bound {
+                                        IntegerPkKeysetBound::After(value) => {
+                                            (Some(value), None, true, false)
+                                        }
+                                        IntegerPkKeysetBound::From(value) => {
+                                            (None, Some(value), true, false)
+                                        }
+                                        IntegerPkKeysetBound::Empty => (None, None, true, true),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+                "AND" => {
+                    // For AND, try to extract bounds from both sides
+                    let (left_after, left_from, left_pure, left_empty) =
+                        self.extract_pk_keyset_bounds(&infix.left, pk_column, ctx)?;
+                    let (right_after, right_from, right_pure, right_empty) =
+                        self.extract_pk_keyset_bounds(&infix.right, pk_column, ctx)?;
+
+                    // Expression is pure keyset only if BOTH sides are pure keyset predicates
+                    // (e.g., `id > 100 AND id > 200` is pure,
+                    // `id > 100 AND status = 'active'` is not).
+                    let is_pure = left_pure && right_pure;
+
+                    if left_empty || right_empty {
+                        return Ok((None, None, is_pure, true));
+                    }
+
+                    let left_bound = IntegerPkKeysetBound::from_parts(left_after, left_from);
+                    let right_bound = IntegerPkKeysetBound::from_parts(right_after, right_from);
+                    let strongest = match (left_bound, right_bound) {
+                        (Some(left), Some(right)) => Some(left.strongest_lower(right)),
+                        (Some(bound), None) | (None, Some(bound)) => Some(bound),
+                        (None, None) => None,
+                    };
+
+                    let (start_after, start_from, is_empty) = strongest
+                        .map(IntegerPkKeysetBound::into_parts)
+                        .unwrap_or((None, None, false));
+
+                    return Ok((start_after, start_from, is_pure, is_empty));
+                }
+                _ => {}
+            }
+        }
+
+        // Not a keyset predicate - this is an additional filter
+        Ok((None, None, false, false))
+    }
+
+    /// Evaluate a keyset boundary without coercing it to the PK type.
+    fn eval_pk_keyset_scalar(&self, expr: &Expression, ctx: &ExecutionContext) -> Option<Value> {
+        match expr {
+            Expression::IntegerLiteral(lit) => Some(Value::Integer(lit.value)),
+            Expression::FloatLiteral(lit) => Some(Value::Float(lit.value)),
+            Expression::Parameter(param) => {
+                // Named parameters (e.g., :name) use get_named_param()
+                // Positional parameters ($1, $2, ...) are 1-indexed, array is 0-indexed
+                if param.name.starts_with(':') {
+                    let name = &param.name[1..];
+                    ctx.get_named_param(name).cloned()
+                } else {
+                    let params = ctx.params();
+                    let param_idx = if param.index > 0 {
+                        param.index - 1
+                    } else {
+                        return None;
+                    };
+                    if param_idx < params.len() {
+                        Some(params[param_idx].clone())
+                    } else {
+                        None
+                    }
+                }
+            }
+            _ => {
+                // Try to evaluate the expression
+                ExpressionEval::compile(expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+            }
+        }
+    }
+
+    /// Derive the exact lower boundary of an INTEGER domain without using a
+    /// truncating/saturating Float cast as a PK key.
+    fn integer_pk_keyset_lower_bound(
+        value: &Value,
+        inclusive: bool,
+    ) -> Option<IntegerPkKeysetBound> {
+        if let Some(integer) = exact_integer_pk_value(value) {
+            return Some(if inclusive {
+                IntegerPkKeysetBound::From(integer)
+            } else {
+                IntegerPkKeysetBound::After(integer)
+            });
+        }
+
+        let Value::Float(float) = value else {
+            return None;
+        };
+        if float.is_nan() || *float == f64::INFINITY {
+            return Some(IntegerPkKeysetBound::Empty);
+        }
+        if *float == f64::NEG_INFINITY || *float < i64::MIN as f64 {
+            return Some(IntegerPkKeysetBound::From(i64::MIN));
+        }
+        if *float >= i64::MAX as f64 {
+            return Some(IntegerPkKeysetBound::Empty);
+        }
+
+        debug_assert!(float.is_finite() && float.fract() != 0.0);
+        Some(IntegerPkKeysetBound::From(float.ceil() as i64))
+    }
+
+    /// Extract window ORDER BY information for optimization
+    /// Returns (column_name, ascending) if a simple optimizable case is found
+    fn extract_window_order_info(stmt: &SelectStatement) -> Option<(String, bool)> {
+        // Look for window functions in SELECT columns
+        for col_expr in &stmt.columns {
+            if let Some(info) = Self::find_window_order_in_expr(col_expr) {
+                return Some(info);
+            }
+        }
+        None
+    }
+
+    /// Check if all window functions in the statement are safe for LIMIT pushdown.
+    ///
+    /// Safe functions (don't depend on total row count):
+    /// - ROW_NUMBER, RANK, DENSE_RANK
+    /// - LAG, LEAD
+    /// - FIRST_VALUE, LAST_VALUE, NTH_VALUE
+    ///
+    /// Unsafe functions (depend on total row count):
+    /// - NTILE (bucket size depends on total count)
+    /// - PERCENT_RANK (formula: (rank-1)/(total-1))
+    /// - CUME_DIST (formula: rows_up_to_current/total)
+    fn is_window_safe_for_limit_pushdown(stmt: &SelectStatement) -> bool {
+        for col_expr in &stmt.columns {
+            if !Self::is_expr_window_safe(col_expr) {
+                return false;
+            }
+        }
+        true
+    }
+
+    /// Check if a single expression's window function (if any) is safe for LIMIT pushdown
+    /// Recursively checks all nested expressions for unsafe window functions
+    fn is_expr_window_safe(expr: &Expression) -> bool {
+        match expr {
+            Expression::Window(window_expr) => {
+                let func_name = window_expr.function.function.to_uppercase();
+                // These functions depend on total row count - NOT safe
+                !matches!(func_name.as_str(), "NTILE" | "PERCENT_RANK" | "CUME_DIST")
+            }
+            Expression::Aliased(aliased) => Self::is_expr_window_safe(&aliased.expression),
+            // Recursively check expressions that can contain window functions
+            Expression::Case(case_expr) => {
+                // Check operand if present (simple CASE expression)
+                if let Some(value) = &case_expr.value {
+                    if !Self::is_expr_window_safe(value) {
+                        return false;
+                    }
+                }
+                // Check all WHEN conditions and results
+                for when_clause in &case_expr.when_clauses {
+                    if !Self::is_expr_window_safe(&when_clause.condition)
+                        || !Self::is_expr_window_safe(&when_clause.then_result)
+                    {
+                        return false;
+                    }
+                }
+                // Check ELSE clause if present
+                if let Some(else_expr) = &case_expr.else_value {
+                    if !Self::is_expr_window_safe(else_expr) {
+                        return false;
+                    }
+                }
+                true
+            }
+            Expression::FunctionCall(func) => {
+                // Check all function arguments
+                func.arguments.iter().all(Self::is_expr_window_safe)
+            }
+            Expression::Infix(infix) => {
+                // Check both sides of binary expression (e.g., window_func + 1)
+                Self::is_expr_window_safe(&infix.left) && Self::is_expr_window_safe(&infix.right)
+            }
+            Expression::Cast(cast) => Self::is_expr_window_safe(&cast.expr),
+            Expression::Prefix(prefix) => Self::is_expr_window_safe(&prefix.right),
+            Expression::ScalarSubquery(_) => {
+                // Scalar subqueries have their own evaluation context, their window functions
+                // don't affect the outer query's LIMIT pushdown safety
+                true
+            }
+            Expression::In(in_expr) => {
+                // Check the left expression and right expression (which contains the list)
+                Self::is_expr_window_safe(&in_expr.left)
+                    && Self::is_expr_window_safe(&in_expr.right)
+            }
+            Expression::Between(between) => {
+                Self::is_expr_window_safe(&between.expr)
+                    && Self::is_expr_window_safe(&between.lower)
+                    && Self::is_expr_window_safe(&between.upper)
+            }
+            Expression::List(list) => {
+                // Check all expressions in the list
+                list.elements.iter().all(Self::is_expr_window_safe)
+            }
+            Expression::ExpressionList(expr_list) => {
+                // Check all expressions in the list
+                expr_list.expressions.iter().all(Self::is_expr_window_safe)
+            }
+            Expression::Like(like) => {
+                Self::is_expr_window_safe(&like.left)
+                    && Self::is_expr_window_safe(&like.pattern)
+                    && like
+                        .escape
+                        .as_ref()
+                        .is_none_or(|e| Self::is_expr_window_safe(e))
+            }
+            Expression::Exists(_) | Expression::AllAny(_) => {
+                // EXISTS and ALL/ANY have their own subquery context
+                true
+            }
+            Expression::Distinct(distinct) => Self::is_expr_window_safe(&distinct.expr),
+            // Leaf expressions - no nested window functions
+            Expression::Identifier(_)
+            | Expression::QualifiedIdentifier(_)
+            | Expression::IntegerLiteral(_)
+            | Expression::FloatLiteral(_)
+            | Expression::StringLiteral(_)
+            | Expression::BooleanLiteral(_)
+            | Expression::NullLiteral(_)
+            | Expression::Parameter(_)
+            | Expression::IntervalLiteral(_)
+            | Expression::BoundValue(_)
+            | Expression::Star(_)
+            | Expression::QualifiedStar(_)
+            | Expression::Default(_)
+            | Expression::InHashSet(_)
+            | Expression::TableSource(_)
+            | Expression::JoinSource(_)
+            | Expression::SubquerySource(_)
+            | Expression::ValuesSource(_)
+            | Expression::CteReference(_)
+            | Expression::FunctionTableSource(_) => true,
+        }
+    }
+
+    /// Check if an expression contains an equality condition (for hash join eligibility).
+    ///
+    /// Returns true if the expression contains at least one `=` comparison
+    /// that is NOT `!=`, `<>`, `>=`, or `<=`. This is used to determine if
+    /// streaming hash join can be used.
+    fn has_equality_condition(expr: &Expression) -> bool {
+        match expr {
+            // Direct equality comparison: col1 = col2
+            Expression::Infix(infix) => {
+                let op = infix.operator.as_str();
+                if op == "=" {
+                    // This is a pure equality, not >=, <=, !=, <>
+                    return true;
+                }
+                // Recurse into AND/OR branches
+                if op.eq_ignore_ascii_case("AND") || op.eq_ignore_ascii_case("OR") {
+                    return Self::has_equality_condition(&infix.left)
+                        || Self::has_equality_condition(&infix.right);
+                }
+                false
+            }
+            // Note: The parser inlines parenthesized expressions, so no Grouped variant needed
+            _ => false,
+        }
+    }
+
+    /// Estimate cardinality of a table expression for join build side selection.
+    ///
+    /// Uses table statistics and filter selectivity to estimate output rows.
+    /// Returns u64::MAX for complex expressions (subqueries, CTEs) that can't be estimated.
+    ///
+    /// This is used to choose the smaller side as build in streaming hash joins.
+    fn estimate_table_expr_cardinality(
+        &self,
+        expr: &Expression,
+        filter: Option<&Expression>,
+    ) -> u64 {
+        // Extract table name from expression (use pre-computed lowercase)
+        let table_name: &str = match expr {
+            Expression::TableSource(ts) => ts.name.value_lower.as_str(),
+            Expression::Aliased(aliased) => {
+                if let Expression::TableSource(ts) = aliased.expression.as_ref() {
+                    ts.name.value_lower.as_str()
+                } else {
+                    return u64::MAX; // Can't estimate subqueries/complex sources
+                }
+            }
+            _ => return u64::MAX, // Can't estimate joins, subqueries, CTEs
+        };
+
+        // Use the planner's estimate_scan_rows for accurate estimation
+        self.index_query_planner()
+            .estimate_scan_rows(table_name, filter)
+            .unwrap_or(u64::MAX)
+    }
+
+    /// Find window ORDER BY info in an expression
+    fn find_window_order_in_expr(expr: &Expression) -> Option<(String, bool)> {
+        match expr {
+            Expression::Window(window_expr) => {
+                // Check for no PARTITION BY (single partition case)
+                if !window_expr.partition_by.is_empty() {
+                    return None; // Pre-sorting doesn't help with partitions
+                }
+
+                // Check if using a window reference (can't analyze those)
+                if window_expr.window_ref.is_some() {
+                    return None;
+                }
+
+                // Get ORDER BY info
+                let order_by = &window_expr.order_by;
+
+                // Only optimize if exactly one simple ORDER BY column
+                if order_by.len() != 1 {
+                    return None;
+                }
+
+                let order = &order_by[0];
+                let column_name = match &order.expression {
+                    Expression::Identifier(id) => id.value.to_string(),
+                    Expression::QualifiedIdentifier(qid) => qid.name.value.to_string(),
+                    _ => return None, // Complex expression, can't optimize
+                };
+
+                Some((column_name, order.ascending))
+            }
+            Expression::Aliased(aliased) => Self::find_window_order_in_expr(&aliased.expression),
+            _ => None,
+        }
+    }
+
+    /// Extract window PARTITION BY information for optimization
+    /// Returns column_name if a simple single-column PARTITION BY is found
+    fn extract_window_partition_info(stmt: &SelectStatement) -> Option<String> {
+        // All window functions (including nested ones) must share the same single
+        // simple partition column. If any window is unpartitioned (global), uses
+        // complex expressions, or partitions by a different column, bail out.
+        let mut canonical: Option<String> = None;
+        for col_expr in &stmt.columns {
+            if !Self::collect_window_partitions(col_expr, &mut canonical) {
+                return None;
+            }
+        }
+        canonical
+    }
+
+    /// Recursively walk an expression tree, classifying every Window node found.
+    /// Returns false (bail out) if any window is incompatible with the optimization.
+    /// Updates `canonical` with the shared partition column.
+    fn collect_window_partitions(expr: &Expression, canonical: &mut Option<String>) -> bool {
+        match expr {
+            Expression::Window(window_expr) => {
+                if window_expr.partition_by.is_empty()
+                    || window_expr.partition_by.len() != 1
+                    || window_expr.window_ref.is_some()
+                {
+                    return false;
+                }
+                let col_name = match &window_expr.partition_by[0] {
+                    Expression::Identifier(id) => id.value.to_string(),
+                    Expression::QualifiedIdentifier(qid) => qid.name.value.to_string(),
+                    _ => return false,
+                };
+                match canonical {
+                    None => *canonical = Some(col_name),
+                    Some(c) if !c.eq_ignore_ascii_case(&col_name) => return false,
+                    _ => {}
+                }
+                true
+            }
+            Expression::Aliased(aliased) => {
+                Self::collect_window_partitions(&aliased.expression, canonical)
+            }
+            Expression::Infix(infix) => {
+                Self::collect_window_partitions(&infix.left, canonical)
+                    && Self::collect_window_partitions(&infix.right, canonical)
+            }
+            Expression::Prefix(prefix) => Self::collect_window_partitions(&prefix.right, canonical),
+            Expression::Case(case) => {
+                if let Some(v) = &case.value {
+                    if !Self::collect_window_partitions(v, canonical) {
+                        return false;
+                    }
+                }
+                for w in &case.when_clauses {
+                    if !Self::collect_window_partitions(&w.condition, canonical)
+                        || !Self::collect_window_partitions(&w.then_result, canonical)
+                    {
+                        return false;
+                    }
+                }
+                if let Some(e) = &case.else_value {
+                    if !Self::collect_window_partitions(e, canonical) {
+                        return false;
+                    }
+                }
+                true
+            }
+            Expression::Cast(cast) => Self::collect_window_partitions(&cast.expr, canonical),
+            Expression::FunctionCall(func) => {
+                for arg in &func.arguments {
+                    if !Self::collect_window_partitions(arg, canonical) {
+                        return false;
+                    }
+                }
+                true
+            }
+            Expression::Between(between) => {
+                Self::collect_window_partitions(&between.expr, canonical)
+                    && Self::collect_window_partitions(&between.lower, canonical)
+                    && Self::collect_window_partitions(&between.upper, canonical)
+            }
+            Expression::In(in_expr) => {
+                Self::collect_window_partitions(&in_expr.left, canonical)
+                    && Self::collect_window_partitions(&in_expr.right, canonical)
+            }
+            Expression::Like(l) => {
+                Self::collect_window_partitions(&l.left, canonical)
+                    && Self::collect_window_partitions(&l.pattern, canonical)
+                    && l.escape
+                        .as_ref()
+                        .is_none_or(|e| Self::collect_window_partitions(e, canonical))
+            }
+            Expression::Distinct(d) => Self::collect_window_partitions(&d.expr, canonical),
+            Expression::List(l) => l
+                .elements
+                .iter()
+                .all(|e| Self::collect_window_partitions(e, canonical)),
+            Expression::ExpressionList(l) => l
+                .expressions
+                .iter()
+                .all(|e| Self::collect_window_partitions(e, canonical)),
+            // Leaf nodes that cannot contain window expressions
+            _ => true,
+        }
+    }
+
+    /// IN subquery index optimization
+    ///
+    /// For queries like `SELECT * FROM users WHERE id IN (SELECT user_id FROM orders WHERE ...)`
+    /// where `id` has an index, probe the index for each subquery value instead of scanning all rows.
+    /// This is O(k log n) where k = subquery result size, vs O(n) for full table scan.
+    #[allow(clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
+    fn try_in_subquery_index_optimization(
+        &self,
+        stmt: &SelectStatement,
+        where_expr: &Expression,
+        table: &dyn Table,
+        all_columns: &[String],
+        table_alias: Option<&str>,
+        ctx: &ExecutionContext,
+        classification: &Arc<QueryClassification>,
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        // Extract IN subquery info: (column_name, subquery, is_negated, remaining_predicate)
+        let (column_name, subquery, is_negated, remaining_predicate) =
+            match Self::extract_in_subquery_info(where_expr) {
+                Some(info) => info,
+                None => return Ok(None),
+            };
+
+        // INTEGER primary keys are sparse values, not a dense row-id range.
+        // The ordinary evaluator preserves both the real key domain and NULL
+        // three-valued logic for NOT IN.
+        if is_negated {
+            return Ok(None);
+        }
+
+        // Skip correlated subqueries - they can't be pre-evaluated
+        if <Self as IndexOptimizerHost>::index_is_subquery_correlated(&subquery.subquery) {
+            return Ok(None);
+        }
+
+        // Skip if SELECT columns have correlated subqueries (need per-row context)
+        // classification is passed from caller to avoid redundant cache lookups
+        if classification.select_has_correlated_subqueries {
+            return Ok(None);
+        }
+
+        // Check if this is a PRIMARY KEY column (O(1) lookup) or has an index
+        let schema = table.schema();
+        let pk_indices = schema.primary_key_indices();
+        let is_pk_column = pk_indices.len() == 1 && {
+            let pk_col_idx = pk_indices[0];
+            schema.columns[pk_col_idx].data_type == radixdb_core::DataType::Integer
+                && schema.columns[pk_col_idx].name_lower == column_name
+        };
+
+        // Execute the subquery to get values (with caching for non-correlated subqueries)
+        let cache_key = subquery.subquery.to_string();
+        let values = if let Some(cached) = get_cached_in_subquery(&cache_key) {
+            cached
+        } else {
+            let subquery_ctx = ctx.with_incremented_query_depth();
+            let mut result = self.index_execute_select(&subquery.subquery, &subquery_ctx)?;
+
+            // Collect all values from the first column
+            let mut values = Vec::new();
+            while result.next() {
+                let row = result.row();
+                if !row.is_empty() {
+                    values.push(
+                        row.get(0)
+                            .cloned()
+                            .unwrap_or_else(radixdb_core::Value::null_unknown),
+                    );
+                }
+            }
+            if let Some(err) = result.last_error() {
+                return Err(err);
+            }
+            // Cache for future use
+            cache_in_subquery(
+                cache_key,
+                extract_table_names_for_cache(&subquery.subquery),
+                values.clone(),
+            );
+            values
+        };
+
+        // A direct mutable Index handle only covers the hot tier. Ask the
+        // table for a complete physical candidate set so segmented tables can
+        // merge persisted postings, and transaction-local tables can decline
+        // the shortcut when private changes make shared indexes incomplete.
+        let indexed_row_ids = if !is_pk_column && !is_negated {
+            match table.collect_row_ids_by_index_values(&column_name, &values) {
+                Some(row_ids) => Some(row_ids?),
+                None => return Ok(None),
+            }
+        } else {
+            None
+        };
+
+        if values.is_empty() {
+            // Empty subquery result
+            if is_negated {
+                // NOT IN empty set = all rows match (fall through to normal scan)
+                return Ok(None);
+            } else {
+                // IN empty set = no rows match
+                let output_columns = CompactArc::new(self.index_output_column_names(
+                    &stmt.columns,
+                    all_columns,
+                    table_alias,
+                ));
+                let result = ExecutorResult::with_arc_columns(
+                    CompactArc::clone(&output_columns),
+                    RowVec::new(),
+                );
+                return Ok(Some((Box::new(result), output_columns)));
+            }
+        }
+
+        // Collect row_ids: either from PK (direct) or from index probe
+        // Pre-allocate based on expected size to avoid reallocations
+        let mut all_row_ids = Vec::with_capacity(values.len());
+        if is_pk_column {
+            if is_negated {
+                // NOT IN optimization for INTEGER PRIMARY KEY:
+                // Instead of scanning the table, iterate through row_ids and exclude
+                // This is O(row_count) but with O(1) hashset lookup, which is faster
+                // than table scan because we only touch row_ids, not full rows
+                let exclusion_set: I64Set =
+                    values.iter().filter_map(exact_integer_pk_value).collect();
+
+                // Calculate LIMIT + OFFSET to know how many row_ids we need
+                let offset = stmt
+                    .offset
+                    .as_ref()
+                    .and_then(|e| {
+                        ExpressionEval::compile(e, &[])
+                            .ok()
+                            .and_then(|eval| eval.with_context(ctx).eval_slice(&Row::new()).ok())
+                            .and_then(|v| {
+                                if let Value::Integer(o) = v {
+                                    Some(o.max(0) as usize)
+                                } else {
+                                    None
+                                }
+                            })
+                    })
+                    .unwrap_or(0);
+
+                let limit = stmt
+                    .limit
+                    .as_ref()
+                    .and_then(|e| {
+                        ExpressionEval::compile(e, &[])
+                            .ok()
+                            .and_then(|eval| eval.with_context(ctx).eval_slice(&Row::new()).ok())
+                            .and_then(|v| {
+                                if let Value::Integer(l) = v {
+                                    Some(l.max(0) as usize)
+                                } else {
+                                    None
+                                }
+                            })
+                    })
+                    .unwrap_or(usize::MAX);
+
+                let target = if limit == usize::MAX {
+                    usize::MAX
+                } else {
+                    offset.saturating_add(limit)
+                };
+
+                // Iterate through row_ids and collect non-excluded ones
+                // Row IDs are typically 1-based and sequential
+                let row_count = table.row_count();
+                for row_id in 1..=(row_count as i64) {
+                    if !exclusion_set.contains(row_id) {
+                        all_row_ids.push(row_id);
+                        if all_row_ids.len() >= target {
+                            break;
+                        }
+                    }
+                }
+
+                // Apply offset
+                if offset > 0 && offset < all_row_ids.len() {
+                    all_row_ids = all_row_ids.split_off(offset);
+                } else if offset >= all_row_ids.len() {
+                    all_row_ids.clear();
+                }
+
+                // Apply limit
+                if limit < all_row_ids.len() {
+                    all_row_ids.truncate(limit);
+                }
+            } else {
+                // IN: PRIMARY KEY - the value IS the row_id (for INTEGER PK)
+                for value in &values {
+                    if let Some(id) = exact_integer_pk_value(value) {
+                        all_row_ids.push(id);
+                    }
+                }
+            }
+        } else if is_negated {
+            // NOT IN with non-PK index: fall back to normal scan
+            return Ok(None);
+        } else if let Some(row_ids) = indexed_row_ids {
+            all_row_ids.extend(row_ids);
+        }
+
+        // Sort row_ids for better cache locality during version lookup
+        // and deduplicate. More efficient than HashSet when sorted output is needed anyway.
+        // (only for IN, NOT IN is already ordered)
+        if !is_negated {
+            all_row_ids.sort_unstable();
+            all_row_ids.dedup();
+        }
+
+        // EARLY LIMIT OPTIMIZATION: When there's no ORDER BY and no remaining predicate,
+        // we can apply LIMIT early to avoid fetching unnecessary rows
+        let (early_limit_applied, early_limit, early_offset) =
+            if stmt.order_by.is_empty() && remaining_predicate.is_none() {
+                let offset = if let Some(ref offset_expr) = stmt.offset {
+                    match ExpressionEval::compile(offset_expr, &[])
+                        .ok()
+                        .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                    {
+                        Some(Value::Integer(o)) if o >= 0 => o as usize,
+                        _ => 0,
+                    }
+                } else {
+                    0
+                };
+
+                let limit = if let Some(ref limit_expr) = stmt.limit {
+                    match ExpressionEval::compile(limit_expr, &[])
+                        .ok()
+                        .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                    {
+                        Some(Value::Integer(l)) if l >= 0 => l as usize,
+                        _ => usize::MAX,
+                    }
+                } else {
+                    usize::MAX
+                };
+
+                // Truncate row_ids to avoid fetching unnecessary rows
+                if limit < usize::MAX {
+                    let take_count = (offset + limit).min(all_row_ids.len());
+                    all_row_ids.truncate(take_count);
+                }
+                (true, limit, offset)
+            } else {
+                (false, usize::MAX, 0)
+            };
+
+        // Create a filter expression for remaining predicate + visibility
+        use radixdb_storage::expression::logical::ConstBoolExpr;
+        let filter: Box<dyn radixdb_storage::expression::Expression> =
+            Box::new(ConstBoolExpr::true_expr());
+
+        // Fetch rows by row_ids - returns RowVec directly
+        let mut rows = table.fetch_rows_by_ids(&all_row_ids, filter.as_ref())?;
+
+        // Apply remaining predicate if any
+        if let Some(ref remaining) = remaining_predicate {
+            // Process any subqueries in the remaining predicate
+            let processed_remaining =
+                if <Self as IndexOptimizerHost>::index_has_subqueries(remaining) {
+                    self.index_process_where_subqueries(remaining, ctx)?
+                } else {
+                    remaining.clone()
+                };
+
+            // Compile the filter using RowFilter (with params for $1 etc.)
+            let columns_slice: Vec<String> = all_columns.to_vec();
+            let row_filter =
+                RowFilter::new(&processed_remaining, &columns_slice)?.with_context(ctx);
+
+            // Filter rows (retain works on (i64, Row) tuples via Deref)
+            row_filter.retain_checked(&mut rows)?;
+        }
+
+        // Apply LIMIT/OFFSET if present (and no ORDER BY)
+        // Skip if we already applied early limit optimization
+        if early_limit_applied {
+            // Early optimization already truncated row_ids, but we still need to apply offset
+            if early_offset > 0 {
+                rows = rows
+                    .into_iter()
+                    .skip(early_offset)
+                    .take(early_limit)
+                    .collect();
+            } else if early_limit < rows.len() {
+                rows.truncate(early_limit);
+            }
+        } else if stmt.order_by.is_empty() {
+            let offset = if let Some(ref offset_expr) = stmt.offset {
+                match ExpressionEval::compile(offset_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(o)) if o >= 0 => o as usize,
+                    _ => 0,
+                }
+            } else {
+                0
+            };
+
+            let limit = if let Some(ref limit_expr) = stmt.limit {
+                match ExpressionEval::compile(limit_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(l)) if l >= 0 => l as usize,
+                    _ => usize::MAX,
+                }
+            } else {
+                usize::MAX
+            };
+
+            if offset > 0 || limit < usize::MAX {
+                rows = rows.into_iter().skip(offset).take(limit).collect();
+            }
+        }
+
+        // Project rows according to SELECT expressions
+        // Use schema cache for lowercase column names
+        let all_columns_lower = schema.column_names_lower_arc();
+        let projected_rows = self.index_project_rows_with_alias(
+            &stmt.columns,
+            rows,
+            all_columns,
+            Some(&all_columns_lower),
+            ctx,
+            table_alias,
+        )?;
+        let output_columns = CompactArc::new(self.index_output_column_names(
+            &stmt.columns,
+            all_columns,
+            table_alias,
+        ));
+        let result =
+            ExecutorResult::with_arc_columns(CompactArc::clone(&output_columns), projected_rows);
+        Ok(Some((Box::new(result), output_columns)))
+    }
+
+    /// IN list literal index optimization
+    ///
+    /// For queries like `SELECT * FROM users WHERE id IN (1, 2, 3, 5, 8)`
+    /// where `id` has an index or is PRIMARY KEY, probe the index directly for each value
+    /// instead of scanning all rows. This is O(k log n) where k = list size.
+    #[allow(clippy::type_complexity)]
+    #[allow(clippy::too_many_arguments)]
+    fn try_in_list_index_optimization(
+        &self,
+        stmt: &SelectStatement,
+        where_expr: &Expression,
+        table: &dyn Table,
+        all_columns: &[String],
+        table_alias: Option<&str>,
+        ctx: &ExecutionContext,
+        classification: &Arc<QueryClassification>,
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        // Extract IN list info: (column_name, values, is_negated, remaining_predicate)
+        let (column_name, values, is_negated, remaining_predicate) =
+            match Self::extract_in_list_info(where_expr, ctx) {
+                Some(info) => info,
+                None => return Ok(None),
+            };
+
+        // Skip if SELECT columns have correlated subqueries (need per-row context)
+        // classification is passed from caller to avoid redundant cache lookups
+        if classification.select_has_correlated_subqueries {
+            return Ok(None);
+        }
+
+        // Check if this is a PRIMARY KEY column (O(1) lookup) or has an index
+        let schema = table.schema();
+        let pk_indices = schema.primary_key_indices();
+        let is_pk_column = pk_indices.len() == 1 && {
+            let pk_col_idx = pk_indices[0];
+            schema.columns[pk_col_idx].data_type == radixdb_core::DataType::Integer
+                && schema.columns[pk_col_idx].name_lower == column_name
+        };
+
+        // Ask the table for a complete physical candidate set. A segmented
+        // implementation includes persisted postings and the hot index; when
+        // it cannot prove complete coverage it returns None and we scan.
+        let indexed_row_ids = if !is_pk_column {
+            match table.collect_row_ids_by_index_values(&column_name, &values) {
+                Some(row_ids) => Some(row_ids?),
+                None => return Ok(None),
+            }
+        } else {
+            None
+        };
+
+        if values.is_empty() {
+            // Empty IN list
+            if is_negated {
+                // NOT IN empty set = all rows match (fall through to normal scan)
+                return Ok(None);
+            } else {
+                // IN empty set = no rows match
+                let output_columns = CompactArc::new(self.index_output_column_names(
+                    &stmt.columns,
+                    all_columns,
+                    table_alias,
+                ));
+                let result = ExecutorResult::with_arc_columns(
+                    CompactArc::clone(&output_columns),
+                    RowVec::new(),
+                );
+                return Ok(Some((Box::new(result), output_columns)));
+            }
+        }
+
+        // For NOT IN, we can't easily use the index (would need to exclude rows)
+        // Fall back to normal scan
+        if is_negated {
+            return Ok(None);
+        }
+
+        // Collect row_ids: either from PK (direct) or from index probe
+        // Pre-allocate based on expected size to avoid reallocations
+        let mut all_row_ids = Vec::with_capacity(values.len());
+        if is_pk_column {
+            // PRIMARY KEY: the value IS the row_id (for INTEGER PK)
+            for value in &values {
+                if let Some(id) = exact_integer_pk_value(value) {
+                    all_row_ids.push(id);
+                }
+            }
+        } else if let Some(row_ids) = indexed_row_ids {
+            all_row_ids = row_ids;
+        }
+
+        // Sort row_ids for better cache locality during version lookup
+        // and deduplicate. More efficient than HashSet when sorted output is needed anyway.
+        all_row_ids.sort_unstable();
+        all_row_ids.dedup();
+
+        // EARLY LIMIT OPTIMIZATION: When there's no ORDER BY and no remaining predicate,
+        // we can apply LIMIT early to avoid fetching unnecessary rows
+        let (early_limit_applied, early_limit, early_offset) = if stmt.order_by.is_empty()
+            && remaining_predicate.is_none()
+            && !table.has_cold_segments()
+        {
+            let offset = if let Some(ref offset_expr) = stmt.offset {
+                match ExpressionEval::compile(offset_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(o)) if o >= 0 => o as usize,
+                    _ => 0,
+                }
+            } else {
+                0
+            };
+
+            let limit = if let Some(ref limit_expr) = stmt.limit {
+                match ExpressionEval::compile(limit_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(l)) if l >= 0 => l as usize,
+                    _ => usize::MAX,
+                }
+            } else {
+                usize::MAX
+            };
+
+            // Truncate row_ids to avoid fetching unnecessary rows
+            if limit < usize::MAX {
+                let take_count = (offset + limit).min(all_row_ids.len());
+                all_row_ids.truncate(take_count);
+            }
+            (true, limit, offset)
+        } else {
+            (false, usize::MAX, 0)
+        };
+
+        // Create a filter expression for remaining predicate + visibility
+        use radixdb_storage::expression::logical::ConstBoolExpr;
+        let filter: Box<dyn radixdb_storage::expression::Expression> =
+            Box::new(ConstBoolExpr::true_expr());
+
+        // Fetch rows by row_ids - returns RowVec directly
+        let mut rows = table.fetch_rows_by_ids(&all_row_ids, filter.as_ref())?;
+
+        // Persisted exact postings are hash candidates and a cold row may have
+        // an authoritative hot shadow with a changed key. Recheck the requested
+        // values before applying residual predicates.
+        let (indexed_column_idx, indexed_column) = schema
+            .find_column(&column_name)
+            .expect("indexed IN column must belong to the table schema");
+        let typed_values: Vec<Value> = values
+            .iter()
+            .map(|value| value.coerce_to_type(indexed_column.data_type))
+            .filter(|value| !value.is_null())
+            .collect();
+        rows.retain(|(_, row)| {
+            row.get(indexed_column_idx).is_some_and(|candidate| {
+                typed_values
+                    .iter()
+                    .any(|value| matches!(candidate.compare(value), Ok(std::cmp::Ordering::Equal)))
+            })
+        });
+
+        // Apply remaining predicate if any
+        if let Some(ref remaining) = remaining_predicate {
+            // Process any subqueries in the remaining predicate
+            let processed_remaining =
+                if <Self as IndexOptimizerHost>::index_has_subqueries(remaining) {
+                    self.index_process_where_subqueries(remaining, ctx)?
+                } else {
+                    remaining.clone()
+                };
+
+            // Compile the filter using RowFilter (with params for $1 etc.)
+            let columns_slice: Vec<String> = all_columns.to_vec();
+            let row_filter =
+                RowFilter::new(&processed_remaining, &columns_slice)?.with_context(ctx);
+
+            // Filter rows (retain works on (i64, Row) tuples via Deref)
+            row_filter.retain_checked(&mut rows)?;
+        }
+
+        // Apply LIMIT/OFFSET if present (and no ORDER BY)
+        // Skip if we already applied early limit optimization
+        if early_limit_applied {
+            // Early optimization already truncated row_ids, but we still need to apply offset
+            if early_offset > 0 {
+                rows = rows
+                    .into_iter()
+                    .skip(early_offset)
+                    .take(early_limit)
+                    .collect();
+            } else if early_limit < rows.len() {
+                rows.truncate(early_limit);
+            }
+        } else if stmt.order_by.is_empty() {
+            let offset = if let Some(ref offset_expr) = stmt.offset {
+                match ExpressionEval::compile(offset_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(o)) if o >= 0 => o as usize,
+                    _ => 0,
+                }
+            } else {
+                0
+            };
+
+            let limit = if let Some(ref limit_expr) = stmt.limit {
+                match ExpressionEval::compile(limit_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(l)) if l >= 0 => l as usize,
+                    _ => usize::MAX,
+                }
+            } else {
+                usize::MAX
+            };
+
+            if offset > 0 || limit < usize::MAX {
+                rows = rows.into_iter().skip(offset).take(limit).collect();
+            }
+        }
+
+        // Project rows according to SELECT expressions
+        // Use schema cache for lowercase column names
+        let all_columns_lower = schema.column_names_lower_arc();
+        let projected_rows = self.index_project_rows_with_alias(
+            &stmt.columns,
+            rows,
+            all_columns,
+            Some(&all_columns_lower),
+            ctx,
+            table_alias,
+        )?;
+        let output_columns = CompactArc::new(self.index_output_column_names(
+            &stmt.columns,
+            all_columns,
+            table_alias,
+        ));
+        let result =
+            ExecutorResult::with_arc_columns(CompactArc::clone(&output_columns), projected_rows);
+        Ok(Some((Box::new(result), output_columns)))
+    }
+
+    /// Extract IN list literal information from a WHERE clause.
+    /// Returns (column_name, values, is_negated, remaining_predicate)
+    fn extract_in_list_info(
+        expr: &Expression,
+        ctx: &ExecutionContext,
+    ) -> Option<(String, Vec<Value>, bool, Option<Expression>)> {
+        match expr {
+            // Direct IN list: column IN (v1, v2, ...)
+            Expression::In(in_expr) => {
+                // Get the column name from the left side (lowercase for case-insensitive match)
+                let column_name = match in_expr.left.as_ref() {
+                    Expression::Identifier(id) => id.value_lower.to_string(),
+                    Expression::QualifiedIdentifier(qid) => qid.name.value_lower.to_string(),
+                    _ => return None, // Can't optimize complex left expressions
+                };
+
+                // Get the values from the right side (must be a literal list, not subquery)
+                let values = match in_expr.right.as_ref() {
+                    Expression::List(list) => {
+                        // ListExpression has Vec<Expression>
+                        Self::extract_literal_values(&list.elements, ctx)
+                    }
+                    Expression::ExpressionList(list) => {
+                        // ExpressionList has Vec<Expression>
+                        Self::extract_literal_values(&list.expressions, ctx)
+                    }
+                    _ => return None, // Not a literal list (might be subquery)
+                };
+
+                values.map(|v| (column_name, v, in_expr.not, None))
+            }
+
+            // IN list with AND: column IN (...) AND other_condition
+            Expression::Infix(infix) if infix.op_type == InfixOperator::And => {
+                // Try left side as IN list
+                if let Some((col, vals, neg, _)) = Self::extract_in_list_info(&infix.left, ctx) {
+                    return Some((col, vals, neg, Some((*infix.right).clone())));
+                }
+                // Try right side as IN list
+                if let Some((col, vals, neg, _)) = Self::extract_in_list_info(&infix.right, ctx) {
+                    return Some((col, vals, neg, Some((*infix.left).clone())));
+                }
+                None
+            }
+
+            _ => None,
+        }
+    }
+
+    /// Extract literal values from a list of expressions.
+    /// Returns None if any expression is not a literal (e.g., column reference, subquery).
+    fn extract_literal_values(exprs: &[Expression], ctx: &ExecutionContext) -> Option<Vec<Value>> {
+        let mut values = Vec::with_capacity(exprs.len());
+        for expr in exprs {
+            // Try to evaluate as a constant expression
+            match ExpressionEval::compile(expr, &[]) {
+                Ok(compiled) => match compiled.with_context(ctx).eval_slice(&Row::new()) {
+                    Ok(val) => values.push(val),
+                    Err(_) => return None, // Can't evaluate as constant
+                },
+                Err(_) => return None, // Can't compile (e.g., column reference)
+            }
+        }
+        Some(values)
+    }
+
+    /// Extract IN subquery information from a WHERE clause.
+    /// Returns (column_name, subquery, is_negated, remaining_predicate)
+    fn extract_in_subquery_info(
+        expr: &Expression,
+    ) -> Option<(String, &ScalarSubquery, bool, Option<Expression>)> {
+        match expr {
+            // Direct IN subquery: column IN (SELECT ...)
+            Expression::In(in_expr) => {
+                // Get the column name from the left side (lowercase for case-insensitive match)
+                let column_name = match in_expr.left.as_ref() {
+                    Expression::Identifier(id) => id.value_lower.to_string(),
+                    Expression::QualifiedIdentifier(qid) => qid.name.value_lower.to_string(),
+                    _ => return None, // Can't optimize complex left expressions
+                };
+
+                // Get the subquery from the right side
+                if let Expression::ScalarSubquery(subquery) = in_expr.right.as_ref() {
+                    return Some((column_name, subquery, in_expr.not, None));
+                }
+                None
+            }
+
+            // IN subquery with AND: column IN (SELECT ...) AND other_condition
+            Expression::Infix(infix) if infix.op_type == InfixOperator::And => {
+                // Try left side as IN subquery
+                if let Some((col, sq, neg, _)) = Self::extract_in_subquery_info(&infix.left) {
+                    return Some((col, sq, neg, Some((*infix.right).clone())));
+                }
+                // Try right side as IN subquery
+                if let Some((col, sq, neg, _)) = Self::extract_in_subquery_info(&infix.right) {
+                    return Some((col, sq, neg, Some((*infix.left).clone())));
+                }
+                None
+            }
+
+            _ => None,
+        }
+    }
+
+    /// Try to optimize InHashSet expressions (from EXISTS → semi-join transformation).
+    ///
+    /// When EXISTS is transformed to InHashSet via semi-join, we can further optimize
+    /// by probing the PRIMARY KEY or index directly instead of scanning all rows.
+    ///
+    /// For example: `SELECT * FROM users WHERE users.id IN {1, 2, 3} LIMIT 100`
+    /// Instead of scanning all 10,000 users, probe the PK for ids 1, 2, 3 directly.
+    #[allow(clippy::type_complexity)]
+    fn try_in_hashset_index_optimization(
+        &self,
+        stmt: &SelectStatement,
+        where_expr: &Expression,
+        table: &dyn Table,
+        all_columns: &[String],
+        table_alias: Option<&str>,
+        ctx: &ExecutionContext,
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        // Extract InHashSet info: (column_name, values, is_negated, remaining_predicate)
+        let (column_name, values, is_negated, remaining_predicate) =
+            match Self::extract_in_hashset_info(where_expr) {
+                Some(info) => info,
+                None => return Ok(None),
+            };
+
+        // A negated hash set also needs the complete visible key domain; the
+        // former 1..row_count complement was invalid for sparse primary keys.
+        if is_negated {
+            return Ok(None);
+        }
+
+        // Check if this is a PRIMARY KEY column (O(1) lookup) or has an index
+        let schema = table.schema();
+        let pk_indices = schema.primary_key_indices();
+        let is_pk_column = pk_indices.len() == 1 && {
+            let pk_col_idx = pk_indices[0];
+            schema.columns[pk_col_idx].data_type == radixdb_core::DataType::Integer
+                && schema.columns[pk_col_idx].name_lower == column_name
+        };
+
+        // For NOT IN (negated), only optimize if it's a PK column
+        // Non-PK NOT IN would require full index scan which isn't much better than table scan
+        if is_negated && !is_pk_column {
+            return Ok(None);
+        }
+
+        // Resolve the complete hot+cold candidate set up front. A mutable
+        // index handle is never sufficient evidence for a segmented table.
+        let indexed_row_ids = if !is_pk_column {
+            let values_vec: Vec<Value> = values.iter().cloned().collect();
+            match table.collect_row_ids_by_index_values(&column_name, &values_vec) {
+                Some(row_ids) => Some(row_ids?),
+                None => return Ok(None),
+            }
+        } else {
+            None
+        };
+
+        // EARLY LIMIT CHECK: Compute limit+offset before collecting row_ids
+        // This allows us to stop collection early when there's no ORDER BY
+        let early_termination_target = if stmt.order_by.is_empty() && remaining_predicate.is_none()
+        {
+            let offset = stmt
+                .offset
+                .as_ref()
+                .and_then(|offset_expr| {
+                    ExpressionEval::compile(offset_expr, &[])
+                        .ok()
+                        .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                        .and_then(|v| {
+                            if let Value::Integer(o) = v {
+                                Some(o.max(0) as usize)
+                            } else {
+                                None
+                            }
+                        })
+                })
+                .unwrap_or(0);
+
+            let limit = stmt.limit.as_ref().and_then(|limit_expr| {
+                ExpressionEval::compile(limit_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                    .and_then(|v| {
+                        if let Value::Integer(l) = v {
+                            Some(l.max(0) as usize)
+                        } else {
+                            None
+                        }
+                    })
+            });
+
+            limit.map(|l| offset + l)
+        } else {
+            None // Can't use early termination with ORDER BY or remaining predicate
+        };
+
+        // Collect row_ids: either from PK (direct) or from index probe
+        // With early termination target, stop once we have enough
+        // Pre-allocate based on expected size to avoid reallocations
+        let estimated_capacity = if let Some(target) = early_termination_target {
+            target.min(values.len())
+        } else {
+            values.len()
+        };
+        let mut all_row_ids = Vec::with_capacity(estimated_capacity);
+        if is_pk_column {
+            if is_negated {
+                // NOT IN optimization for INTEGER PRIMARY KEY (from NOT EXISTS semi-join):
+                // Iterate through row_ids and exclude those in the hash set
+                let exclusion_set: I64Set =
+                    values.iter().filter_map(exact_integer_pk_value).collect();
+
+                let target = early_termination_target.unwrap_or(usize::MAX);
+                let row_count = table.row_count();
+
+                for row_id in 1..=(row_count as i64) {
+                    if !exclusion_set.contains(row_id) {
+                        all_row_ids.push(row_id);
+                        if all_row_ids.len() >= target {
+                            break;
+                        }
+                    }
+                }
+            } else {
+                // IN: PRIMARY KEY - the value IS the row_id (for INTEGER PK)
+                for value in values.iter() {
+                    // Early termination check
+                    if let Some(target) = early_termination_target {
+                        if all_row_ids.len() >= target {
+                            break;
+                        }
+                    }
+                    if let Some(id) = exact_integer_pk_value(value) {
+                        all_row_ids.push(id);
+                    }
+                }
+            }
+        } else if let Some(row_ids) = indexed_row_ids {
+            all_row_ids.extend(row_ids);
+        }
+
+        // If no row_ids found, return empty result
+        if all_row_ids.is_empty() {
+            let output_columns = CompactArc::new(self.index_output_column_names(
+                &stmt.columns,
+                all_columns,
+                table_alias,
+            ));
+            let result =
+                ExecutorResult::with_arc_columns(CompactArc::clone(&output_columns), RowVec::new());
+            return Ok(Some((Box::new(result), output_columns)));
+        }
+
+        // Sort row_ids for better cache locality during version lookup
+        // and deduplicate. More efficient than HashSet when sorted output is needed anyway.
+        all_row_ids.sort_unstable();
+        all_row_ids.dedup();
+
+        // EARLY LIMIT OPTIMIZATION: When there's no ORDER BY and no remaining predicate,
+        // we can apply LIMIT early to avoid fetching unnecessary rows
+        let (early_limit_applied, early_limit, early_offset) =
+            if stmt.order_by.is_empty() && remaining_predicate.is_none() {
+                let offset = if let Some(ref offset_expr) = stmt.offset {
+                    match ExpressionEval::compile(offset_expr, &[])
+                        .ok()
+                        .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                    {
+                        Some(Value::Integer(o)) if o >= 0 => o as usize,
+                        _ => 0,
+                    }
+                } else {
+                    0
+                };
+
+                let limit = if let Some(ref limit_expr) = stmt.limit {
+                    match ExpressionEval::compile(limit_expr, &[])
+                        .ok()
+                        .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                    {
+                        Some(Value::Integer(l)) if l >= 0 => l as usize,
+                        _ => usize::MAX,
+                    }
+                } else {
+                    usize::MAX
+                };
+
+                // Truncate row_ids to avoid fetching unnecessary rows
+                if limit < usize::MAX {
+                    let take_count = (offset + limit).min(all_row_ids.len());
+                    all_row_ids.truncate(take_count);
+                }
+                (true, limit, offset)
+            } else {
+                (false, usize::MAX, 0)
+            };
+
+        // Create a filter expression for remaining predicate + visibility
+        use radixdb_storage::expression::logical::ConstBoolExpr;
+        let filter: Box<dyn radixdb_storage::expression::Expression> =
+            Box::new(ConstBoolExpr::true_expr());
+
+        // Fetch rows by row_ids - returns RowVec directly
+        let mut rows = table.fetch_rows_by_ids(&all_row_ids, filter.as_ref())?;
+
+        // Apply remaining predicate if any
+        if let Some(ref remaining) = remaining_predicate {
+            // Compile the filter using RowFilter (with params for $1 etc.)
+            let columns_slice: Vec<String> = all_columns.to_vec();
+            let row_filter = RowFilter::new(remaining, &columns_slice)?.with_context(ctx);
+
+            // Filter rows (retain works on (i64, Row) tuples via Deref)
+            row_filter.retain_checked(&mut rows)?;
+        }
+
+        // Apply LIMIT/OFFSET if present (and no ORDER BY)
+        // Skip if we already applied early limit optimization
+        if early_limit_applied {
+            // Early optimization already truncated row_ids, but we still need to apply offset
+            if early_offset > 0 {
+                rows = rows
+                    .into_iter()
+                    .skip(early_offset)
+                    .take(early_limit)
+                    .collect();
+            } else if early_limit < rows.len() {
+                rows.truncate(early_limit);
+            }
+        } else if stmt.order_by.is_empty() {
+            let offset = if let Some(ref offset_expr) = stmt.offset {
+                match ExpressionEval::compile(offset_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(o)) if o >= 0 => o as usize,
+                    _ => 0,
+                }
+            } else {
+                0
+            };
+
+            let limit = if let Some(ref limit_expr) = stmt.limit {
+                match ExpressionEval::compile(limit_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(l)) if l >= 0 => l as usize,
+                    _ => usize::MAX,
+                }
+            } else {
+                usize::MAX
+            };
+
+            if offset > 0 || limit < usize::MAX {
+                rows = rows.into_iter().skip(offset).take(limit).collect();
+            }
+        }
+
+        // Project rows according to SELECT expressions
+        // Use schema cache for lowercase column names
+        let all_columns_lower = schema.column_names_lower_arc();
+        let projected_rows = self.index_project_rows_with_alias(
+            &stmt.columns,
+            rows,
+            all_columns,
+            Some(&all_columns_lower),
+            ctx,
+            table_alias,
+        )?;
+        let output_columns = CompactArc::new(self.index_output_column_names(
+            &stmt.columns,
+            all_columns,
+            table_alias,
+        ));
+        let result =
+            ExecutorResult::with_arc_columns(CompactArc::clone(&output_columns), projected_rows);
+        Ok(Some((Box::new(result), output_columns)))
+    }
+
+    /// Extract InHashSet information from a WHERE clause.
+    /// Returns (column_name, hash_set_values, is_negated, remaining_predicate)
+    #[allow(clippy::type_complexity)]
+    fn extract_in_hashset_info(
+        expr: &Expression,
+    ) -> Option<(String, CompactArc<ValueSet>, bool, Option<Expression>)> {
+        match expr {
+            // Direct InHashSet: column IN {hash_set}
+            Expression::InHashSet(in_hash) => {
+                // Get the column name from the column expression (lowercase for case-insensitive match)
+                let column_name = match in_hash.column.as_ref() {
+                    Expression::Identifier(id) => id.value_lower.to_string(),
+                    Expression::QualifiedIdentifier(qid) => qid.name.value_lower.to_string(),
+                    _ => return None, // Can't optimize complex column expressions
+                };
+
+                Some((column_name, in_hash.values.clone(), in_hash.not, None))
+            }
+
+            // InHashSet with AND: column IN {hash_set} AND other_condition
+            Expression::Infix(infix) if infix.op_type == InfixOperator::And => {
+                // Try left side as InHashSet
+                if let Some((col, vals, neg, _)) = Self::extract_in_hashset_info(&infix.left) {
+                    return Some((col, vals, neg, Some((*infix.right).clone())));
+                }
+                // Try right side as InHashSet
+                if let Some((col, vals, neg, _)) = Self::extract_in_hashset_info(&infix.right) {
+                    return Some((col, vals, neg, Some((*infix.left).clone())));
+                }
+                None
+            }
+
+            _ => None,
+        }
+    }
+
+    /// Exact vector Top-K optimization using parallel brute force
+    ///
+    /// For queries like:
+    ///   SELECT id, VEC_DISTANCE_L2(embedding, '[1.0, 2.0, ...]') AS dist
+    ///   FROM documents ORDER BY dist LIMIT 10;
+    ///
+    /// Detects the VEC_DISTANCE pattern in ORDER BY:
+    /// HNSW is not selected for ordinary SQL because no approximate opt-in is
+    /// present. The fused brute-force path preserves exact ORDER BY semantics.
+    #[allow(clippy::type_complexity)]
+    fn try_vector_search_optimization(
+        &self,
+        stmt: &SelectStatement,
+        table: &dyn Table,
+        all_columns: &[String],
+        ctx: &ExecutionContext,
+    ) -> Result<Option<(Box<dyn QueryResult>, CompactArc<Vec<String>>)>> {
+        // Must have exactly 1 ORDER BY + LIMIT, ascending order
+        if stmt.order_by.len() != 1 || stmt.limit.is_none() {
+            return Ok(None);
+        }
+
+        let order_by = &stmt.order_by[0];
+        if !order_by.ascending {
+            return Ok(None); // Vector search always returns closest first
+        }
+
+        // Find the VEC_DISTANCE function call — either directly in ORDER BY, via alias,
+        // or via the <=> infix operator (which is equivalent to VEC_DISTANCE_L2).
+        // For <=> operator, we synthesize an equivalent FunctionCall to reuse the same logic.
+        let synthesized_fc;
+        let func_call = match &order_by.expression {
+            Expression::FunctionCall(fc) => Some(fc.as_ref()),
+            Expression::Identifier(id) => {
+                // Look up alias in SELECT columns — try FunctionCall first, then <=> infix
+                if let Some(fc) = Self::find_vec_distance_alias(&id.value_lower, &stmt.columns) {
+                    Some(fc)
+                } else if let Some(infix) =
+                    Self::find_vec_distance_infix_alias(&id.value_lower, &stmt.columns)
+                {
+                    synthesized_fc = FunctionCall {
+                        token: infix.token.clone(),
+                        function: "VEC_DISTANCE_L2".into(),
+                        arguments: vec![(*infix.left).clone(), (*infix.right).clone()],
+                        is_distinct: false,
+                        order_by: Vec::new(),
+                        filter: None,
+                    };
+                    Some(&synthesized_fc)
+                } else {
+                    None
+                }
+            }
+            Expression::Infix(infix) if infix.op_type == InfixOperator::VectorDistance => {
+                // <=> operator is equivalent to VEC_DISTANCE_L2
+                synthesized_fc = FunctionCall {
+                    token: infix.token.clone(),
+                    function: "VEC_DISTANCE_L2".into(),
+                    arguments: vec![(*infix.left).clone(), (*infix.right).clone()],
+                    is_distinct: false,
+                    order_by: Vec::new(),
+                    filter: None,
+                };
+                Some(&synthesized_fc)
+            }
+            _ => None,
+        };
+
+        let func_call = match func_call {
+            Some(fc) => fc,
+            None => return Ok(None),
+        };
+
+        // Check if it's a VEC_DISTANCE function
+        let fn_name_upper = func_call.function.to_uppercase();
+        let is_vec_distance = matches!(
+            fn_name_upper.as_str(),
+            "VEC_DISTANCE_L2" | "VEC_DISTANCE_COSINE" | "VEC_DISTANCE_IP"
+        );
+        if !is_vec_distance || func_call.arguments.len() != 2 {
+            return Ok(None);
+        }
+
+        // Extract vector column name from first argument
+        let vec_col_name = match &func_call.arguments[0] {
+            Expression::Identifier(id) => id.value.clone(),
+            Expression::QualifiedIdentifier(qid) => qid.name.value.clone(),
+            _ => return Ok(None),
+        };
+
+        // Ordinary SQL ORDER BY ... LIMIT has exact semantics. HNSW is an
+        // approximate candidate source and is therefore never selected without
+        // an explicit approximate-query contract. Keep the exact brute-force
+        // Top-K path below even when an HNSW index exists.
+        let hnsw_index: Option<Arc<dyn Index>> = None;
+
+        // Extract query vector from second argument
+        let query_vec_value = match &func_call.arguments[1] {
+            Expression::StringLiteral(s) => {
+                // Parse "[1.0, 2.0, ...]" string literal to vector
+                match radixdb_core::value::parse_vector_str(&s.value) {
+                    Some(floats) => Value::vector(floats),
+                    None => return Ok(None),
+                }
+            }
+            Expression::Parameter(_) => {
+                // Evaluate parameter
+                match ExpressionEval::compile(&func_call.arguments[1], &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(v @ Value::Extension(_)) => v,
+                    Some(Value::Text(s)) => {
+                        match radixdb_core::value::parse_vector_str(s.as_ref()) {
+                            Some(floats) => Value::vector(floats),
+                            None => return Ok(None),
+                        }
+                    }
+                    _ => return Ok(None),
+                }
+            }
+            _ => return Ok(None),
+        };
+
+        // Evaluate limit + offset
+        let limit = match &stmt.limit {
+            Some(limit_expr) => {
+                match ExpressionEval::compile(limit_expr, &[])
+                    .ok()
+                    .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+                {
+                    Some(Value::Integer(l)) if l >= 0 => l as usize,
+                    Some(Value::Float(f)) if f >= 0.0 => f as usize,
+                    _ => return Ok(None),
+                }
+            }
+            None => return Ok(None),
+        };
+
+        let offset = if let Some(ref offset_expr) = stmt.offset {
+            match ExpressionEval::compile(offset_expr, &[])
+                .ok()
+                .and_then(|e| e.with_context(ctx).eval_slice(&Row::new()).ok())
+            {
+                Some(Value::Integer(o)) if o >= 0 => o as usize,
+                Some(Value::Float(f)) if f >= 0.0 => f as usize,
+                _ => 0,
+            }
+        } else {
+            0
+        };
+
+        let k = limit.saturating_add(offset);
+
+        // Compile WHERE filter if present
+        let where_filter = if let Some(ref where_expr) = stmt.where_clause {
+            match RowFilter::new(where_expr, all_columns) {
+                Ok(filter) => Some(filter.with_context(ctx)),
+                Err(_) => return Ok(None), // Can't compile WHERE — fall through to normal path
+            }
+        } else {
+            None
+        };
+
+        // Determine distance results: HNSW path or brute-force path
+        // nn_results: Vec<(row_id, distance)> sorted by distance ascending
+        let (nn_results, fetched_rows) = if let Some(ref idx) = hnsw_index {
+            // HNSW index path — O(log N) approximate search
+            // With WHERE: oversample by 4x, then post-filter
+            let oversample = if where_filter.is_some() { 4 } else { 1 };
+            let hnsw_k = k.saturating_mul(oversample);
+            let default_ef = idx.default_ef_search().unwrap_or(64);
+            let ef_search = std::cmp::max(hnsw_k.saturating_mul(2), default_ef);
+            let results = match idx.search_nearest(&query_vec_value, hnsw_k, ef_search) {
+                Some(r) => r,
+                None => return Ok(None),
+            };
+            if results.is_empty() {
+                let output_columns = CompactArc::new(self.index_output_column_names(
+                    &stmt.columns,
+                    all_columns,
+                    None,
+                ));
+                let result = ExecutorResult::with_arc_columns(
+                    CompactArc::clone(&output_columns),
+                    RowVec::new(),
+                );
+                return Ok(Some((Box::new(result), output_columns)));
+            }
+            let row_ids: Vec<i64> = results.iter().map(|(rid, _)| *rid).collect();
+            let rows = table.collect_rows_by_ids(&row_ids)?;
+
+            // Post-filter with WHERE if present
+            if let Some(ref filter) = where_filter {
+                // Build O(1) lookup map from row_id -> row
+                let row_map: rustc_hash::FxHashMap<i64, &radixdb_core::Row> =
+                    rows.iter().map(|(rid, row)| (*rid, row)).collect();
+                let mut filtered_nn = Vec::with_capacity(k);
+                let mut filtered_rows = RowVec::with_capacity(k);
+                for (rid, dist) in &results {
+                    if let Some(row) = row_map.get(rid) {
+                        if filter.matches_checked(row)? {
+                            filtered_nn.push((*rid, *dist));
+                            filtered_rows.push((*rid, (*row).clone()));
+                            if filtered_nn.len() >= k {
+                                break; // We have enough results
+                            }
+                        }
+                    }
+                }
+                // If HNSW post-filtering yielded fewer results than requested,
+                // fall back to the normal brute-force query path to guarantee
+                // correct result counts. The HNSW index may miss qualifying rows
+                // because ANN search only explores a subset of the graph.
+                if filtered_nn.len() < k {
+                    return Ok(None);
+                }
+                (filtered_nn, filtered_rows)
+            } else {
+                (results, rows)
+            }
+        } else {
+            // Brute-force path — parallel distance computation + top-K
+            let query_bytes = match &query_vec_value {
+                Value::Extension(data)
+                    if data.first() == Some(&(radixdb_core::DataType::Vector as u8)) =>
+                {
+                    &data[1..]
+                }
+                _ => return Ok(None),
+            };
+
+            // Find vector column index in schema
+            let schema = table.schema();
+            let vec_col_idx = match schema
+                .columns
+                .iter()
+                .position(|c| c.name.eq_ignore_ascii_case(&vec_col_name))
+            {
+                Some(idx) => idx,
+                None => return Ok(None),
+            };
+
+            let metric = match fn_name_upper.as_str() {
+                "VEC_DISTANCE_L2" => super::parallel::DistanceMetric::L2,
+                "VEC_DISTANCE_COSINE" => super::parallel::DistanceMetric::Cosine,
+                "VEC_DISTANCE_IP" => super::parallel::DistanceMetric::InnerProduct,
+                _ => return Ok(None),
+            };
+
+            // Collect rows — push WHERE to storage level for index-accelerated filtering
+            let scan_rows = if let Some(ref where_expr) = stmt.where_clause {
+                // Try storage-level pushdown (uses indexes when available)
+                let storage_expr = super::expr_converter::convert_ast_to_storage_expr(where_expr);
+                let rows = table.collect_all_rows(storage_expr.as_deref())?;
+                // Storage may not handle all predicates — apply residual in-memory filter
+                if let Some(ref filter) = where_filter {
+                    let mut filtered = RowVec::with_capacity(rows.len());
+                    for (id, row) in rows {
+                        if filter.matches_checked(&row)? {
+                            filtered.push((id, row));
+                        }
+                    }
+                    filtered
+                } else {
+                    rows
+                }
+            } else {
+                table.collect_all_rows_unsorted()?
+            };
+            if scan_rows.is_empty() {
+                let output_columns = CompactArc::new(self.index_output_column_names(
+                    &stmt.columns,
+                    all_columns,
+                    None,
+                ));
+                let result = ExecutorResult::with_arc_columns(
+                    CompactArc::clone(&output_columns),
+                    RowVec::new(),
+                );
+                return Ok(Some((Box::new(result), output_columns)));
+            }
+
+            let config = super::parallel::ParallelConfig::default();
+            let topn = super::parallel::parallel_topn_vector_search(
+                scan_rows,
+                vec_col_idx,
+                query_bytes,
+                k,
+                metric,
+                &config,
+            )?;
+
+            // Convert to (row_id, distance) + fetched rows
+            let nn: Vec<(i64, f64)> = topn.iter().map(|(rid, _, dist)| (*rid, *dist)).collect();
+            let rows: RowVec = topn.into_iter().map(|(rid, row, _)| (rid, row)).collect();
+            (nn, rows)
+        };
+
+        // Build a map from row_id to fetched row for order preservation
+        let mut row_map: radixdb_core::I64Map<Row> =
+            radixdb_core::I64Map::with_capacity(fetched_rows.len());
+        for (rid, row) in fetched_rows.into_iter() {
+            row_map.insert(rid, row);
+        }
+
+        // Pre-compile projection plan once (avoid per-row expression compilation)
+        let mut projection_plan =
+            self.compile_vector_projection_plan(&stmt.columns, all_columns, ctx, func_call)?;
+
+        // Project rows according to the pre-compiled plan
+        let mut result_rows = RowVec::with_capacity(k);
+        for (i, (row_id, dist)) in nn_results.iter().enumerate() {
+            if i < offset {
+                continue;
+            }
+            if result_rows.len() >= limit {
+                break;
+            }
+            if let Some(base_row) = row_map.get(*row_id) {
+                let projected =
+                    Self::apply_vector_projection(&mut projection_plan, base_row, *dist)?;
+                result_rows.push((*row_id, projected));
+            }
+        }
+
+        let output_columns =
+            CompactArc::new(self.index_output_column_names(&stmt.columns, all_columns, None));
+
+        let result =
+            ExecutorResult::with_arc_columns(CompactArc::clone(&output_columns), result_rows);
+        Ok(Some((Box::new(result), output_columns)))
+    }
+
+    /// Find a VEC_DISTANCE function call (or <=> operator) that's aliased in SELECT columns.
+    /// For <=> operator, returns None and the caller handles it via the synthesized_fc path.
+    fn find_vec_distance_alias<'a>(
+        alias_lower: &str,
+        columns: &'a [Expression],
+    ) -> Option<&'a FunctionCall> {
+        for col_expr in columns {
+            if let Expression::Aliased(aliased) = col_expr {
+                if aliased.alias.value_lower == alias_lower {
+                    if let Expression::FunctionCall(fc) = &*aliased.expression {
+                        let fn_upper = fc.function.to_uppercase();
+                        if matches!(
+                            fn_upper.as_str(),
+                            "VEC_DISTANCE_L2" | "VEC_DISTANCE_COSINE" | "VEC_DISTANCE_IP"
+                        ) {
+                            return Some(fc.as_ref());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if an alias in SELECT points to a <=> infix operator.
+    /// Returns the InfixExpression if found, to synthesize a FunctionCall from.
+    fn find_vec_distance_infix_alias<'a>(
+        alias_lower: &str,
+        columns: &'a [Expression],
+    ) -> Option<&'a InfixExpression> {
+        for col_expr in columns {
+            if let Expression::Aliased(aliased) = col_expr {
+                if aliased.alias.value_lower == alias_lower {
+                    if let Expression::Infix(infix) = &*aliased.expression {
+                        if infix.op_type == InfixOperator::VectorDistance {
+                            return Some(infix);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Check if two FunctionCall nodes represent the same call (same name + same arguments).
+    /// Used to match ORDER BY distance with the correct SELECT column.
+    fn func_calls_match(a: &FunctionCall, b: &FunctionCall) -> bool {
+        if !a.function.eq_ignore_ascii_case(&b.function) {
+            return false;
+        }
+        if a.arguments.len() != b.arguments.len() {
+            return false;
+        }
+        // Compare each argument structurally for common patterns
+        a.arguments.iter().zip(b.arguments.iter()).all(|(x, y)| {
+            match (x, y) {
+                (Expression::Identifier(a_id), Expression::Identifier(b_id)) => {
+                    a_id.value.eq_ignore_ascii_case(&b_id.value)
+                }
+                (
+                    Expression::QualifiedIdentifier(a_qid),
+                    Expression::QualifiedIdentifier(b_qid),
+                ) => a_qid.name.value.eq_ignore_ascii_case(&b_qid.name.value),
+                (Expression::Identifier(a_id), Expression::QualifiedIdentifier(b_qid))
+                | (Expression::QualifiedIdentifier(b_qid), Expression::Identifier(a_id)) => {
+                    a_id.value.eq_ignore_ascii_case(&b_qid.name.value)
+                }
+                (Expression::StringLiteral(a_s), Expression::StringLiteral(b_s)) => {
+                    a_s.value == b_s.value
+                }
+                (Expression::IntegerLiteral(a_i), Expression::IntegerLiteral(b_i)) => {
+                    a_i.value == b_i.value
+                }
+                (Expression::FloatLiteral(a_f), Expression::FloatLiteral(b_f)) => {
+                    a_f.value == b_f.value
+                }
+                (Expression::FunctionCall(a_fc), Expression::FunctionCall(b_fc)) => {
+                    Self::func_calls_match(a_fc, b_fc)
+                }
+                // For other expression kinds, use pointer equality as last resort
+                // (works when ORDER BY references alias that points into SELECT)
+                _ => std::ptr::eq(x as *const Expression, y as *const Expression),
+            }
+        })
+    }
+
+    /// Compile a projection plan from SELECT columns. Called once before the row loop.
+    /// `order_by_fc` is the FunctionCall used in ORDER BY — only this exact call gets the
+    /// precomputed Distance slot. Other VEC_DISTANCE_* calls are compiled for per-row eval.
+    fn compile_vector_projection_plan(
+        &self,
+        select_columns: &[Expression],
+        all_columns: &[String],
+        ctx: &ExecutionContext,
+        order_by_fc: &FunctionCall,
+    ) -> Result<Vec<VectorProjectionSlot>> {
+        let mut plan = Vec::with_capacity(select_columns.len());
+
+        for col_expr in select_columns {
+            let expr = match col_expr {
+                Expression::Aliased(aliased) => &*aliased.expression,
+                other => other,
+            };
+
+            match expr {
+                Expression::Star(_) => {
+                    plan.push(VectorProjectionSlot::Star);
+                }
+                Expression::Identifier(id) => {
+                    if let Some(idx) = all_columns
+                        .iter()
+                        .position(|c| c.eq_ignore_ascii_case(&id.value))
+                    {
+                        plan.push(VectorProjectionSlot::Column(idx));
+                    } else {
+                        return Err(radixdb_core::Error::ColumnNotFound(id.value.to_string()));
+                    }
+                }
+                Expression::QualifiedIdentifier(qid) => {
+                    if let Some(idx) = all_columns
+                        .iter()
+                        .position(|c| c.eq_ignore_ascii_case(&qid.name.value))
+                    {
+                        plan.push(VectorProjectionSlot::Column(idx));
+                    } else {
+                        return Err(radixdb_core::Error::ColumnNotFound(
+                            qid.name.value.to_string(),
+                        ));
+                    }
+                }
+                Expression::FunctionCall(fc) => {
+                    let fn_upper = fc.function.to_uppercase();
+                    if matches!(
+                        fn_upper.as_str(),
+                        "VEC_DISTANCE_L2" | "VEC_DISTANCE_COSINE" | "VEC_DISTANCE_IP"
+                    ) && Self::func_calls_match(fc, order_by_fc)
+                    {
+                        plan.push(VectorProjectionSlot::Distance);
+                    } else {
+                        let eval = ExpressionEval::compile(expr, all_columns)?.with_context(ctx);
+                        plan.push(VectorProjectionSlot::Compiled(Box::new(eval)));
+                    }
+                }
+                Expression::Infix(infix) if infix.op_type == InfixOperator::VectorDistance => {
+                    // <=> operator is equivalent to VEC_DISTANCE_L2.
+                    // Check if it matches the ORDER BY distance expression.
+                    let equiv_fc = FunctionCall {
+                        token: infix.token.clone(),
+                        function: "VEC_DISTANCE_L2".into(),
+                        arguments: vec![(*infix.left).clone(), (*infix.right).clone()],
+                        is_distinct: false,
+                        order_by: Vec::new(),
+                        filter: None,
+                    };
+                    if Self::func_calls_match(&equiv_fc, order_by_fc) {
+                        plan.push(VectorProjectionSlot::Distance);
+                    } else {
+                        let eval = ExpressionEval::compile(expr, all_columns)?.with_context(ctx);
+                        plan.push(VectorProjectionSlot::Compiled(Box::new(eval)));
+                    }
+                }
+                _ => {
+                    let eval = ExpressionEval::compile(expr, all_columns)?.with_context(ctx);
+                    plan.push(VectorProjectionSlot::Compiled(Box::new(eval)));
+                }
+            }
+        }
+
+        Ok(plan)
+    }
+
+    /// Apply a pre-compiled projection plan to a single row.
+    fn apply_vector_projection(
+        plan: &mut [VectorProjectionSlot],
+        base_row: &Row,
+        distance: f64,
+    ) -> Result<Row> {
+        let mut values = Vec::with_capacity(plan.len());
+
+        for slot in plan.iter_mut() {
+            match slot {
+                VectorProjectionSlot::Star => {
+                    for i in 0..base_row.len() {
+                        values.push(
+                            base_row
+                                .get(i)
+                                .cloned()
+                                .unwrap_or(Value::Null(radixdb_core::DataType::Null)),
+                        );
+                    }
+                }
+                VectorProjectionSlot::Column(idx) => {
+                    values.push(
+                        base_row
+                            .get(*idx)
+                            .cloned()
+                            .unwrap_or(Value::Null(radixdb_core::DataType::Null)),
+                    );
+                }
+                VectorProjectionSlot::Distance => {
+                    if distance.is_infinite() {
+                        // Dimension mismatch or missing vector → NULL distance
+                        values.push(Value::Null(radixdb_core::DataType::Float));
+                    } else {
+                        values.push(Value::Float(distance));
+                    }
+                }
+                VectorProjectionSlot::Compiled(eval) => {
+                    let val = eval.eval_slice(base_row)?;
+                    values.push(val);
+                }
+            }
+        }
+
+        Ok(Row::from_values(values))
+    }
+}
+
+impl<T: IndexOptimizerHost + ?Sized> IndexOptimizerExt for T {}
+
+#[cfg(test)]
+mod keyset_bound_tests {
+    use super::IntegerPkKeysetBound::{After, Empty, From};
+
+    #[test]
+    fn strongest_lower_bound_is_order_independent_and_preserves_exclusivity() {
+        assert_eq!(After(1).strongest_lower(After(5)), After(5));
+        assert_eq!(After(5).strongest_lower(After(1)), After(5));
+        assert_eq!(From(6).strongest_lower(After(5)), From(6));
+        assert_eq!(After(5).strongest_lower(From(6)), From(6));
+        assert_eq!(From(5).strongest_lower(After(5)), After(5));
+        assert_eq!(After(5).strongest_lower(From(5)), After(5));
+        assert_eq!(
+            After(i64::MAX).strongest_lower(From(i64::MAX)),
+            After(i64::MAX)
+        );
+        assert_eq!(Empty.strongest_lower(After(1)), Empty);
+    }
+}

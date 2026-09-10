@@ -1,0 +1,1956 @@
+// Copyright 2026 RadixDB Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Expression Compiler
+//
+// Transforms AST Expressions into compiled Programs.
+// This is where the magic happens - we convert recursive AST into linear bytecode.
+//
+// Design principles:
+// 1. Resolve everything at compile time (column indices, function pointers, patterns)
+// 2. Flatten recursion into linear instruction sequences
+// 3. Handle short-circuit evaluation with jumps
+// 4. Pre-compute constant expressions where possible
+
+use std::cell::Cell;
+use std::sync::Arc;
+
+use radixdb_core::CompactArc;
+use radixdb_core::SmartString;
+use radixdb_core::StringMap;
+use rustc_hash::{FxHashMap, FxHashSet};
+
+use super::execution_context::ExecuteContext;
+use super::ops::{CompiledPattern, Op};
+use super::program::{Program, ProgramBuilder};
+use super::vm::ExprVM;
+use radixdb_core::{DataType, Row, Value, ValueSet};
+use radixdb_functions::{global_registry, FunctionRegistry};
+use radixdb_sql::ast::*;
+
+/// Convert a SQL type name into the scalar type encoded by expression
+/// bytecode. Width/precision modifiers do not alter the VM scalar kind.
+pub fn string_to_datatype(type_str: &str) -> DataType {
+    let upper = type_str.to_uppercase();
+    let base_type = upper.split('(').next().unwrap_or(&upper).trim();
+    match base_type {
+        "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" => DataType::Integer,
+        "FLOAT" | "DOUBLE" | "REAL" => DataType::Float,
+        "DECIMAL" | "NUMERIC" => DataType::Decimal,
+        "TEXT" | "VARCHAR" | "CHAR" | "STRING" | "CLOB" => DataType::Text,
+        "BOOLEAN" | "BOOL" => DataType::Boolean,
+        "TIMESTAMP" | "DATETIME" | "TIME" => DataType::Timestamp,
+        "DATE" => DataType::Date,
+        "JSON" | "JSONB" => DataType::Json,
+        "UUID" => DataType::Uuid,
+        "BYTES" | "BLOB" | "BINARY" | "VARBINARY" => DataType::Bytes,
+        "VECTOR" => DataType::Vector,
+        _ => DataType::Text,
+    }
+}
+
+/// Return the stable textual form used to bind expression aliases.
+pub fn expression_to_string(expr: &Expression) -> String {
+    match expr {
+        Expression::Identifier(id) => id.value.to_string(),
+        Expression::QualifiedIdentifier(qid) => {
+            format!("{}.{}", qid.qualifier.value, qid.name.value)
+        }
+        Expression::IntegerLiteral(lit) => lit.value.to_string(),
+        Expression::FloatLiteral(lit) => lit.value.to_string(),
+        Expression::StringLiteral(lit) => format!("'{}'", lit.value),
+        Expression::BooleanLiteral(lit) => lit.value.to_string(),
+        Expression::FunctionCall(func) => {
+            let args: Vec<String> = func.arguments.iter().map(expression_to_string).collect();
+            format!("{}({})", func.function, args.join(", "))
+        }
+        Expression::Infix(infix) => format!(
+            "{} {} {}",
+            expression_to_string(&infix.left),
+            infix.operator,
+            expression_to_string(&infix.right)
+        ),
+        _ => format!("{expr}"),
+    }
+}
+
+/// Compilation error
+#[derive(Debug, Clone)]
+pub enum CompileError {
+    /// Column not found
+    ColumnNotFound(String),
+    /// Function not found
+    FunctionNotFound(String),
+    /// Invalid expression
+    InvalidExpression(String),
+    /// Unsupported expression type
+    UnsupportedExpression(String),
+    /// Type error
+    TypeError(String),
+}
+
+impl std::fmt::Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompileError::ColumnNotFound(name) => {
+                write!(f, "Column '{}' not found", name)
+            }
+            CompileError::FunctionNotFound(name) => write!(f, "Function not found: {}", name),
+            CompileError::InvalidExpression(msg) => write!(f, "Invalid expression: {}", msg),
+            CompileError::UnsupportedExpression(msg) => {
+                write!(f, "Unsupported expression: {}", msg)
+            }
+            CompileError::TypeError(msg) => write!(f, "Type error: {}", msg),
+        }
+    }
+}
+
+impl std::error::Error for CompileError {}
+
+/// Result of column resolution - indicates which row the column is from
+#[derive(Debug, Clone, Copy)]
+pub enum ColumnSource {
+    /// Column from first row with given index
+    Row1(u16),
+    /// Column from second row (for joins) with given index
+    Row2(u16),
+}
+
+/// Compilation context
+///
+/// Contains all the information needed to compile expressions:
+/// - Column name to index mapping
+/// - Function registry
+/// - Outer query columns (for correlated subqueries)
+pub struct CompileContext<'a> {
+    /// Column name -> index (case-insensitive)
+    columns: StringMap<u16>,
+
+    /// Qualified column name -> (index, is_row2)
+    /// For row1 columns: index is the direct row1 index
+    /// For row2 columns: index is the row2 index (not offset)
+    qualified_columns: StringMap<StringMap<ColumnSource>>,
+
+    /// Second row columns (for joins)
+    columns2: Option<StringMap<u16>>,
+
+    /// Tables that belong to row2 (for tracking which tables are from second row)
+    row2_tables: FxHashSet<String>,
+
+    /// Outer query columns (for correlated subqueries)
+    outer_columns: Option<FxHashMap<CompactArc<str>, u16>>,
+
+    /// Function registry
+    functions: &'a FunctionRegistry,
+
+    /// Expression alias mapping (for HAVING with GROUP BY expressions)
+    expression_aliases: StringMap<u16>,
+
+    /// Column aliases
+    column_aliases: StringMap<String>,
+
+    /// Deferred context validation error. Context builders remain ergonomic,
+    /// while compilation fails before any truncated bytecode operand exists.
+    invalid_context: Option<String>,
+}
+
+impl<'a> CompileContext<'a> {
+    /// Create a new compilation context
+    pub fn new(columns: &[String], functions: &'a FunctionRegistry) -> Self {
+        let invalid_context = (columns.len() > (u16::MAX as usize + 1)).then(|| {
+            format!(
+                "primary row has {} columns; expression bytecode supports at most {}",
+                columns.len(),
+                u16::MAX as usize + 1
+            )
+        });
+        let mut col_map = StringMap::new();
+        let mut qualified_map: StringMap<StringMap<ColumnSource>> = StringMap::new();
+
+        for (i, col) in columns.iter().enumerate() {
+            let Ok(index) = u16::try_from(i) else {
+                continue;
+            };
+            let lower = col.to_lowercase();
+            col_map.insert(lower.clone(), index);
+
+            // Handle qualified names (table.column)
+            if let Some(dot_idx) = col.rfind('.') {
+                let table = col[..dot_idx].to_lowercase();
+                let column = col[dot_idx + 1..].to_lowercase();
+                qualified_map
+                    .entry(table)
+                    .or_default()
+                    .insert(column.clone(), ColumnSource::Row1(index));
+
+                // Also map unqualified column name for lookup without table prefix
+                // Don't overwrite if already exists (first occurrence wins)
+                col_map.entry(column).or_insert(index);
+            }
+        }
+
+        Self {
+            columns: col_map,
+            qualified_columns: qualified_map,
+            columns2: None,
+            row2_tables: FxHashSet::default(),
+            outer_columns: None,
+            functions,
+            expression_aliases: StringMap::new(),
+            column_aliases: StringMap::new(),
+            invalid_context,
+        }
+    }
+
+    /// Create context using global function registry
+    pub fn with_global_registry(columns: &[String]) -> Self {
+        Self::new(columns, global_registry())
+    }
+
+    /// Add second row columns (for join compilation)
+    pub fn with_second_row(mut self, columns2: &[String]) -> Self {
+        if columns2.len() > (u16::MAX as usize + 1) {
+            self.invalid_context = Some(format!(
+                "second row has {} columns; expression bytecode supports at most {}",
+                columns2.len(),
+                u16::MAX as usize + 1
+            ));
+        }
+        let mut col_map = StringMap::new();
+        for (i, col) in columns2.iter().enumerate() {
+            let Ok(index) = u16::try_from(i) else {
+                continue;
+            };
+            let lower = col.to_lowercase();
+            col_map.insert(lower.clone(), index);
+
+            // Handle qualified names (table.column)
+            if let Some(dot_idx) = col.rfind('.') {
+                let table = col[..dot_idx].to_lowercase();
+                let column = col[dot_idx + 1..].to_lowercase();
+
+                // Track this table as belonging to row2
+                self.row2_tables.insert(table.clone());
+
+                // Add qualified name with Row2 source (index is local to row2)
+                self.qualified_columns
+                    .entry(table)
+                    .or_default()
+                    .insert(column.clone(), ColumnSource::Row2(index));
+
+                // Also map unqualified column name (don't overwrite if exists)
+                col_map.entry(column).or_insert(index);
+            }
+        }
+        self.columns2 = Some(col_map);
+        self
+    }
+
+    /// Add outer columns for correlated subqueries
+    pub fn with_outer_columns(mut self, outer_cols: &[String]) -> Self {
+        if outer_cols.len() > (u16::MAX as usize + 1) {
+            self.invalid_context = Some(format!(
+                "outer row has {} columns; expression bytecode supports at most {}",
+                outer_cols.len(),
+                u16::MAX as usize + 1
+            ));
+        }
+        let mut map = FxHashMap::default();
+        for (i, col) in outer_cols.iter().enumerate() {
+            if let Ok(index) = u16::try_from(i) {
+                map.insert(CompactArc::from(col.to_lowercase().as_str()), index);
+            }
+        }
+        self.outer_columns = Some(map);
+        self
+    }
+
+    /// Add expression aliases (for HAVING clause)
+    pub fn with_expression_aliases(mut self, aliases: StringMap<u16>) -> Self {
+        self.expression_aliases = aliases;
+        self
+    }
+
+    /// Add column aliases
+    pub fn with_column_aliases(mut self, aliases: StringMap<String>) -> Self {
+        self.column_aliases = aliases;
+        self
+    }
+
+    /// Resolve a column name to its source (Row1 or Row2)
+    fn resolve_column(&self, name: &str) -> Option<ColumnSource> {
+        let lower = name.to_lowercase();
+
+        // Check column aliases first
+        if let Some(original) = self.column_aliases.get(&lower) {
+            if let Some(&idx) = self.columns.get(original) {
+                return Some(ColumnSource::Row1(idx));
+            }
+        }
+
+        // Direct lookup in primary columns (Row1)
+        if let Some(&idx) = self.columns.get(&lower) {
+            return Some(ColumnSource::Row1(idx));
+        }
+
+        // Try second row if available (Row2)
+        if let Some(ref cols2) = self.columns2 {
+            if let Some(&idx) = cols2.get(&lower) {
+                return Some(ColumnSource::Row2(idx));
+            }
+        }
+
+        None
+    }
+
+    /// Resolve a qualified column name (table.column)
+    fn resolve_qualified(&self, table: &str, column: &str) -> Option<ColumnSource> {
+        let table_lower = table.to_lowercase();
+        let column_lower = column.to_lowercase();
+
+        if let Some(table_cols) = self.qualified_columns.get(&table_lower) {
+            if let Some(&source) = table_cols.get(&column_lower) {
+                return Some(source);
+            }
+        }
+
+        // Check if the FULLY QUALIFIED name (table.column) exists in outer_columns.
+        // This distinguishes between `t.id` (outer reference) and `t2.id` (current row).
+        // Only if the qualified name is in outer context should we skip the fallback.
+        if let Some(ref outer_cols) = self.outer_columns {
+            let qualified_name = format!("{}.{}", table_lower, column_lower);
+            if outer_cols.contains_key(qualified_name.as_str()) {
+                // Qualified name exists in outer context - don't fall back
+                return None;
+            }
+        }
+
+        // Qualified name not in outer context - safe to fall back to unqualified lookup
+        self.resolve_column(&column_lower)
+    }
+
+    /// Resolve outer column (for correlated subqueries)
+    fn resolve_outer_column(&self, name: &str) -> Option<CompactArc<str>> {
+        let lower = name.to_lowercase();
+        self.outer_columns.as_ref().and_then(|cols| {
+            if cols.contains_key(lower.as_str()) {
+                Some(CompactArc::from(lower.as_str()))
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Check if an expression matches an expression alias
+    fn check_expression_alias(&self, expr: &Expression) -> Option<u16> {
+        if self.expression_aliases.is_empty() {
+            return None;
+        }
+        let expr_str = expression_to_string(expr).to_lowercase();
+        self.expression_aliases.get(&expr_str).copied()
+    }
+}
+
+/// Expression compiler
+pub struct ExprCompiler<'a> {
+    ctx: &'a CompileContext<'a>,
+    /// Guard flag to prevent recursive constant folding
+    folding: Cell<bool>,
+}
+
+impl<'a> ExprCompiler<'a> {
+    pub fn new(ctx: &'a CompileContext<'a>) -> Self {
+        Self {
+            ctx,
+            folding: Cell::new(false),
+        }
+    }
+
+    /// Compile an expression into a Program
+    pub fn compile(&self, expr: &Expression) -> Result<Program, CompileError> {
+        if let Some(error) = &self.ctx.invalid_context {
+            return Err(CompileError::InvalidExpression(error.clone()));
+        }
+        let mut builder = ProgramBuilder::new();
+        self.compile_expr(expr, &mut builder)?;
+        builder.emit(Op::Return);
+        if builder.is_overflowed() {
+            return Err(CompileError::InvalidExpression(
+                "expression bytecode exceeds the u16 instruction limit".to_string(),
+            ));
+        }
+        builder
+            .build()
+            .map_err(|error| CompileError::InvalidExpression(error.to_string()))
+    }
+
+    /// Compile an expression for use as a boolean filter
+    pub fn compile_filter(&self, expr: &Expression) -> Result<Program, CompileError> {
+        if let Some(error) = &self.ctx.invalid_context {
+            return Err(CompileError::InvalidExpression(error.clone()));
+        }
+        // For simple filter expressions, we can optimize
+        let mut builder = ProgramBuilder::new();
+        self.compile_expr(expr, &mut builder)?;
+        builder.emit(Op::Return);
+        if builder.is_overflowed() {
+            return Err(CompileError::InvalidExpression(
+                "expression bytecode exceeds the u16 instruction limit".to_string(),
+            ));
+        }
+        builder
+            .build()
+            .map_err(|error| CompileError::InvalidExpression(error.to_string()))
+    }
+
+    /// Flatten chained concatenation operators into a list of operands.
+    /// For `a || b || c || d`, returns [a, b, c, d] in order.
+    fn flatten_concat_chain_infix<'b>(
+        infix: &'b InfixExpression,
+        operands: &mut Vec<&'b Expression>,
+    ) {
+        // Flatten left side
+        if let Expression::Infix(left_infix) = &*infix.left {
+            if left_infix.op_type == InfixOperator::Concat {
+                Self::flatten_concat_chain_infix(left_infix, operands);
+            } else {
+                operands.push(&infix.left);
+            }
+        } else {
+            operands.push(&infix.left);
+        }
+        // Flatten right side
+        if let Expression::Infix(right_infix) = &*infix.right {
+            if right_infix.op_type == InfixOperator::Concat {
+                Self::flatten_concat_chain_infix(right_infix, operands);
+            } else {
+                operands.push(&infix.right);
+            }
+        } else {
+            operands.push(&infix.right);
+        }
+    }
+
+    /// Try to fold a column-free expression into a constant at compile time.
+    /// Compiles the expression into a temporary program, executes it with an empty
+    /// row context, and returns the result if successful.
+    fn try_fold_constant(&self, expr: &Expression) -> Option<Value> {
+        use std::cell::RefCell;
+
+        thread_local! {
+            static FOLD_VM: RefCell<ExprVM> = RefCell::new(ExprVM::new());
+            static FOLD_ROW: Row = Row::new();
+        }
+
+        self.folding.set(true);
+
+        let empty_cols: &[String] = &[];
+        let ctx = CompileContext::new(empty_cols, self.ctx.functions);
+        let compiler = ExprCompiler::new(&ctx);
+        compiler.folding.set(true);
+
+        let mut builder = ProgramBuilder::new();
+        let ok = compiler.compile_expr(expr, &mut builder);
+        self.folding.set(false);
+
+        ok.ok()?;
+        builder.emit(Op::Return);
+        let program = builder.build_unoptimized().ok()?;
+
+        FOLD_ROW.with(|empty_row| {
+            let exec_ctx = ExecuteContext::new(empty_row);
+            FOLD_VM.with(|vm_cell| {
+                let mut vm = vm_cell.borrow_mut();
+                vm.execute(&program, &exec_ctx).ok()
+            })
+        })
+    }
+
+    /// Compile an expression, emitting ops to the builder
+    fn compile_expr(
+        &self,
+        expr: &Expression,
+        builder: &mut ProgramBuilder,
+    ) -> Result<(), CompileError> {
+        // Check if this expression matches an expression alias (for HAVING)
+        if let Some(idx) = self.ctx.check_expression_alias(expr) {
+            builder.emit(Op::LoadAggregateResult(idx));
+            return Ok(());
+        }
+
+        // Constant folding: if not already folding and expression is column-free
+        // and non-trivial, evaluate once at compile time and emit as LoadConst.
+        // This optimizes deterministic expressions like ABS(-5) + 1 or UPPER('text').
+        // Non-deterministic functions (NOW, RANDOM, etc.) are excluded by is_foldable_expr
+        // and handled separately by pushdown's try_eval_constant_expr at query time.
+        if !self.folding.get() && is_foldable_expr(expr, self.ctx.functions) {
+            if let Some(value) = self.try_fold_constant(expr) {
+                builder.emit(Op::LoadConst(value));
+                return Ok(());
+            }
+        }
+
+        match expr {
+            // === LITERALS ===
+            Expression::IntegerLiteral(lit) => {
+                builder.emit(Op::LoadConst(Value::Integer(lit.value)));
+            }
+
+            Expression::FloatLiteral(lit) => {
+                builder.emit(Op::LoadConst(Value::Float(lit.value)));
+            }
+
+            Expression::StringLiteral(lit) => {
+                // Handle type hints (DATE, TIMESTAMP, etc.)
+                let value = if let Some(ref hint) = lit.type_hint {
+                    match hint.to_uppercase().as_str() {
+                        "TIMESTAMP" | "DATETIME" => {
+                            radixdb_core::value::parse_timestamp(&lit.value)
+                                .map(Value::Timestamp)
+                                .unwrap_or_else(|_| Value::Text(lit.value.clone()))
+                        }
+                        "DATE" => radixdb_core::value::parse_date_days_since_unix_epoch(&lit.value)
+                            .map(Value::date)
+                            .unwrap_or_else(|| Value::Text(lit.value.clone())),
+                        _ => Value::Text(lit.value.clone()),
+                    }
+                } else {
+                    Value::Text(lit.value.clone())
+                };
+                builder.emit(Op::LoadConst(value));
+            }
+
+            Expression::BooleanLiteral(lit) => {
+                builder.emit(Op::LoadConst(Value::Boolean(lit.value)));
+            }
+
+            Expression::NullLiteral(_) => {
+                builder.emit(Op::LoadNull(DataType::Null));
+            }
+
+            Expression::BoundValue(value) => {
+                builder.emit(Op::LoadConst((**value).clone()));
+            }
+
+            // === IDENTIFIERS ===
+            Expression::Identifier(id) => {
+                // CURRENT_DATE, CURRENT_TIME, CURRENT_TIMESTAMP are now parsed as
+                // FunctionCall by the parser, so they no longer reach this path.
+                match id.value_lower.as_str() {
+                    "true" => {
+                        builder.emit(Op::LoadConst(Value::Boolean(true)));
+                        return Ok(());
+                    }
+                    "false" => {
+                        builder.emit(Op::LoadConst(Value::Boolean(false)));
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+
+                // Try to resolve as column
+                // First, check if the identifier contains a dot (qualified name like "table.column")
+                if let Some(dot_idx) = id.value_lower.rfind('.') {
+                    // Treat as qualified identifier
+                    let table = &id.value_lower[..dot_idx];
+                    let column = &id.value_lower[dot_idx + 1..];
+                    if let Some(source) = self.ctx.resolve_qualified(table, column) {
+                        match source {
+                            ColumnSource::Row1(idx) => builder.emit(Op::LoadColumn(idx)),
+                            ColumnSource::Row2(idx) => builder.emit(Op::LoadColumn2(idx)),
+                        }
+                    } else if let Some(name) = self.ctx.resolve_outer_column(column) {
+                        builder.emit(Op::LoadOuterColumn(name));
+                    } else {
+                        return Err(CompileError::ColumnNotFound(id.value.to_string()));
+                    }
+                } else if let Some(source) = self.ctx.resolve_column(&id.value_lower) {
+                    match source {
+                        ColumnSource::Row1(idx) => builder.emit(Op::LoadColumn(idx)),
+                        ColumnSource::Row2(idx) => builder.emit(Op::LoadColumn2(idx)),
+                    }
+                } else if let Some(name) = self.ctx.resolve_outer_column(&id.value_lower) {
+                    builder.emit(Op::LoadOuterColumn(name));
+                } else {
+                    return Err(CompileError::ColumnNotFound(id.value.to_string()));
+                }
+            }
+
+            Expression::QualifiedIdentifier(qid) => {
+                let table = &qid.qualifier.value_lower;
+                let column = &qid.name.value_lower;
+
+                if let Some(source) = self.ctx.resolve_qualified(table, column) {
+                    match source {
+                        ColumnSource::Row1(idx) => builder.emit(Op::LoadColumn(idx)),
+                        ColumnSource::Row2(idx) => builder.emit(Op::LoadColumn2(idx)),
+                    }
+                } else {
+                    // For qualified identifiers (e.g., c.id), prefer the qualified
+                    // name in outer_columns over unqualified. This prevents incorrect
+                    // resolution when the unqualified key ("id") is overwritten in
+                    // outer_row by an inner row's column with the same name.
+                    let qualified_name =
+                        format!("{}.{}", table.to_lowercase(), column.to_lowercase());
+                    if let Some(name) = self
+                        .ctx
+                        .resolve_outer_column(&qualified_name)
+                        .or_else(|| self.ctx.resolve_outer_column(column))
+                    {
+                        builder.emit(Op::LoadOuterColumn(name));
+                    } else {
+                        return Err(CompileError::ColumnNotFound(format!(
+                            "{}.{}",
+                            table, column
+                        )));
+                    }
+                }
+            }
+
+            // === PARAMETERS ===
+            Expression::Parameter(param) => {
+                if param.name.starts_with(':') {
+                    let name = &param.name[1..];
+                    builder.emit(Op::LoadNamedParam(CompactArc::from(name)));
+                } else if param.index > 0 {
+                    let index = u16::try_from(param.index - 1).map_err(|_| {
+                        CompileError::InvalidExpression(
+                            "parameter ordinal exceeds the u16 bytecode limit".to_string(),
+                        )
+                    })?;
+                    builder.emit(Op::LoadParam(index));
+                } else {
+                    return Err(CompileError::InvalidExpression(
+                        "Invalid parameter".to_string(),
+                    ));
+                }
+            }
+
+            // === INFIX EXPRESSIONS ===
+            Expression::Infix(infix) => {
+                self.compile_infix(infix, builder)?;
+            }
+
+            // === PREFIX EXPRESSIONS ===
+            Expression::Prefix(prefix) => {
+                self.compile_prefix(prefix, builder)?;
+            }
+
+            // === IN EXPRESSION ===
+            Expression::In(in_expr) => {
+                self.compile_in(in_expr, builder)?;
+            }
+
+            Expression::InHashSet(in_hash) => {
+                self.compile_expr(&in_hash.column, builder)?;
+                let has_null = in_hash.values.iter().any(|v| v.is_null());
+                if in_hash.not {
+                    builder.emit(Op::NotInSet(in_hash.values.clone(), has_null));
+                } else {
+                    builder.emit(Op::InSet(in_hash.values.clone(), has_null));
+                }
+            }
+
+            // === BETWEEN EXPRESSION ===
+            Expression::Between(between) => {
+                self.compile_expr(&between.expr, builder)?;
+                self.compile_expr(&between.lower, builder)?;
+                self.compile_expr(&between.upper, builder)?;
+                if between.not {
+                    builder.emit(Op::NotBetween);
+                } else {
+                    builder.emit(Op::Between);
+                }
+            }
+
+            // === LIKE EXPRESSION ===
+            Expression::Like(like) => {
+                self.compile_like(like, builder)?;
+            }
+
+            // === CASE EXPRESSION ===
+            Expression::Case(case) => {
+                self.compile_case(case, builder)?;
+            }
+
+            // === CAST EXPRESSION ===
+            Expression::Cast(cast) => {
+                self.compile_expr(&cast.expr, builder)?;
+                if cast.type_name.contains('.') {
+                    builder.emit(Op::CastExternal(CompactArc::from(cast.type_name.as_str())));
+                } else {
+                    let dt = string_to_datatype(&cast.type_name);
+                    builder.emit(Op::Cast(dt));
+                }
+            }
+
+            // === FUNCTION CALL ===
+            Expression::FunctionCall(func) => {
+                self.compile_function(func, builder)?;
+            }
+
+            // === ALIASED EXPRESSION ===
+            Expression::Aliased(aliased) => {
+                self.compile_expr(&aliased.expression, builder)?;
+            }
+
+            // === DISTINCT ===
+            Expression::Distinct(distinct) => {
+                self.compile_expr(&distinct.expr, builder)?;
+            }
+
+            // === LIST ===
+            Expression::List(_) | Expression::ExpressionList(_) => {
+                return Err(CompileError::InvalidExpression(
+                    "tuple/list expressions are only valid in an IN predicate".to_string(),
+                ));
+            }
+
+            // === INTERVAL ===
+            Expression::IntervalLiteral(interval) => {
+                let s = format!("{} {}", interval.quantity, interval.unit);
+                builder.emit(Op::LoadConst(Value::Text(SmartString::from_string(s))));
+            }
+
+            // === SUBQUERIES ===
+            Expression::ScalarSubquery(_) | Expression::Exists(_) | Expression::AllAny(_) => {
+                return Err(CompileError::UnsupportedExpression(
+                    "subqueries must be resolved by the query executor before VM compilation"
+                        .to_string(),
+                ));
+            }
+
+            // === WINDOW (not supported in VM, requires special handling) ===
+            Expression::Window(_) => {
+                return Err(CompileError::UnsupportedExpression(
+                    "Window functions require special execution context".to_string(),
+                ));
+            }
+
+            // === TABLE SOURCES (not expressions) ===
+            Expression::TableSource(_)
+            | Expression::JoinSource(_)
+            | Expression::SubquerySource(_)
+            | Expression::ValuesSource(_)
+            | Expression::CteReference(_)
+            | Expression::FunctionTableSource(_)
+            | Expression::Star(_)
+            | Expression::QualifiedStar(_)
+            | Expression::Default(_) => {
+                return Err(CompileError::InvalidExpression(
+                    "unexpected table reference or '*' in expression context".to_string(),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile an infix expression
+    fn compile_infix(
+        &self,
+        infix: &InfixExpression,
+        builder: &mut ProgramBuilder,
+    ) -> Result<(), CompileError> {
+        match infix.op_type {
+            // Short-circuit AND
+            InfixOperator::And => {
+                // Compile left side
+                self.compile_expr(&infix.left, builder)?;
+
+                // Emit AND with placeholder jump target
+                let and_pos = builder.position();
+                builder.emit(Op::And(0)); // Placeholder
+
+                // Compile right side
+                self.compile_expr(&infix.right, builder)?;
+
+                // Emit finalize
+                builder.emit(Op::AndFinalize);
+
+                // Patch jump to skip right side if left is false
+                let end_pos = builder.position();
+                builder.patch_jump(and_pos as usize, end_pos);
+            }
+
+            // Short-circuit OR
+            InfixOperator::Or => {
+                // Compile left side
+                self.compile_expr(&infix.left, builder)?;
+
+                // Emit OR with placeholder jump target
+                let or_pos = builder.position();
+                builder.emit(Op::Or(0)); // Placeholder
+
+                // Compile right side
+                self.compile_expr(&infix.right, builder)?;
+
+                // Emit finalize
+                builder.emit(Op::OrFinalize);
+
+                // Patch jump to skip right side if left is true
+                let end_pos = builder.position();
+                builder.patch_jump(or_pos as usize, end_pos);
+            }
+
+            // Comparison operators
+            InfixOperator::Equal => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Eq);
+            }
+
+            InfixOperator::NotEqual => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Ne);
+            }
+
+            InfixOperator::LessThan => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Lt);
+            }
+
+            InfixOperator::LessEqual => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Le);
+            }
+
+            InfixOperator::GreaterThan => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Gt);
+            }
+
+            InfixOperator::GreaterEqual => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Ge);
+            }
+
+            // Arithmetic operators
+            InfixOperator::Add => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Add);
+            }
+
+            InfixOperator::Subtract => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Sub);
+            }
+
+            InfixOperator::Multiply => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Mul);
+            }
+
+            InfixOperator::Divide => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Div);
+            }
+
+            InfixOperator::Modulo => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Mod);
+            }
+
+            // String concatenation - optimize chained || into single ConcatN
+            InfixOperator::Concat => {
+                // Flatten chained concatenations: a || b || c -> ConcatN(3)
+                let mut operands = Vec::new();
+                Self::flatten_concat_chain_infix(infix, &mut operands);
+
+                if operands.len() > 2 && operands.len() <= 255 {
+                    // Compile all operands in order
+                    for operand in &operands {
+                        self.compile_expr(operand, builder)?;
+                    }
+                    builder.emit(Op::ConcatN(operands.len() as u8));
+                } else {
+                    // Fallback to binary concat
+                    self.compile_expr(&infix.left, builder)?;
+                    self.compile_expr(&infix.right, builder)?;
+                    builder.emit(Op::Concat);
+                }
+            }
+
+            // Bitwise operators
+            InfixOperator::BitwiseAnd => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::BitAnd);
+            }
+
+            InfixOperator::BitwiseOr => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::BitOr);
+            }
+
+            InfixOperator::BitwiseXor => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::BitXor);
+            }
+
+            InfixOperator::LeftShift => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Shl);
+            }
+
+            InfixOperator::RightShift => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Shr);
+            }
+
+            // XOR
+            InfixOperator::Xor => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::Xor);
+            }
+
+            // IS / IS NOT
+            InfixOperator::Is => {
+                self.compile_expr(&infix.left, builder)?;
+                // Check if right side is NULL, TRUE, or FALSE
+                match &*infix.right {
+                    Expression::NullLiteral(_) => {
+                        builder.emit(Op::IsNull);
+                    }
+                    Expression::BooleanLiteral(lit) if lit.value => {
+                        builder.emit(Op::IsTrue);
+                    }
+                    Expression::BooleanLiteral(lit) if !lit.value => {
+                        builder.emit(Op::IsFalse);
+                    }
+                    Expression::Identifier(id) if id.value_lower == "true" => {
+                        builder.emit(Op::IsTrue);
+                    }
+                    Expression::Identifier(id) if id.value_lower == "false" => {
+                        builder.emit(Op::IsFalse);
+                    }
+                    _ => {
+                        self.compile_expr(&infix.right, builder)?;
+                        builder.emit(Op::IsNotDistinctFrom);
+                    }
+                }
+            }
+
+            InfixOperator::IsNot => {
+                self.compile_expr(&infix.left, builder)?;
+                match &*infix.right {
+                    Expression::NullLiteral(_) => {
+                        builder.emit(Op::IsNotNull);
+                    }
+                    Expression::BooleanLiteral(lit) if lit.value => {
+                        builder.emit(Op::IsNotTrue);
+                    }
+                    Expression::BooleanLiteral(lit) if !lit.value => {
+                        builder.emit(Op::IsNotFalse);
+                    }
+                    Expression::Identifier(id) if id.value_lower == "true" => {
+                        builder.emit(Op::IsNotTrue);
+                    }
+                    Expression::Identifier(id) if id.value_lower == "false" => {
+                        builder.emit(Op::IsNotFalse);
+                    }
+                    _ => {
+                        self.compile_expr(&infix.right, builder)?;
+                        builder.emit(Op::IsDistinctFrom);
+                    }
+                }
+            }
+
+            InfixOperator::IsDistinctFrom => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::IsDistinctFrom);
+            }
+
+            InfixOperator::IsNotDistinctFrom => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::IsNotDistinctFrom);
+            }
+
+            // Pattern matching via infix
+            InfixOperator::Like => {
+                self.compile_expr(&infix.left, builder)?;
+                let pattern_str = Self::extract_pattern_string(&infix.right);
+                if let Some(s) = pattern_str {
+                    let pattern = CompiledPattern::compile(&s, false)
+                        .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+                    builder.emit(Op::Like(Arc::new(pattern), false));
+                } else {
+                    self.compile_expr(&infix.right, builder)?;
+                    builder.emit(Op::LikeDynamic(false));
+                }
+            }
+
+            InfixOperator::ILike => {
+                self.compile_expr(&infix.left, builder)?;
+                let pattern_str = Self::extract_pattern_string(&infix.right);
+                if let Some(s) = pattern_str {
+                    let pattern = CompiledPattern::compile(&s, true)
+                        .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+                    builder.emit(Op::Like(Arc::new(pattern), true));
+                } else {
+                    self.compile_expr(&infix.right, builder)?;
+                    builder.emit(Op::LikeDynamic(true));
+                }
+            }
+
+            InfixOperator::NotLike => {
+                self.compile_expr(&infix.left, builder)?;
+                let pattern_str = Self::extract_pattern_string(&infix.right);
+                if let Some(s) = pattern_str {
+                    let pattern = CompiledPattern::compile(&s, false)
+                        .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+                    builder.emit(Op::Like(Arc::new(pattern), false));
+                    builder.emit(Op::Not);
+                } else {
+                    self.compile_expr(&infix.right, builder)?;
+                    builder.emit(Op::LikeDynamic(false));
+                    builder.emit(Op::Not);
+                }
+            }
+
+            InfixOperator::NotILike => {
+                self.compile_expr(&infix.left, builder)?;
+                let pattern_str = Self::extract_pattern_string(&infix.right);
+                if let Some(s) = pattern_str {
+                    let pattern = CompiledPattern::compile(&s, true)
+                        .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+                    builder.emit(Op::Like(Arc::new(pattern), true));
+                    builder.emit(Op::Not);
+                } else {
+                    self.compile_expr(&infix.right, builder)?;
+                    builder.emit(Op::LikeDynamic(true));
+                    builder.emit(Op::Not);
+                }
+            }
+
+            InfixOperator::Glob | InfixOperator::NotGlob => {
+                self.compile_expr(&infix.left, builder)?;
+                let pattern_str = Self::extract_pattern_string(&infix.right);
+                if let Some(s) = pattern_str {
+                    let pattern = CompiledPattern::compile_glob(&s)
+                        .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+                    builder.emit(Op::Glob(Arc::new(pattern)));
+                } else {
+                    self.compile_expr(&infix.right, builder)?;
+                    builder.emit(Op::GlobDynamic);
+                }
+                if matches!(infix.op_type, InfixOperator::NotGlob) {
+                    builder.emit(Op::Not);
+                }
+            }
+
+            InfixOperator::Regexp | InfixOperator::NotRegexp => {
+                self.compile_expr(&infix.left, builder)?;
+                let pattern_str = Self::extract_pattern_string(&infix.right);
+                if let Some(s) = pattern_str {
+                    let regex = regex::Regex::new(&s).map_err(|e| {
+                        CompileError::InvalidExpression(format!("Invalid regex: {}", e))
+                    })?;
+                    builder.emit(Op::Regexp(Arc::new(regex)));
+                } else {
+                    self.compile_expr(&infix.right, builder)?;
+                    builder.emit(Op::RegexpDynamic);
+                }
+                if matches!(infix.op_type, InfixOperator::NotRegexp) {
+                    builder.emit(Op::Not);
+                }
+            }
+
+            // JSON operators
+            InfixOperator::JsonAccess => {
+                // json -> key (returns JSON)
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::JsonAccess);
+            }
+
+            InfixOperator::JsonAccessText => {
+                // json ->> key (returns TEXT)
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::JsonAccessText);
+            }
+
+            InfixOperator::Index => {
+                // Array/JSON index access - treat as JsonAccess
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::JsonAccess);
+            }
+
+            // Vector distance operator (<=>)
+            InfixOperator::VectorDistance => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                builder.emit(Op::VectorDistanceL2);
+            }
+
+            // Other/unknown operators
+            InfixOperator::Other => {
+                self.compile_expr(&infix.left, builder)?;
+                self.compile_expr(&infix.right, builder)?;
+                let name = format!(
+                    "{}{}",
+                    crate::context::STORED_OPERATOR_CALL_PREFIX,
+                    infix.operator
+                );
+                builder.emit(Op::CallStored {
+                    name: CompactArc::from(name.as_str()),
+                    arg_count: 2,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile a prefix expression
+    fn compile_prefix(
+        &self,
+        prefix: &PrefixExpression,
+        builder: &mut ProgramBuilder,
+    ) -> Result<(), CompileError> {
+        self.compile_expr(&prefix.right, builder)?;
+
+        match prefix.operator.to_uppercase().as_str() {
+            "NOT" => builder.emit(Op::Not),
+            "-" => builder.emit(Op::Neg),
+            "+" => {} // Unary plus is a no-op
+            "~" => builder.emit(Op::BitNot),
+            _ => {
+                return Err(CompileError::InvalidExpression(format!(
+                    "Unknown prefix operator: {}",
+                    prefix.operator
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Compile an IN expression
+    fn compile_in(
+        &self,
+        in_expr: &InExpression,
+        builder: &mut ProgramBuilder,
+    ) -> Result<(), CompileError> {
+        // Check if this is a multi-column IN: (a, b) IN ((1, 2), (3, 4))
+        let left_columns: Vec<&Expression> = match &*in_expr.left {
+            Expression::List(list) if list.elements.len() > 1 => list.elements.iter().collect(),
+            Expression::ExpressionList(list) if list.expressions.len() > 1 => {
+                list.expressions.iter().collect()
+            }
+            _ => Vec::new(),
+        };
+
+        if !left_columns.is_empty() {
+            // Multi-column IN expression
+            return self.compile_multi_column_in(in_expr, &left_columns, builder);
+        }
+
+        // Single-value IN expression
+        // Build the set of values at compile time if possible
+        let mut values = ValueSet::default();
+        let mut has_null = false;
+        let mut all_constant = true;
+
+        // Check if right side is a list of constants
+        match &*in_expr.right {
+            Expression::List(list) => {
+                for item in &list.elements {
+                    if let Some(value) = try_eval_constant(item) {
+                        if value.is_null() {
+                            has_null = true;
+                        } else {
+                            values.insert(value);
+                        }
+                    } else {
+                        all_constant = false;
+                        break;
+                    }
+                }
+            }
+            Expression::ExpressionList(list) => {
+                for item in &list.expressions {
+                    if let Some(value) = try_eval_constant(item) {
+                        if value.is_null() {
+                            has_null = true;
+                        } else {
+                            values.insert(value);
+                        }
+                    } else {
+                        all_constant = false;
+                        break;
+                    }
+                }
+            }
+            _ => {
+                all_constant = false;
+            }
+        }
+
+        if all_constant {
+            if values.is_empty() && !has_null {
+                // Empty IN list with no NULLs:
+                // x IN () -> FALSE (nothing matches)
+                // x NOT IN () -> TRUE (x is not in empty set)
+                if in_expr.not {
+                    builder.emit(Op::LoadConst(Value::Boolean(true)));
+                } else {
+                    builder.emit(Op::LoadConst(Value::Boolean(false)));
+                }
+            } else {
+                // Optimized: use pre-built HashSet
+                self.compile_expr(&in_expr.left, builder)?;
+                if in_expr.not {
+                    builder.emit(Op::NotInSet(CompactArc::new(values), has_null));
+                } else {
+                    builder.emit(Op::InSet(CompactArc::new(values), has_null));
+                }
+            }
+        } else {
+            // Fallback: evaluate each item (less efficient)
+            // For now, return error - would need runtime set building
+            return Err(CompileError::UnsupportedExpression(
+                "Dynamic IN list not yet supported in VM".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Compile multi-column IN expression: (a, b) IN ((1, 2), (3, 4))
+    fn compile_multi_column_in(
+        &self,
+        in_expr: &InExpression,
+        left_columns: &[&Expression],
+        builder: &mut ProgramBuilder,
+    ) -> Result<(), CompileError> {
+        let tuple_size = left_columns.len();
+
+        // Extract tuples from right side
+        let mut tuple_values: Vec<Vec<Value>> = Vec::new();
+        let mut all_constant = true;
+
+        match &*in_expr.right {
+            Expression::List(list) => {
+                for item in &list.elements {
+                    if let Some(tuple) = self.extract_tuple_values(item, tuple_size) {
+                        tuple_values.push(tuple);
+                    } else {
+                        all_constant = false;
+                        break;
+                    }
+                }
+            }
+            Expression::ExpressionList(list) => {
+                for item in &list.expressions {
+                    if let Some(tuple) = self.extract_tuple_values(item, tuple_size) {
+                        tuple_values.push(tuple);
+                    } else {
+                        all_constant = false;
+                        break;
+                    }
+                }
+            }
+            _ => {
+                all_constant = false;
+            }
+        }
+
+        if !all_constant || tuple_values.is_empty() {
+            return Err(CompileError::UnsupportedExpression(
+                "Dynamic multi-column IN not yet supported in VM".to_string(),
+            ));
+        }
+
+        // Compile each column expression to push onto stack
+        for col in left_columns {
+            self.compile_expr(col, builder)?;
+        }
+
+        // Emit InTupleSet operation
+        let tuple_size = u8::try_from(tuple_size).map_err(|_| {
+            CompileError::InvalidExpression("tuple arity exceeds the u8 bytecode limit".to_string())
+        })?;
+        builder.emit(Op::InTupleSet {
+            tuple_size,
+            values: Arc::new(tuple_values),
+            negated: in_expr.not,
+        });
+
+        Ok(())
+    }
+
+    /// Extract tuple values from an expression (e.g., (1, 2) -> [1, 2])
+    fn extract_tuple_values(&self, expr: &Expression, expected_size: usize) -> Option<Vec<Value>> {
+        let elements: Vec<&Expression> = match expr {
+            Expression::List(list) => list.elements.iter().collect(),
+            Expression::ExpressionList(list) => list.expressions.iter().collect(),
+            _ => return None,
+        };
+
+        if elements.len() != expected_size {
+            return None;
+        }
+
+        let mut values = Vec::with_capacity(expected_size);
+        for element in elements {
+            let value = try_eval_constant(element)?;
+            values.push(value);
+        }
+
+        Some(values)
+    }
+
+    /// Compile a LIKE expression
+    fn compile_like(
+        &self,
+        like: &LikeExpression,
+        builder: &mut ProgramBuilder,
+    ) -> Result<(), CompileError> {
+        self.compile_expr(&like.left, builder)?;
+
+        // Determine case sensitivity and negation from operator
+        let op_upper = like.operator.to_uppercase();
+        let case_insensitive = op_upper.contains("ILIKE");
+        let negated = op_upper.contains("NOT");
+        let is_glob = op_upper.contains("GLOB");
+        let is_regexp = op_upper.contains("REGEXP") || op_upper.contains("RLIKE");
+
+        // Extract escape character if present
+        let escape_char: Option<char> = if let Some(ref escape_expr) = like.escape {
+            if let Expression::StringLiteral(lit) = &**escape_expr {
+                let mut chars = lit.value.chars();
+                let first = chars.next().ok_or_else(|| {
+                    CompileError::InvalidExpression(
+                        "LIKE ESCAPE must contain exactly one character".to_string(),
+                    )
+                })?;
+                if chars.next().is_some() {
+                    return Err(CompileError::InvalidExpression(
+                        "LIKE ESCAPE must contain exactly one character".to_string(),
+                    ));
+                }
+                Some(first)
+            } else {
+                return Err(CompileError::InvalidExpression(
+                    "LIKE ESCAPE must be a string literal".to_string(),
+                ));
+            }
+        } else {
+            None
+        };
+
+        // Try to compile pattern at compile time
+        let pattern_str = Self::extract_pattern_string(&like.pattern);
+        if let Some(s) = pattern_str {
+            if is_regexp {
+                let regex = regex::Regex::new(&s).map_err(|e| {
+                    CompileError::InvalidExpression(format!("Invalid regex: {}", e))
+                })?;
+                builder.emit(Op::Regexp(Arc::new(regex)));
+            } else if is_glob {
+                // Use compile_glob for GLOB patterns (uses * and ? wildcards)
+                let pattern = CompiledPattern::compile_glob(&s)
+                    .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+                builder.emit(Op::Glob(Arc::new(pattern)));
+            } else if let Some(esc) = escape_char {
+                // LIKE with ESCAPE - pre-process pattern to handle escape character
+                let processed_pattern = self.process_like_escape(&s, esc);
+                let pattern = CompiledPattern::compile(&processed_pattern, case_insensitive)
+                    .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+                builder.emit(Op::LikeEscape(Arc::new(pattern), case_insensitive, esc));
+            } else {
+                let pattern = CompiledPattern::compile(&s, case_insensitive)
+                    .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+                builder.emit(Op::Like(Arc::new(pattern), case_insensitive));
+            }
+
+            if negated {
+                builder.emit(Op::Not);
+            }
+        } else {
+            // Dynamic pattern (e.g. parameter $1) — compile the pattern expression
+            // onto the stack and use the dynamic op
+            self.compile_expr(&like.pattern, builder)?;
+            if is_regexp {
+                builder.emit(Op::RegexpDynamic);
+            } else if is_glob {
+                builder.emit(Op::GlobDynamic);
+            } else if let Some(esc) = escape_char {
+                builder.emit(Op::LikeDynamicEscape(case_insensitive, esc));
+            } else {
+                builder.emit(Op::LikeDynamic(case_insensitive));
+            }
+            if negated {
+                builder.emit(Op::Not);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Extract a static pattern string from a StringLiteral or a double-quoted Identifier.
+    /// Returns None for dynamic expressions (column references, function calls, etc.).
+    fn extract_pattern_string(expr: &Expression) -> Option<SmartString> {
+        match expr {
+            Expression::StringLiteral(lit) => Some(lit.value.clone()),
+            Expression::Identifier(id) if id.token.quoted => Some(id.value.clone()),
+            _ => None,
+        }
+    }
+
+    /// Process LIKE pattern with escape character
+    /// Converts escaped wildcards to special markers and then to literal characters
+    fn process_like_escape(&self, pattern: &str, escape: char) -> String {
+        let mut result = String::with_capacity(pattern.len());
+        let mut chars = pattern.chars().peekable();
+
+        while let Some(c) = chars.next() {
+            if c == escape {
+                // Next character should be treated literally
+                if let Some(&next) = chars.peek() {
+                    if next == '%' || next == '_' || next == escape {
+                        // Escape the wildcard - use regex escape sequence
+                        result.push('\\');
+                        result.push(chars.next().unwrap());
+                    } else {
+                        // Not escaping a special character, keep the escape char
+                        result.push(c);
+                    }
+                } else {
+                    // Escape at end of pattern
+                    result.push(c);
+                }
+            } else {
+                result.push(c);
+            }
+        }
+
+        result
+    }
+
+    /// Compile a CASE expression
+    fn compile_case(
+        &self,
+        case: &CaseExpression,
+        builder: &mut ProgramBuilder,
+    ) -> Result<(), CompileError> {
+        builder.emit(Op::CaseStart);
+
+        let is_simple = case.value.is_some();
+        let mut end_jumps = Vec::new();
+
+        // For simple CASE, compile the operand once
+        if let Some(ref operand) = case.value {
+            self.compile_expr(operand, builder)?;
+        }
+
+        for when_clause in &case.when_clauses {
+            if is_simple {
+                // Simple CASE: compare operand with WHEN value
+                builder.emit(Op::Dup); // Keep operand on stack
+                self.compile_expr(&when_clause.condition, builder)?;
+                builder.emit(Op::CaseCompare);
+            } else {
+                // Searched CASE: evaluate condition
+                self.compile_expr(&when_clause.condition, builder)?;
+            }
+
+            // Jump to next branch if condition is false
+            let when_pos = builder.position();
+            builder.emit(Op::CaseWhen(0)); // Placeholder
+
+            // Compile THEN result
+            if is_simple {
+                builder.emit(Op::Pop); // Remove operand copy
+            }
+            self.compile_expr(&when_clause.then_result, builder)?;
+
+            // Jump to end after THEN
+            let then_pos = builder.position();
+            builder.emit(Op::CaseThen(0)); // Placeholder
+            end_jumps.push(then_pos);
+
+            // Patch WHEN jump to here
+            let next_pos = builder.position();
+            builder.patch_jump(when_pos as usize, next_pos);
+        }
+
+        // Compile ELSE
+        if is_simple {
+            builder.emit(Op::Pop); // Remove operand
+        }
+        if let Some(ref else_value) = case.else_value {
+            builder.emit(Op::CaseElse);
+            self.compile_expr(else_value, builder)?;
+        } else {
+            builder.emit(Op::LoadNull(DataType::Null));
+        }
+
+        // Patch all THEN jumps to end
+        let end_pos = builder.position();
+        builder.emit(Op::CaseEnd);
+
+        for pos in end_jumps {
+            builder.patch_jump(pos as usize, end_pos);
+        }
+
+        Ok(())
+    }
+
+    /// Compile a function call
+    fn compile_function(
+        &self,
+        func: &FunctionCall,
+        builder: &mut ProgramBuilder,
+    ) -> Result<(), CompileError> {
+        let func_name = func.function.to_uppercase();
+
+        if func.is_distinct || !func.order_by.is_empty() || func.filter.is_some() {
+            return Err(CompileError::InvalidExpression(format!(
+                "DISTINCT, ORDER BY, and FILTER modifiers require an aggregate function; {func_name} is being compiled as a scalar function"
+            )));
+        }
+
+        if let Some(info) = self.ctx.functions.get_info(&func_name) {
+            info.signature
+                .validate_arg_count(func.arguments.len())
+                .map_err(|error| CompileError::InvalidExpression(error.to_string()))?;
+        }
+
+        // Special handling for certain functions
+        match func_name.as_str() {
+            "NOW" | "CURRENT_TIMESTAMP" => {
+                builder.emit(Op::LoadNamedParam(CompactArc::from(
+                    "CURRENT_STATEMENT_TIMESTAMP",
+                )));
+                return Ok(());
+            }
+            "CURRENT_TRANSACTION_ID" => {
+                // Context-dependent function - loads from ExecuteContext
+                builder.emit(Op::LoadTransactionId);
+                return Ok(());
+            }
+
+            "IIF" => {
+                if func.arguments.len() != 3 {
+                    return Err(CompileError::InvalidExpression(
+                        "IIF requires exactly 3 arguments".to_string(),
+                    ));
+                }
+
+                self.compile_expr(&func.arguments[0], builder)?;
+                let false_jump = builder.position();
+                builder.emit(Op::PopJumpIfFalse(0));
+                self.compile_expr(&func.arguments[1], builder)?;
+                let end_jump = builder.position();
+                builder.emit(Op::Jump(0));
+
+                let false_pos = builder.position();
+                builder.patch_jump(false_jump as usize, false_pos);
+                self.compile_expr(&func.arguments[2], builder)?;
+                let end_pos = builder.position();
+                builder.patch_jump(end_jump as usize, end_pos);
+                return Ok(());
+            }
+
+            "COALESCE" => {
+                // Short-circuit COALESCE: stop evaluation as soon as we find non-null
+                // Bytecode pattern:
+                //   Eval(Arg1)
+                //   JumpIfNotNull(End)  // If not null, jump to end (keep value)
+                //   Pop                  // Pop the null value
+                //   Eval(Arg2)
+                //   JumpIfNotNull(End)
+                //   Pop
+                //   ...
+                //   Eval(ArgN)          // Last arg: keep on stack (null or not)
+                //   Label(End)
+                if func.arguments.is_empty() {
+                    builder.emit(Op::LoadNull(DataType::Null));
+                    return Ok(());
+                }
+
+                let mut jump_positions = Vec::new();
+                let last_idx = func.arguments.len() - 1;
+
+                for (i, arg) in func.arguments.iter().enumerate() {
+                    self.compile_expr(arg, builder)?;
+
+                    if i < last_idx {
+                        // For all but last: jump to end if not null, else pop and continue
+                        let jump_pos = builder.position();
+                        builder.emit(Op::JumpIfNotNull(0)); // Placeholder, will patch
+                        jump_positions.push(jump_pos);
+                        builder.emit(Op::Pop); // Pop the null value
+                    }
+                    // Last argument: just leave on stack
+                }
+
+                // Patch all jumps to point to end
+                let end_pos = builder.position();
+                for pos in jump_positions {
+                    builder.patch_jump(pos as usize, end_pos);
+                }
+
+                return Ok(());
+            }
+
+            "NULLIF" if func.arguments.len() == 2 => {
+                self.compile_expr(&func.arguments[0], builder)?;
+                self.compile_expr(&func.arguments[1], builder)?;
+                builder.emit(Op::NullIf);
+                return Ok(());
+            }
+
+            "GREATEST" => {
+                let arg_count = u8::try_from(func.arguments.len()).map_err(|_| {
+                    CompileError::InvalidExpression(
+                        "GREATEST arity exceeds the u8 bytecode limit".to_string(),
+                    )
+                })?;
+                for arg in &func.arguments {
+                    self.compile_expr(arg, builder)?;
+                }
+                builder.emit(Op::Greatest(arg_count));
+                return Ok(());
+            }
+
+            "LEAST" => {
+                let arg_count = u8::try_from(func.arguments.len()).map_err(|_| {
+                    CompileError::InvalidExpression(
+                        "LEAST arity exceeds the u8 bytecode limit".to_string(),
+                    )
+                })?;
+                for arg in &func.arguments {
+                    self.compile_expr(arg, builder)?;
+                }
+                builder.emit(Op::Least(arg_count));
+                return Ok(());
+            }
+
+            _ => {}
+        }
+
+        // Get function from registry
+        if let Some(scalar_func) = self.ctx.functions.get_scalar(&func_name) {
+            let arg_count = u8::try_from(func.arguments.len()).map_err(|_| {
+                CompileError::InvalidExpression(
+                    "function arity exceeds the u8 bytecode limit".to_string(),
+                )
+            })?;
+            // Compile arguments
+            for arg in &func.arguments {
+                self.compile_expr(arg, builder)?;
+            }
+
+            // Try native function pointer for single-arg functions (no dynamic dispatch)
+            if func.arguments.len() == 1 {
+                if let Some(native_fn) = scalar_func.native_fn1() {
+                    builder.emit(Op::NativeFn1(native_fn));
+                    return Ok(());
+                }
+            }
+
+            // Fallback to dynamic dispatch
+            builder.emit(Op::CallScalar {
+                func: scalar_func.into(),
+                arg_count,
+            });
+            Ok(())
+        } else {
+            let arg_count = u8::try_from(func.arguments.len()).map_err(|_| {
+                CompileError::InvalidExpression(
+                    "stored function arity exceeds the u8 bytecode limit".to_string(),
+                )
+            })?;
+            for argument in &func.arguments {
+                self.compile_expr(argument, builder)?;
+            }
+            builder.emit(Op::CallStored {
+                name: CompactArc::from(func.function.as_str()),
+                arg_count,
+            });
+            Ok(())
+        }
+    }
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+/// Check if a function must NOT be constant-folded.
+///
+/// Looks up the function in the global registry and checks `FunctionInfo.deterministic`.
+/// Functions not in the registry (CURRENT_TRANSACTION_ID, UUID, RAND — handled as
+/// special compiler ops or aliases) are hardcoded here.
+///
+/// Also used by `query_classification.rs` to detect non-deterministic functions
+/// for semantic cache bypass, and by `evaluator_bridge.rs` to reject pushdown
+/// of expressions containing non-deterministic functions.
+pub fn is_non_foldable_function(name: &str) -> bool {
+    is_non_foldable_function_with_registry(name, radixdb_functions::registry::global_registry())
+}
+
+#[inline]
+fn is_non_foldable_function_with_registry(
+    name: &str,
+    registry: &radixdb_functions::FunctionRegistry,
+) -> bool {
+    !registry.is_deterministic(name)
+}
+
+/// Check if an expression is column-free AND non-trivial (worth folding).
+/// Returns true for expressions like `NOW()`, `1 + 2`, `NOW() - INTERVAL '24 hours'`
+/// that can be evaluated once at compile time instead of per-row.
+/// Simple literals return false (already handled efficiently by LoadConst).
+fn is_foldable_expr(expr: &Expression, registry: &radixdb_functions::FunctionRegistry) -> bool {
+    match expr {
+        // Simple literals are already constants — no folding benefit
+        Expression::IntegerLiteral(_)
+        | Expression::FloatLiteral(_)
+        | Expression::StringLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::BoundValue(_) => false,
+
+        // INTERVAL literals alone are already LoadConst — no folding benefit
+        Expression::IntervalLiteral(_) => false,
+
+        // Binary operations: foldable if BOTH sides are column-free
+        Expression::Infix(infix) => {
+            is_column_free(&infix.left, registry) && is_column_free(&infix.right, registry)
+        }
+
+        // Unary operations: foldable if operand is column-free
+        Expression::Prefix(prefix) => is_column_free(&prefix.right, registry),
+
+        // Function calls: foldable if ALL arguments are column-free
+        // This covers NOW(), CURRENT_DATE, UPPER('text'), ABS(-5), etc.
+        // Excludes context-dependent and non-deterministic-per-call functions
+        Expression::FunctionCall(func) => {
+            if is_non_foldable_function_with_registry(&func.function, registry) {
+                return false;
+            }
+            func.arguments
+                .iter()
+                .all(|argument| is_column_free(argument, registry))
+        }
+
+        // CAST: foldable if inner expression is column-free
+        Expression::Cast(cast) => {
+            !cast.type_name.contains('.') && is_column_free(&cast.expr, registry)
+        }
+
+        // Everything else: not foldable
+        _ => false,
+    }
+}
+
+/// Check if an expression references no columns (is entirely self-contained).
+fn is_column_free(expr: &Expression, registry: &radixdb_functions::FunctionRegistry) -> bool {
+    match expr {
+        // Literals are always column-free
+        Expression::IntegerLiteral(_)
+        | Expression::FloatLiteral(_)
+        | Expression::StringLiteral(_)
+        | Expression::BooleanLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::IntervalLiteral(_)
+        | Expression::BoundValue(_) => true,
+
+        // Identifiers reference columns (not column-free)
+        Expression::Identifier(_) | Expression::QualifiedIdentifier { .. } => false,
+
+        // Parameters: values aren't known at compile time
+        Expression::Parameter(_) => false,
+
+        // Binary operations
+        Expression::Infix(infix) => {
+            is_column_free(&infix.left, registry) && is_column_free(&infix.right, registry)
+        }
+
+        // Unary operations
+        Expression::Prefix(prefix) => is_column_free(&prefix.right, registry),
+
+        // Function calls (NOW(), UPPER('text'), etc.)
+        // Exclude context-dependent and non-deterministic-per-call functions
+        Expression::FunctionCall(func) => {
+            if is_non_foldable_function_with_registry(&func.function, registry) {
+                return false;
+            }
+            func.arguments
+                .iter()
+                .all(|argument| is_column_free(argument, registry))
+        }
+
+        // CAST
+        Expression::Cast(cast) => {
+            !cast.type_name.contains('.') && is_column_free(&cast.expr, registry)
+        }
+
+        // CASE WHEN
+        Expression::Case(case) => {
+            case.value
+                .as_ref()
+                .is_none_or(|e| is_column_free(e, registry))
+                && case.when_clauses.iter().all(|wc| {
+                    is_column_free(&wc.condition, registry)
+                        && is_column_free(&wc.then_result, registry)
+                })
+                && case
+                    .else_value
+                    .as_ref()
+                    .is_none_or(|e| is_column_free(e, registry))
+        }
+
+        // Subqueries, EXISTS — not column-free
+        Expression::ScalarSubquery(_) | Expression::Exists(_) => false,
+
+        // Between
+        Expression::Between(between) => {
+            is_column_free(&between.expr, registry)
+                && is_column_free(&between.lower, registry)
+                && is_column_free(&between.upper, registry)
+        }
+
+        // Anything else: conservatively assume it references columns
+        _ => false,
+    }
+}
+
+/// Try to evaluate a constant expression at compile time
+fn try_eval_constant(expr: &Expression) -> Option<Value> {
+    match expr {
+        Expression::IntegerLiteral(lit) => Some(Value::Integer(lit.value)),
+        Expression::FloatLiteral(lit) => Some(Value::Float(lit.value)),
+        Expression::StringLiteral(lit) => Some(Value::Text(lit.value.clone())),
+        Expression::BooleanLiteral(lit) => Some(Value::Boolean(lit.value)),
+        Expression::NullLiteral(_) => Some(Value::null_unknown()),
+        Expression::BoundValue(value) => Some((**value).clone()),
+        _ => None,
+    }
+}
+
+// Note: string_to_datatype and expression_to_string are now imported from utils
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use radixdb_sql::ast::IntegerLiteral;
+    use radixdb_sql::token::{Position, Token, TokenType};
+
+    fn make_token() -> Token {
+        Token {
+            token_type: TokenType::Integer,
+            literal: "1".into(),
+            position: Position {
+                offset: 0,
+                line: 1,
+                column: 1,
+            },
+            quoted: false,
+        }
+    }
+
+    #[test]
+    fn test_compile_simple_comparison() {
+        let columns = vec!["a".to_string(), "b".to_string()];
+        let ctx = CompileContext::with_global_registry(&columns);
+        let compiler = ExprCompiler::new(&ctx);
+
+        // a > 5
+        let expr = Expression::Infix(InfixExpression {
+            token: make_token(),
+            left: Box::new(Expression::Identifier(Identifier::new(
+                make_token(),
+                "a".to_string(),
+            ))),
+            operator: ">".into(),
+            op_type: InfixOperator::GreaterThan,
+            right: Box::new(Expression::IntegerLiteral(IntegerLiteral {
+                token: make_token(),
+                value: 5,
+            })),
+        });
+
+        let program = compiler.compile(&expr).unwrap();
+        assert!(!program.is_empty());
+        println!("{}", program.disassemble());
+    }
+
+    #[test]
+    fn test_compile_and_expression() {
+        let columns = vec!["a".to_string(), "b".to_string()];
+        let ctx = CompileContext::with_global_registry(&columns);
+        let compiler = ExprCompiler::new(&ctx);
+
+        // a > 5 AND b < 10
+        let expr = Expression::Infix(InfixExpression {
+            token: make_token(),
+            left: Box::new(Expression::Infix(InfixExpression {
+                token: make_token(),
+                left: Box::new(Expression::Identifier(Identifier::new(
+                    make_token(),
+                    "a".to_string(),
+                ))),
+                operator: ">".into(),
+                op_type: InfixOperator::GreaterThan,
+                right: Box::new(Expression::IntegerLiteral(IntegerLiteral {
+                    token: make_token(),
+                    value: 5,
+                })),
+            })),
+            operator: "AND".into(),
+            op_type: InfixOperator::And,
+            right: Box::new(Expression::Infix(InfixExpression {
+                token: make_token(),
+                left: Box::new(Expression::Identifier(Identifier::new(
+                    make_token(),
+                    "b".to_string(),
+                ))),
+                operator: "<".into(),
+                op_type: InfixOperator::LessThan,
+                right: Box::new(Expression::IntegerLiteral(IntegerLiteral {
+                    token: make_token(),
+                    value: 10,
+                })),
+            })),
+        });
+
+        let program = compiler.compile(&expr).unwrap();
+        assert!(!program.is_empty());
+        println!("{}", program.disassemble());
+    }
+}

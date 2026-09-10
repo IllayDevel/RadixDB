@@ -1,0 +1,29 @@
+[package]
+name = "radixdb-plugin-host"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "Internal trusted-native plugin loader and immutable registry for RadixDB"
+license-file = "../../LICENSE"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+test-hooks = []
+
+[dependencies]
+libc = "0.2"
+libloading = "0.8"
+radixdb-plugin-abi = { path = "../radixdb-plugin-abi" }
+radixdb-core = { path = "../radixdb-core" }
+semver = { version = "1", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+thiserror = "2"
+toml = "0.8"
+
+[dev-dependencies]
+tempfile = "3.9"

@@ -1,0 +1,43 @@
+# source_path	evidence_owner	boundary
+crates/cargo-radixdb-plugin/src/golden.rs	asan-plugin-tooling	plugin codec callback and result-builder boundary
+crates/cargo-radixdb-plugin/src/inspect.rs	asan-plugin-tooling	dynamic-library inspection boundary
+crates/radixdb-core/src/compact_arc.rs	miri-group-0	compact ownership and deallocation
+crates/radixdb-core/src/compact_vec.rs	miri-group-0	compact allocation and element ownership
+crates/radixdb-core/src/cow_btree.rs	miri-groups-2-and-4	copy-on-write tree ownership
+crates/radixdb-core/src/i64_map.rs	miri-group-1	map slot initialization and ownership
+crates/radixdb-core/src/row_vec.rs	miri-group-3	row iterator element ownership
+crates/radixdb-core/src/smart_string.rs	miri-group-0	inline and shared string representation
+crates/radixdb-core/src/value/mod.rs	miri-group-3	unaligned scalar byte access
+crates/radixdb-functions/src/scalar/semantic.rs	asan-function-lib	model tensor native boundary
+crates/radixdb-join-workload/src/bin/radixdb_join_baseline.rs	asan-workload-binaries	benchmark clock and cache-advice syscalls
+crates/radixdb-plugin-abi/src/descriptor.rs	asan-plugin-platform	C callback type boundary
+crates/radixdb-plugin-abi/src/lib.rs	asan-plugin-platform	C plugin entrypoint type boundary
+crates/radixdb-plugin-abi/src/raw.rs	asan-plugin-platform	host callback and raw table boundary
+crates/radixdb-plugin-abi/src/validate.rs	asan-plugin-platform	raw ABI pointer and slice validation
+crates/radixdb-plugin-host/src/invoke.rs	asan-plugin-platform	host-owned callback state and invocation
+crates/radixdb-plugin-host/src/loader.rs	asan-plugin-platform	dynamic library and descriptor admission
+crates/radixdb-plugin-macros/src/lib.rs	asan-plugin-platform	generated C callback wrappers
+crates/radixdb-plugin/src/call.rs	asan-plugin-platform	safe SDK to host callback bridge
+crates/radixdb-plugin/src/testing.rs	asan-plugin-platform	local host raw descriptor and callback oracle
+crates/radixdb-plugin/src/value.rs	asan-plugin-platform	validated raw value view
+crates/radixdb-soak/src/diagnostics/channel.rs	asan-soak	observer process file-lock boundary
+crates/radixdb-soak/src/diagnostics/collectors.rs	asan-soak	filesystem statistics syscall boundary
+crates/radixdb-soak/src/diagnostics/observer.rs	asan-soak	observer ownership lock boundary
+crates/radixdb-soak/src/metrics.rs	asan-soak	system metric query boundary
+crates/radixdb-soak/src/runner.rs	asan-soak	controlled process signal boundary
+crates/radixdb-sql/src/lexer/literal.rs	asan-parser-lib	validated UTF-8 lexer fast path
+crates/radixdb-sql/src/token/mod.rs	asan-parser-lib	ASCII token normalization
+crates/radixdb-storage/src/index/hnsw.rs	asan-hnsw-and-index-lib	SIMD graph and deleted-bit access
+crates/radixdb-storage/src/index/hnsw/distance.rs	asan-hnsw-and-index-lib	SIMD distance and alignment boundary
+crates/radixdb-storage/src/mvcc/engine/mod.rs	tsan-mvcc-integrations	filesystem statistics inside engine lifecycle
+crates/radixdb-storage/src/mvcc/file_lock.rs	tsan-mvcc-integrations	process file-lock boundary
+crates/radixdb-storage/src/mvcc/transaction.rs	tsan-mvcc-integrations	transaction DDL fence ownership
+crates/radixdb-storage/src/page_cache/mod.rs	asan-storage-v6	page mapping and cache-advice boundary
+crates/radixdb-storage/src/v6/gc/filesystem.rs	asan-storage-v6	retirement rename syscall boundary
+crates/radixdb-storage/src/v6/publication/checkpoint/retirement.rs	asan-storage-v6	checkpoint retirement rename boundary
+crates/radixdb-storage/src/v6/publication/filesystem/commit.rs	asan-storage-v6	atomic publication rename boundary
+crates/radixdb-storage/src/v6/snapshot/publication.rs	asan-storage-v6	atomic snapshot publication boundary
+crates/radixdb-storage/src/v6/snapshot/restore.rs	asan-storage-v6	atomic restore publication boundary
+src/bin/radixdb_bench/server.rs	asan-workload-binaries	benchmark-only cache-advice syscall
+src/server/tcp_server.rs	tsan-wire-integrations	scoped server worker lifetime boundary
+src/sql_dump.rs	asan-root-library	atomic dump publication and test codec callbacks

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://radixdb.dev/schema/radixdb.gui.table-form.v1.schema.json",
+  "title": "RadixDB GUI table form descriptor v1",
+  "type": "object",
+  "required": ["descriptor", "table", "schema_fingerprint", "fields", "table_checks"],
+  "properties": {
+    "descriptor": { "const": "radixdb.gui.table-form.v1" },
+    "table": { "type": "string", "minLength": 1 },
+    "schema_fingerprint": { "type": "string", "minLength": 1 },
+    "fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "ordinal", "data_type", "editor", "nullable", "required", "primary_key", "unique", "auto_increment", "read_only", "generated", "default_expression", "checks", "reference"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "ordinal": { "type": "integer", "minimum": 0 },
+          "data_type": { "$ref": "radixdb.schema.v1.schema.json#/$defs/dataType" },
+          "editor": { "enum": ["integer", "float", "decimal", "text", "boolean", "timestamp", "date", "json", "uuid", "bytes", "vector", "reference_select", "unsupported"] },
+          "nullable": { "type": "boolean" },
+          "required": { "type": "boolean" },
+          "primary_key": { "type": "boolean" },
+          "unique": { "type": "boolean" },
+          "auto_increment": { "type": "boolean" },
+          "read_only": { "type": "boolean" },
+          "generated": { "type": "boolean" },
+          "default_expression": { "type": ["string", "null"] },
+          "checks": { "type": "array", "items": { "type": "string" } },
+          "reference": {
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "required": ["target_table", "target_column", "on_delete", "on_update"],
+                "properties": {
+                  "target_table": { "type": "string", "minLength": 1 },
+                  "target_column": { "type": "string", "minLength": 1 },
+                  "on_delete": { "enum": ["restrict", "cascade", "set_null", "no_action"] },
+                  "on_update": { "enum": ["restrict", "cascade", "set_null", "no_action"] }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "extensions": { "type": "object", "additionalProperties": true }
+        },
+        "additionalProperties": false
+      }
+    },
+    "table_checks": { "type": "array", "items": { "type": "string" } },
+    "extensions": { "type": "object", "additionalProperties": true }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,11 @@
+error[E0308]: mismatched types
+  --> tests/ui/invalid_callback_signature.rs:11:16
+   |
+ 3 | #[derive(Default, RadixType)]
+   |                   --------- expected due to this
+...
+11 |     equality = bad_equal
+   |                ^^^^^^^^^ types differ in mutability
+   |
+   = note: expected fn pointer `for<'a, 'b> fn(&'a BadCallback, &'b BadCallback) -> bool`
+                 found fn item `for<'a, 'b, 'c> fn(&'a BadCallback, &'b mut HashSink<'c>) -> bool {bad_equal}`

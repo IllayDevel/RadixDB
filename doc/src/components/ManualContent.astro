@@ -1,0 +1,21 @@
+---
+import DefaultContent from '@astrojs/starlight/components/MarkdownContent.astro';
+import { Aside } from '@astrojs/starlight/components';
+import { parse } from 'smol-toml';
+import chapterRegistry from '../../_meta/chapters.toml?raw';
+const route = Astro.locals.starlightRoute;
+const ru = route?.lang === 'ru';
+const chapter = route?.entry?.id?.replace(/^(en|ru)\//, '') ?? '';
+// Read the registry directly so dev-server metadata cannot hide API warnings.
+const registry = parse(chapterRegistry);
+const unstable = (registry.chapters ?? []).some(entry => entry.unstable_api &&
+  entry.path.replace(/\.(md|mdx)$/, '').replace(/^index$/, '') === chapter);
+---
+{unstable && (
+  <Aside type="caution" title={ru ? 'Нестабильный API' : 'Unstable API'}>
+    {ru
+      ? 'В разработке. API и синтаксис нестабильны и могут измениться. Описание основано на рабочем плане; после приёмки слоя будет сверено с реализацией.'
+      : 'Under development. API and syntax are unstable and may change. This description follows the working plan and will be checked against the implementation after the layer is accepted.'}
+  </Aside>
+)}
+<DefaultContent><slot /></DefaultContent>

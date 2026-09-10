@@ -1,0 +1,31 @@
+[Unit]
+Description=Isolated RadixDB soak database on the Atom HDD stand
+After=network.target
+
+[Service]
+Type=simple
+User=radixdb-soak
+Group=radixdb-soak
+Slice=radixdb-soak.slice
+WorkingDirectory=/storage/radixdb-soak
+ExecStart=/storage/radixdb-soak/current/bin/radixdb-server --config /etc/radixdb-soak/server.toml
+Restart=always
+RestartSec=2s
+TimeoutStartSec=60s
+TimeoutStopSec=25m
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=false
+TemporaryFileSystem=/tmp:rw /var/tmp:rw
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/storage/radixdb-soak
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

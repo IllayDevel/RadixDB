@@ -1,0 +1,10 @@
+[Unit]
+Description=RadixDB isolated soak slice
+
+[Slice]
+AllowedCPUs=12-35
+MemoryHigh=56G
+MemoryMax=64G
+MemorySwapMax=8G
+IOWeight=50
+TasksMax=4096

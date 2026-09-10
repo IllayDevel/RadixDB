@@ -1,0 +1,1646 @@
+// Copyright 2026 RadixDB Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+use radixdb::Database;
+
+fn setup() -> Database {
+    Database::open_in_memory().expect("Failed to create in-memory database")
+}
+
+fn setup_parent_child(db: &Database) {
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO parents VALUES (1, 'Alice'), (2, 'Bob'), (3, 'Charlie')",
+        (),
+    )
+    .unwrap();
+}
+
+fn count(db: &Database, sql: &str) -> i64 {
+    let mut rows = db.query(sql, ()).unwrap();
+    if let Some(row) = rows.next() {
+        let row = row.unwrap();
+        return row.get::<i64>(0).unwrap();
+    }
+    0
+}
+
+// =====================================================================
+// INSERT tests
+// =====================================================================
+
+#[test]
+fn test_fk_insert_valid_parent() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    // Insert with valid parent reference
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (2, 2, 'Child2')", ())
+        .unwrap();
+
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 2);
+}
+
+#[test]
+fn test_fk_insert_invalid_parent() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    // Insert with non-existent parent should fail
+    let result = db.execute("INSERT INTO children VALUES (1, 999, 'Orphan')", ());
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("foreign key"),
+        "Expected FK error, got: {}",
+        err
+    );
+}
+
+#[test]
+fn test_fk_insert_null_allowed() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    // Insert with NULL FK should be allowed (SQL standard)
+    db.execute("INSERT INTO children VALUES (1, NULL, 'NoParent')", ())
+        .unwrap();
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 1);
+}
+
+#[test]
+fn test_fk_insert_select_valid() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    db.execute(
+        "CREATE TABLE temp_data (id INTEGER PRIMARY KEY, pid INTEGER, n TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO temp_data VALUES (10, 1, 'Via Select')", ())
+        .unwrap();
+
+    let result = db.execute("INSERT INTO children SELECT * FROM temp_data", ());
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_fk_insert_select_invalid() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    db.execute(
+        "CREATE TABLE temp_data (id INTEGER PRIMARY KEY, pid INTEGER, n TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO temp_data VALUES (10, 999, 'Bad Ref')", ())
+        .unwrap();
+
+    let result = db.execute("INSERT INTO children SELECT * FROM temp_data", ());
+    assert!(result.is_err());
+}
+
+// =====================================================================
+// DELETE with RESTRICT (default)
+// =====================================================================
+
+#[test]
+fn test_fk_delete_restrict_blocks() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    // Deleting parent with existing child should fail (RESTRICT is default)
+    let result = db.execute("DELETE FROM parents WHERE id = 1", ());
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("foreign key") || err.contains("referenced"),
+        "Expected FK error, got: {}",
+        err
+    );
+
+    // Parent should still exist
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents WHERE id = 1"), 1);
+}
+
+#[test]
+fn test_fk_delete_no_children_ok() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    // Deleting parent with NO children should succeed
+    db.execute("DELETE FROM parents WHERE id = 3", ()).unwrap();
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents WHERE id = 3"), 0);
+}
+
+// =====================================================================
+// DELETE with CASCADE
+// =====================================================================
+
+#[test]
+fn test_fk_delete_cascade() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE CASCADE, item TEXT)",
+        (),
+    ).unwrap();
+    db.execute(
+        "INSERT INTO orders VALUES (1, 1, 'Item1'), (2, 1, 'Item2'), (3, 2, 'Item3')",
+        (),
+    )
+    .unwrap();
+
+    // Deleting parent with CASCADE should delete child rows
+    db.execute("DELETE FROM parents WHERE id = 1", ()).unwrap();
+
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents WHERE id = 1"), 0);
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM orders WHERE parent_id = 1"),
+        0
+    );
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM orders WHERE parent_id = 2"),
+        1
+    );
+}
+
+// =====================================================================
+// DELETE with SET NULL
+// =====================================================================
+
+#[test]
+fn test_fk_delete_set_null() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE SET NULL, item TEXT)",
+        (),
+    ).unwrap();
+    db.execute(
+        "INSERT INTO orders VALUES (1, 1, 'Item1'), (2, 1, 'Item2'), (3, 2, 'Item3')",
+        (),
+    )
+    .unwrap();
+
+    // Deleting parent with SET NULL should set FK to NULL in child rows
+    db.execute("DELETE FROM parents WHERE id = 1", ()).unwrap();
+
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents WHERE id = 1"), 0);
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM orders WHERE parent_id IS NULL"),
+        2
+    );
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM orders"), 3);
+}
+
+// =====================================================================
+// DROP TABLE tests
+// =====================================================================
+
+#[test]
+fn test_fk_drop_parent_blocked() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    let result = db.execute("DROP TABLE parents", ());
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_fk_drop_child_ok() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    db.execute("DROP TABLE children", ()).unwrap();
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents"), 3);
+}
+
+// =====================================================================
+// TRUNCATE tests
+// =====================================================================
+
+#[test]
+fn test_fk_truncate_parent_blocked() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    let result = db.execute("TRUNCATE TABLE parents", ());
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_fk_truncate_child_ok() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    db.execute("TRUNCATE TABLE children", ()).unwrap();
+}
+
+// =====================================================================
+// CREATE TABLE validation tests
+// =====================================================================
+
+#[test]
+fn test_fk_create_table_invalid_parent() {
+    let db = setup();
+
+    let result = db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES nonexistent(id))",
+        (),
+    );
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_fk_create_table_table_level_constraint() {
+    let db = setup();
+    setup_parent_child(&db);
+
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER, name TEXT, FOREIGN KEY(parent_id) REFERENCES parents(id))",
+        (),
+    ).unwrap();
+
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+    let result = db.execute("INSERT INTO children VALUES (2, 999, 'Bad')", ());
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_fk_create_table_with_actions() {
+    let db = setup();
+    setup_parent_child(&db);
+
+    db.execute(
+        "CREATE TABLE orders (id INTEGER PRIMARY KEY, parent_id INTEGER, FOREIGN KEY(parent_id) REFERENCES parents(id) ON DELETE CASCADE ON UPDATE CASCADE)",
+        (),
+    ).unwrap();
+
+    db.execute("INSERT INTO orders VALUES (1, 1)", ()).unwrap();
+    db.execute("DELETE FROM parents WHERE id = 1", ()).unwrap();
+
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM orders"), 0);
+}
+
+// =====================================================================
+// Multiple FK columns
+// =====================================================================
+
+#[test]
+fn test_fk_multiple_fk_columns() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE departments (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE managers (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "INSERT INTO departments VALUES (1, 'Engineering'), (2, 'Sales')",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO managers VALUES (10, 'Alice'), (20, 'Bob')", ())
+        .unwrap();
+
+    db.execute(
+        "CREATE TABLE employees (id INTEGER PRIMARY KEY, dept_id INTEGER REFERENCES departments(id), mgr_id INTEGER REFERENCES managers(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    // Both FK values valid
+    db.execute("INSERT INTO employees VALUES (1, 1, 10, 'Employee1')", ())
+        .unwrap();
+
+    // Invalid dept FK
+    let result = db.execute("INSERT INTO employees VALUES (2, 999, 10, 'BadDept')", ());
+    assert!(result.is_err());
+
+    // Invalid manager FK
+    let result = db.execute("INSERT INTO employees VALUES (3, 1, 999, 'BadMgr')", ());
+    assert!(result.is_err());
+
+    // One NULL FK (allowed)
+    db.execute("INSERT INTO employees VALUES (4, 1, NULL, 'NoMgr')", ())
+        .unwrap();
+}
+
+// =====================================================================
+// WAL persistence test
+// =====================================================================
+
+#[test]
+fn test_fk_survives_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = format!("file://{}", dir.path().to_str().unwrap());
+
+    // Create tables with FK in first connection
+    {
+        let db = Database::open(&path).expect("Failed to open database");
+        db.execute(
+            "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+            (),
+        )
+        .unwrap();
+        db.execute("INSERT INTO parents VALUES (1, 'Alice')", ())
+            .unwrap();
+        db.execute(
+            "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+            (),
+        ).unwrap();
+        db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+            .unwrap();
+    }
+
+    // Open a new connection - FK constraints should still be enforced
+    {
+        let db = Database::open(&path).expect("Failed to reopen database");
+
+        db.execute("INSERT INTO children VALUES (2, 1, 'Child2')", ())
+            .unwrap();
+
+        let result = db.execute("INSERT INTO children VALUES (3, 999, 'Orphan')", ());
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("foreign key"),
+            "Expected FK error after restart, got: {}",
+            err
+        );
+    }
+}
+
+// =====================================================================
+// Transaction rollback tests
+// =====================================================================
+
+#[test]
+fn test_fk_transaction_rollback() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    db.execute("BEGIN", ()).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    let result = db.execute("INSERT INTO children VALUES (2, 999, 'Bad')", ());
+    assert!(result.is_err());
+
+    db.execute("ROLLBACK", ()).unwrap();
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 0);
+}
+
+// =====================================================================
+// ON DELETE NO ACTION test
+// =====================================================================
+
+#[test]
+fn test_fk_no_action_blocks() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE NO ACTION, name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    let result = db.execute("DELETE FROM parents WHERE id = 1", ());
+    assert!(result.is_err());
+}
+
+// =====================================================================
+// Non-FK tables unaffected (zero cost)
+// =====================================================================
+
+#[test]
+fn test_non_fk_table_unaffected() {
+    let db = setup();
+
+    db.execute("CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)", ())
+        .unwrap();
+    db.execute("INSERT INTO items VALUES (1, 'Item1')", ())
+        .unwrap();
+    db.execute("INSERT INTO items VALUES (2, 'Item2')", ())
+        .unwrap();
+    db.execute("UPDATE items SET name = 'Updated' WHERE id = 1", ())
+        .unwrap();
+    db.execute("DELETE FROM items WHERE id = 2", ()).unwrap();
+    db.execute("TRUNCATE TABLE items", ()).unwrap();
+    db.execute("DROP TABLE items", ()).unwrap();
+}
+
+// =====================================================================
+// Default referenced column (PK) test
+// =====================================================================
+
+#[test]
+fn test_fk_default_references_pk() {
+    let db = setup();
+    setup_parent_child(&db);
+
+    // References parents without specifying column - defaults to PK
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents, name TEXT)",
+        (),
+    ).unwrap();
+
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+    let result = db.execute("INSERT INTO children VALUES (2, 999, 'Bad')", ());
+    assert!(result.is_err());
+}
+
+// =====================================================================
+// UPDATE FK validation tests
+// =====================================================================
+
+#[test]
+fn test_fk_update_fk_column_to_valid() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    // Update FK to another valid parent
+    db.execute("UPDATE children SET parent_id = 2 WHERE id = 1", ())
+        .unwrap();
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM children WHERE parent_id = 2"),
+        1
+    );
+}
+
+#[test]
+fn test_fk_update_fk_column_to_invalid() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    // Update FK to non-existent parent should fail
+    let result = db.execute("UPDATE children SET parent_id = 999 WHERE id = 1", ());
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("foreign key"),
+        "Expected FK error, got: {}",
+        err
+    );
+}
+
+#[test]
+fn test_fk_update_non_fk_column_ok() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    // Updating non-FK column should always succeed (no FK check needed)
+    db.execute("UPDATE children SET name = 'Updated' WHERE id = 1", ())
+        .unwrap();
+}
+
+// =====================================================================
+// CASCADE atomicity: rollback undoes cascade effects
+// =====================================================================
+
+#[test]
+fn test_fk_cascade_rollback_atomicity() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE CASCADE, name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (2, 1, 'Child2')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (3, 2, 'Child3')", ())
+        .unwrap();
+
+    // Start explicit transaction, delete parent (CASCADE should delete children 1,2)
+    db.execute("BEGIN", ()).unwrap();
+    db.execute("DELETE FROM parents WHERE id = 1", ()).unwrap();
+
+    // Rollback — both the parent DELETE and the cascaded child DELETEs must be undone
+    db.execute("ROLLBACK", ()).unwrap();
+
+    // All rows should still exist
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents"), 3);
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 3);
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM children WHERE parent_id = 1"),
+        2
+    );
+}
+
+// =====================================================================
+// FK check sees uncommitted rows (multi-statement transaction)
+// =====================================================================
+
+#[test]
+fn test_fk_sees_uncommitted_parent_insert() {
+    let db = setup();
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    // Within one transaction: insert parent, then insert child referencing it
+    db.execute("BEGIN", ()).unwrap();
+    db.execute("INSERT INTO parents VALUES (100, 'NewParent')", ())
+        .unwrap();
+    // This should succeed because the parent row exists in the current transaction
+    db.execute("INSERT INTO children VALUES (1, 100, 'Child')", ())
+        .unwrap();
+    db.execute("COMMIT", ()).unwrap();
+
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM children WHERE parent_id = 100"),
+        1
+    );
+}
+
+// =====================================================================
+// CASCADE SET NULL atomicity with rollback
+// =====================================================================
+
+#[test]
+fn test_fk_set_null_rollback_atomicity() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE SET NULL, name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    db.execute("BEGIN", ()).unwrap();
+    db.execute("DELETE FROM parents WHERE id = 1", ()).unwrap();
+    db.execute("ROLLBACK", ()).unwrap();
+
+    // After rollback, the child should still have parent_id = 1 (SET NULL was undone)
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM children WHERE parent_id = 1"),
+        1
+    );
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents WHERE id = 1"), 1);
+}
+
+// =====================================================================
+// CASCADE UPDATE atomicity with rollback
+// =====================================================================
+
+#[test]
+fn test_fk_cascade_update_pk_rejected() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON UPDATE CASCADE, name TEXT)",
+        (),
+    ).unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1, 'Child1')", ())
+        .unwrap();
+
+    // PK updates are rejected (row_id == pk_value invariant)
+    let result = db.execute("UPDATE parents SET id = 100 WHERE id = 1", ());
+    assert!(result.is_err(), "UPDATE on PK should be rejected");
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("primary key"),
+        "Error should mention primary key, got: {}",
+        err
+    );
+
+    // Data should be unchanged
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents WHERE id = 1"), 1);
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM children WHERE parent_id = 1"),
+        1
+    );
+}
+
+// =====================================================================
+// DROP TABLE cleans up orphaned FK constraints in child tables
+// =====================================================================
+
+#[test]
+fn test_fk_drop_parent_cleans_child_fk() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    // Delete all child rows so we can drop the parent
+    // (no child rows reference the parent — DROP is allowed)
+    // Don't insert any children, so the parent has no references
+
+    db.execute("DROP TABLE parents", ()).unwrap();
+
+    // Now insert into child table with any parent_id — FK constraint should be gone
+    db.execute("INSERT INTO children VALUES (1, 999, 'Orphan')", ())
+        .unwrap();
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 1);
+}
+
+// =====================================================================
+// Multi-level CASCADE (grandparent → parent → child)
+// =====================================================================
+
+#[test]
+fn test_fk_multi_level_cascade_delete() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE grandparents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute("CREATE TABLE parents (id INTEGER PRIMARY KEY, gp_id INTEGER REFERENCES grandparents(id) ON DELETE CASCADE, name TEXT)", ()).unwrap();
+    db.execute("CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE CASCADE, name TEXT)", ()).unwrap();
+
+    db.execute("INSERT INTO grandparents VALUES (1, 'GP1'), (2, 'GP2')", ())
+        .unwrap();
+    db.execute(
+        "INSERT INTO parents VALUES (10, 1, 'P1'), (20, 1, 'P2'), (30, 2, 'P3')",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO children VALUES (100, 10, 'C1'), (200, 10, 'C2'), (300, 20, 'C3'), (400, 30, 'C4')", ()).unwrap();
+
+    // Delete grandparent 1 → should cascade to parents 10,20 → should cascade to children 100,200,300
+    db.execute("DELETE FROM grandparents WHERE id = 1", ())
+        .unwrap();
+
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM grandparents"), 1); // GP2 remains
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents"), 1); // P3 remains
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 1); // C4 remains
+    assert_eq!(
+        count(&db, "SELECT COUNT(*) FROM children WHERE id = 400"),
+        1
+    );
+}
+
+#[test]
+fn test_fk_multi_level_cascade_restrict_blocks() {
+    let db = setup();
+
+    // grandparents → parents (CASCADE) → children (RESTRICT)
+    db.execute(
+        "CREATE TABLE grandparents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute("CREATE TABLE parents (id INTEGER PRIMARY KEY, gp_id INTEGER REFERENCES grandparents(id) ON DELETE CASCADE, name TEXT)", ()).unwrap();
+    db.execute("CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE RESTRICT, name TEXT)", ()).unwrap();
+
+    db.execute("INSERT INTO grandparents VALUES (1, 'GP1')", ())
+        .unwrap();
+    db.execute("INSERT INTO parents VALUES (10, 1, 'P1')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (100, 10, 'C1')", ())
+        .unwrap();
+
+    // Delete grandparent → CASCADE deletes parent 10 → but RESTRICT blocks because child 100 exists
+    let result = db.execute("DELETE FROM grandparents WHERE id = 1", ());
+    assert!(
+        result.is_err(),
+        "Should fail because grandchild RESTRICT blocks cascade"
+    );
+}
+
+// =====================================================================
+// DROP TABLE with NULL FK values should not be blocked
+// =====================================================================
+
+#[test]
+fn test_fk_drop_table_with_null_fk_children() {
+    let db = setup();
+    setup_parent_child(&db);
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    ).unwrap();
+
+    // Insert children with NULL parent_id — these don't reference the parent
+    db.execute("INSERT INTO children VALUES (1, NULL, 'Orphan1')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (2, NULL, 'Orphan2')", ())
+        .unwrap();
+
+    // DROP TABLE should succeed — no child rows actually reference the parent
+    db.execute("DROP TABLE parents", ()).unwrap();
+
+    // Children should still exist
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 2);
+}
+
+// =====================================================================
+// DROP TABLE blocked for CASCADE/SET NULL FK actions (not just RESTRICT)
+// =====================================================================
+
+#[test]
+fn test_fk_drop_table_blocked_for_cascade_fk() {
+    let db = setup();
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE CASCADE, name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO parents VALUES (1, 'Alice')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (10, 1, 'Child1')", ())
+        .unwrap();
+
+    // DROP TABLE should be blocked even though child FK is CASCADE —
+    // DDL operations don't cascade rows, so child would be orphaned
+    let result = db.execute("DROP TABLE parents", ());
+    assert!(
+        result.is_err(),
+        "DROP TABLE should be blocked when child rows with CASCADE FK exist"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("still reference it"),
+        "Error should mention referencing rows: {}",
+        err
+    );
+
+    // After deleting the child rows, DROP should succeed
+    db.execute("DELETE FROM children WHERE parent_id = 1", ())
+        .unwrap();
+    db.execute("DROP TABLE parents", ()).unwrap();
+}
+
+#[test]
+fn test_fk_drop_table_blocked_for_set_null_fk() {
+    let db = setup();
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE SET NULL, name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO parents VALUES (1, 'Alice')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (10, 1, 'Child1')", ())
+        .unwrap();
+
+    // DROP TABLE should be blocked even though child FK is SET NULL
+    let result = db.execute("DROP TABLE parents", ());
+    assert!(
+        result.is_err(),
+        "DROP TABLE should be blocked when child rows with SET NULL FK exist"
+    );
+
+    // Setting FK to NULL manually, then DROP should succeed
+    db.execute("UPDATE children SET parent_id = NULL WHERE id = 10", ())
+        .unwrap();
+    db.execute("DROP TABLE parents", ()).unwrap();
+}
+
+// =====================================================================
+// DROP TABLE in explicit transaction sees uncommitted child deletes
+// =====================================================================
+
+#[test]
+fn test_fk_drop_table_sees_uncommitted_child_deletes() {
+    let db = setup();
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO parents VALUES (1, 'Alice')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (10, 1, 'Child1')", ())
+        .unwrap();
+
+    // In an explicit transaction: delete child rows, then drop parent
+    db.execute("BEGIN", ()).unwrap();
+    db.execute("DELETE FROM children WHERE parent_id = 1", ())
+        .unwrap();
+
+    // DROP TABLE should succeed because the child delete (uncommitted) is visible
+    // within the same transaction
+    let result = db.execute("DROP TABLE parents", ());
+    assert!(
+        result.is_ok(),
+        "DROP TABLE should succeed after uncommitted child delete in same txn: {:?}",
+        result
+    );
+
+    db.execute("COMMIT", ()).unwrap();
+
+    // Verify parent is gone
+    let result = db.execute("SELECT * FROM parents", ());
+    assert!(result.is_err(), "parents table should not exist after DROP");
+}
+
+// =====================================================================
+// child_rows_exist sees uncommitted child deletes (no false positive)
+// =====================================================================
+
+#[test]
+fn test_fk_restrict_sees_uncommitted_child_delete() {
+    let db = setup();
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id) ON DELETE RESTRICT, name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO parents VALUES (1, 'Alice')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (10, 1, 'Child1')", ())
+        .unwrap();
+
+    // In an explicit transaction: delete child rows, then delete parent
+    db.execute("BEGIN", ()).unwrap();
+    db.execute("DELETE FROM children WHERE parent_id = 1", ())
+        .unwrap();
+
+    // DELETE parent should succeed because the child delete (uncommitted) is visible
+    // within the same transaction — child_rows_exist should return false
+    let result = db.execute("DELETE FROM parents WHERE id = 1", ());
+    assert!(
+        result.is_ok(),
+        "DELETE parent should succeed after uncommitted child delete in same txn: {:?}",
+        result
+    );
+
+    db.execute("COMMIT", ()).unwrap();
+
+    // Verify both are deleted
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM parents"), 0);
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 0);
+}
+
+// =====================================================================
+// parent_row_exists sees uncommitted parent deletes (no false positive)
+// =====================================================================
+
+#[test]
+fn test_fk_insert_blocked_after_uncommitted_parent_delete() {
+    let db = setup();
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id), name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO parents VALUES (1, 'Alice')", ())
+        .unwrap();
+
+    // In an explicit transaction: delete parent, then try to insert child
+    db.execute("BEGIN", ()).unwrap();
+    db.execute("DELETE FROM parents WHERE id = 1", ()).unwrap();
+
+    // INSERT child referencing deleted parent should fail —
+    // parent_row_exists should see the uncommitted delete
+    let result = db.execute("INSERT INTO children VALUES (10, 1, 'Child1')", ());
+    assert!(
+        result.is_err(),
+        "INSERT child should fail when parent was deleted (uncommitted) in same txn"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("does not exist"),
+        "Error should mention parent not existing: {}",
+        err
+    );
+
+    db.execute("ROLLBACK", ()).unwrap();
+
+    // After rollback, parent is back — insert should succeed
+    db.execute("INSERT INTO children VALUES (10, 1, 'Child1')", ())
+        .unwrap();
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM children"), 1);
+}
+
+/// Verifies that an index is automatically created on FK columns at CREATE TABLE time.
+#[test]
+fn test_fk_auto_index_creation() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE departments (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute(
+        "CREATE TABLE employees (
+            id INTEGER PRIMARY KEY,
+            dept_id INTEGER REFERENCES departments(id),
+            name TEXT
+        )",
+        (),
+    )
+    .unwrap();
+
+    // Check that an FK index was created on the dept_id column
+    let rows = db.query("SHOW INDEXES FROM employees", ()).unwrap();
+    let mut found_fk_index = false;
+    for row in rows {
+        let row = row.unwrap();
+        let idx_name: String = row.get(1).unwrap(); // index_name is column 1
+        if idx_name.contains("fk_") && idx_name.contains("dept_id") {
+            found_fk_index = true;
+        }
+    }
+    assert!(
+        found_fk_index,
+        "FK auto-index should be created on dept_id column"
+    );
+}
+
+/// Verifies that FK auto-index is NOT created when the FK column already has a UNIQUE constraint.
+#[test]
+fn test_fk_auto_index_skips_unique_column() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute(
+        "CREATE TABLE children (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER UNIQUE REFERENCES parents(id),
+            name TEXT
+        )",
+        (),
+    )
+    .unwrap();
+
+    // parent_id already has a UNIQUE index — no FK index should be created
+    let rows = db.query("SHOW INDEXES FROM children", ()).unwrap();
+    let mut found_fk_index = false;
+    for row in rows {
+        let row = row.unwrap();
+        let idx_name: String = row.get(1).unwrap(); // index_name is column 1
+        if idx_name.starts_with("fk_") {
+            found_fk_index = true;
+        }
+    }
+    assert!(
+        !found_fk_index,
+        "FK auto-index should NOT be created when column already has UNIQUE index"
+    );
+}
+
+/// Verifies CASCADE DELETE performance is fast with auto-created FK index.
+#[test]
+fn test_fk_cascade_delete_performance_with_auto_index() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE categories (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute(
+        "CREATE TABLE products (
+            id INTEGER PRIMARY KEY,
+            cat_id INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+            name TEXT
+        )",
+        (),
+    )
+    .unwrap();
+
+    // Insert parent and many children
+    for i in 1..=10 {
+        db.execute(
+            &format!("INSERT INTO categories VALUES ({}, 'Cat{}')", i, i),
+            (),
+        )
+        .unwrap();
+    }
+    for i in 1..=1000 {
+        let cat_id = (i % 10) + 1;
+        db.execute(
+            &format!(
+                "INSERT INTO products VALUES ({}, {}, 'Prod{}')",
+                i, cat_id, i
+            ),
+            (),
+        )
+        .unwrap();
+    }
+
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM products"), 1000);
+
+    // CASCADE DELETE must use the same complete constraint semantics regardless
+    // of runner load. Performance is owned by the calibrated benchmark suite.
+    db.execute("DELETE FROM categories WHERE id = 1", ())
+        .unwrap();
+
+    // 100 child rows should be cascaded
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM products"), 900);
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM categories"), 9);
+}
+
+/// SET NULL on a NOT NULL FK column must be rejected at CREATE TABLE time,
+/// not deferred to a confusing runtime error.
+#[test]
+fn test_fk_set_null_on_not_null_column_rejected() {
+    let db = setup();
+    setup_parent_child(&db);
+
+    let result = db.execute(
+        "CREATE TABLE bad_child (
+            id INTEGER PRIMARY KEY,
+            parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE SET NULL,
+            name TEXT
+        )",
+        (),
+    );
+    assert!(
+        result.is_err(),
+        "SET NULL on NOT NULL column must be rejected at CREATE TABLE time"
+    );
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("SET NULL") && err.contains("NOT NULL"),
+        "error should mention SET NULL and NOT NULL, got: {}",
+        err
+    );
+}
+
+/// Multi-level CASCADE + RESTRICT: RESTRICT failure must not leave partial
+/// cascade deletes in the transaction state.
+#[test]
+fn test_fk_cascade_restrict_no_partial_state() {
+    let db = setup();
+
+    // grandparent → parent (CASCADE) → child (RESTRICT)
+    db.execute("CREATE TABLE gp (id INTEGER PRIMARY KEY, name TEXT)", ())
+        .unwrap();
+    db.execute(
+        "CREATE TABLE par (id INTEGER PRIMARY KEY, gp_id INTEGER REFERENCES gp(id) ON DELETE CASCADE, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE ch (id INTEGER PRIMARY KEY, par_id INTEGER REFERENCES par(id) ON DELETE RESTRICT, name TEXT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO gp VALUES (1, 'G1')", ()).unwrap();
+    db.execute("INSERT INTO par VALUES (10, 1, 'P1')", ())
+        .unwrap();
+    db.execute("INSERT INTO ch VALUES (100, 10, 'C1')", ())
+        .unwrap();
+
+    // In an explicit transaction, deleting grandparent should fail due to RESTRICT on ch
+    db.execute("BEGIN", ()).unwrap();
+    let result = db.execute("DELETE FROM gp WHERE id = 1", ());
+    assert!(result.is_err(), "RESTRICT on grandchild must block");
+
+    // Crucially: par row must NOT have been deleted in the transaction state
+    let par_count = count(&db, "SELECT COUNT(*) FROM par WHERE id = 10");
+    assert_eq!(
+        par_count, 1,
+        "parent row must still exist — RESTRICT failure should prevent cascade deletes"
+    );
+
+    db.execute("ROLLBACK", ()).unwrap();
+}
+
+/// Verify that UPDATE with invalid constant FK value does NOT leave dirty state
+/// in an explicit transaction. The row should remain unchanged after the error.
+#[test]
+fn test_fk_update_constant_no_dirty_state_in_explicit_txn() {
+    let db = Database::open_in_memory().unwrap();
+    db.execute(
+        "CREATE TABLE parents (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE children (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parents(id))",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO parents VALUES (1, 'p1')", ())
+        .unwrap();
+    db.execute("INSERT INTO children VALUES (1, 1)", ())
+        .unwrap();
+
+    // Explicit transaction: UPDATE with invalid FK should fail cleanly
+    db.execute("BEGIN", ()).unwrap();
+
+    let result = db.execute("UPDATE children SET parent_id = 999 WHERE id = 1", ());
+    assert!(result.is_err(), "FK violation expected");
+
+    // The row should still have the original value — NOT 999
+    let parent_id = count(&db, "SELECT parent_id FROM children WHERE id = 1");
+    assert_eq!(
+        parent_id, 1,
+        "row must be unchanged after failed FK update in explicit transaction"
+    );
+
+    db.execute("ROLLBACK", ()).unwrap();
+}
+
+/// Test recursive ON UPDATE CASCADE through grandparent -> parent -> child chain.
+/// The cascade column is a UNIQUE non-PK column, so updates are allowed.
+#[test]
+fn test_recursive_on_update_cascade() {
+    let db = setup();
+
+    // Three-level chain: regions -> countries -> cities
+    // The cascaded column must be UNIQUE in the child for the grandchild FK to reference it.
+    db.execute(
+        "CREATE TABLE regions (id INTEGER PRIMARY KEY, code INTEGER UNIQUE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE countries (id INTEGER PRIMARY KEY, region_code INTEGER UNIQUE REFERENCES regions(code) ON UPDATE CASCADE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE cities (id INTEGER PRIMARY KEY, region_code INTEGER REFERENCES countries(region_code) ON UPDATE CASCADE)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO regions VALUES (1, 100)", ())
+        .unwrap();
+    db.execute("INSERT INTO countries VALUES (1, 100)", ())
+        .unwrap();
+    db.execute("INSERT INTO cities VALUES (1, 100)", ())
+        .unwrap();
+
+    // Update region code — should cascade to countries AND cities
+    db.execute("UPDATE regions SET code = 200 WHERE id = 1", ())
+        .expect("CASCADE update should succeed");
+
+    let country_code = count(&db, "SELECT region_code FROM countries WHERE id = 1");
+    assert_eq!(country_code, 200, "Country should have cascaded to 200");
+
+    let city_code = count(&db, "SELECT region_code FROM cities WHERE id = 1");
+    assert_eq!(
+        city_code, 200,
+        "City should have recursively cascaded to 200"
+    );
+}
+
+/// Test that ON UPDATE CASCADE with grandchild RESTRICT blocks the update.
+#[test]
+fn test_recursive_on_update_cascade_blocked_by_restrict() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE r_parent (id INTEGER PRIMARY KEY, code INTEGER UNIQUE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE r_child (id INTEGER PRIMARY KEY, pcode INTEGER UNIQUE REFERENCES r_parent(code) ON UPDATE CASCADE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE r_grandchild (id INTEGER PRIMARY KEY, pcode INTEGER REFERENCES r_child(pcode) ON UPDATE RESTRICT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO r_parent VALUES (1, 10)", ())
+        .unwrap();
+    db.execute("INSERT INTO r_child VALUES (1, 10)", ())
+        .unwrap();
+    db.execute("INSERT INTO r_grandchild VALUES (1, 10)", ())
+        .unwrap();
+
+    // Update parent code — child CASCADE would propagate, but grandchild RESTRICT blocks
+    let result = db.execute("UPDATE r_parent SET code = 20 WHERE id = 1", ());
+    assert!(
+        result.is_err(),
+        "Grandchild RESTRICT should block recursive cascade"
+    );
+
+    // All values should be unchanged
+    let parent_code = count(&db, "SELECT code FROM r_parent WHERE id = 1");
+    assert_eq!(parent_code, 10, "Parent should be unchanged");
+}
+
+/// SET NULL on child must still enforce deeper RESTRICT on grandchild.
+/// Chain: A(code UNIQUE) -> B(code SET NULL) -> C(code RESTRICT)
+#[test]
+fn test_set_null_with_deeper_restrict() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE sn_a (id INTEGER PRIMARY KEY, code INTEGER UNIQUE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE sn_b (id INTEGER PRIMARY KEY, code INTEGER UNIQUE REFERENCES sn_a(code) ON UPDATE SET NULL)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE sn_c (id INTEGER PRIMARY KEY, code INTEGER REFERENCES sn_b(code) ON UPDATE RESTRICT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO sn_a VALUES (1, 10)", ()).unwrap();
+    db.execute("INSERT INTO sn_b VALUES (1, 10)", ()).unwrap();
+    db.execute("INSERT INTO sn_c VALUES (1, 10)", ()).unwrap();
+
+    // Update A.code -> B does SET NULL (code becomes NULL) -> C still has 10
+    // C references B(code), but B.code is now NULL so C.code=10 points at nothing.
+    // The pre-check should catch this via RESTRICT on C.
+    let result = db.execute("UPDATE sn_a SET code = 20 WHERE id = 1", ());
+    assert!(
+        result.is_err(),
+        "Deeper RESTRICT behind SET NULL should block the update"
+    );
+
+    // All values unchanged
+    let a_code = count(&db, "SELECT code FROM sn_a WHERE id = 1");
+    assert_eq!(a_code, 10, "A should be unchanged");
+}
+
+/// Multi-column referenced updates dispatch to the correct child FK.
+/// parent(a UNIQUE, b UNIQUE) with child_a -> a and child_b -> b.
+#[test]
+fn test_multi_column_cascade_dispatches_correctly() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE mc_parent (id INTEGER PRIMARY KEY, a INTEGER UNIQUE, b INTEGER UNIQUE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE mc_child_a (id INTEGER PRIMARY KEY, pa INTEGER REFERENCES mc_parent(a) ON UPDATE CASCADE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE mc_child_b (id INTEGER PRIMARY KEY, pb INTEGER REFERENCES mc_parent(b) ON UPDATE CASCADE)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO mc_parent VALUES (1, 10, 20)", ())
+        .unwrap();
+    db.execute("INSERT INTO mc_child_a VALUES (1, 10)", ())
+        .unwrap();
+    db.execute("INSERT INTO mc_child_b VALUES (1, 20)", ())
+        .unwrap();
+
+    // Update both referenced columns in one statement
+    db.execute("UPDATE mc_parent SET a = 11, b = 22 WHERE id = 1", ())
+        .expect("Multi-column cascade should succeed");
+
+    let child_a = count(&db, "SELECT pa FROM mc_child_a WHERE id = 1");
+    assert_eq!(child_a, 11, "child_a should cascade from 10 to 11");
+
+    let child_b = count(&db, "SELECT pb FROM mc_child_b WHERE id = 1");
+    assert_eq!(child_b, 22, "child_b should cascade from 20 to 22");
+}
+
+/// RESTRICT pre-check preserves statement atomicity in explicit transactions:
+/// a failed UPDATE must not leave dirty parent rows.
+#[test]
+fn test_restrict_precheck_no_dirty_state_in_explicit_txn() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE sp (id INTEGER PRIMARY KEY, code INTEGER UNIQUE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE sc (id INTEGER PRIMARY KEY, code INTEGER REFERENCES sp(code) ON UPDATE RESTRICT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO sp VALUES (1, 10)", ()).unwrap();
+    db.execute("INSERT INTO sc VALUES (1, 10)", ()).unwrap();
+
+    db.execute("BEGIN", ()).unwrap();
+    let result = db.execute("UPDATE sp SET code = 20 WHERE id = 1", ());
+    assert!(result.is_err(), "RESTRICT should reject");
+
+    // Parent must NOT be dirty inside the transaction
+    let code = count(&db, "SELECT code FROM sp WHERE id = 1");
+    assert_eq!(code, 10, "Parent should be unchanged after failed UPDATE");
+
+    db.execute("ROLLBACK", ()).unwrap();
+}
+
+/// No-op UPDATE (WHERE matches zero rows) must not trigger false RESTRICT rejection.
+#[test]
+fn test_noop_update_no_false_restrict_rejection() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE np (id INTEGER PRIMARY KEY, code INTEGER UNIQUE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE nc (id INTEGER PRIMARY KEY, code INTEGER REFERENCES np(code) ON UPDATE RESTRICT)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO np VALUES (1, 10)", ()).unwrap();
+    db.execute("INSERT INTO nc VALUES (1, 10)", ()).unwrap();
+
+    // WHERE matches zero rows: id + 1 = 999 is false for id=1
+    let result = db.execute(
+        "UPDATE np SET code = 20 WHERE code = 10 AND id + 1 = 999",
+        (),
+    );
+    assert!(
+        result.is_ok(),
+        "No-op update should succeed, got: {:?}",
+        result.unwrap_err()
+    );
+
+    let code = count(&db, "SELECT code FROM np WHERE id = 1");
+    assert_eq!(code, 10, "Row unchanged");
+}
+
+/// Correlated UPDATE must validate FK parent existence.
+#[test]
+fn test_correlated_update_validates_fk_parent() {
+    let db = setup();
+
+    db.execute(
+        "CREATE TABLE fk_parent (id INTEGER PRIMARY KEY, name TEXT)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE fk_child (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES fk_parent(id))",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE mapping (id INTEGER PRIMARY KEY, new_pid INTEGER)",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO fk_parent VALUES (1, 'Parent1')", ())
+        .unwrap();
+    db.execute("INSERT INTO fk_child VALUES (1, 1)", ())
+        .unwrap();
+    // Map child 1 to non-existent parent 999
+    db.execute("INSERT INTO mapping VALUES (1, 999)", ())
+        .unwrap();
+
+    let result = db.execute(
+        "UPDATE fk_child SET pid = (SELECT new_pid FROM mapping WHERE mapping.id = fk_child.id) WHERE id = 1",
+        (),
+    );
+    assert!(
+        result.is_err(),
+        "Correlated UPDATE to non-existent parent should fail"
+    );
+
+    // Child should be unchanged
+    let pid = count(&db, "SELECT pid FROM fk_child WHERE id = 1");
+    assert_eq!(pid, 1, "Child should still reference parent 1");
+}
+
+#[test]
+fn test_foreign_key_identity_survives_preceding_drop_and_local_rename() {
+    let db = setup();
+    db.execute("CREATE TABLE fk_mut_parent (id INTEGER PRIMARY KEY)", ())
+        .unwrap();
+    db.execute(
+        "CREATE TABLE fk_mut_child (id INTEGER PRIMARY KEY, prefix TEXT, parent_id INTEGER REFERENCES fk_mut_parent(id))",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO fk_mut_parent VALUES (10)", ())
+        .unwrap();
+
+    db.execute("ALTER TABLE fk_mut_child DROP COLUMN prefix", ())
+        .unwrap();
+    db.execute(
+        "ALTER TABLE fk_mut_child RENAME COLUMN parent_id TO owner_id",
+        (),
+    )
+    .unwrap();
+
+    db.execute("INSERT INTO fk_mut_child VALUES (1, 10)", ())
+        .expect("renamed FK column must retain its parent identity");
+    let error = db
+        .execute("INSERT INTO fk_mut_child VALUES (2, 999)", ())
+        .expect_err("renamed FK column must still reject missing parents");
+    assert!(error.to_string().contains("foreign key"));
+
+    let error = db
+        .execute("DELETE FROM fk_mut_parent WHERE id = 10", ())
+        .expect_err("parent delete must still see the re-indexed child FK");
+    assert!(error.to_string().contains("foreign key"));
+}
+
+#[test]
+fn test_alter_rejects_mutating_a_referenced_parent_column() {
+    let db = setup();
+    db.execute(
+        "CREATE TABLE fk_parent_mutation (id INTEGER PRIMARY KEY, code INTEGER UNIQUE)",
+        (),
+    )
+    .unwrap();
+    db.execute(
+        "CREATE TABLE fk_child_mutation (id INTEGER PRIMARY KEY, parent_code INTEGER REFERENCES fk_parent_mutation(code))",
+        (),
+    )
+    .unwrap();
+
+    let drop_error = db
+        .execute("ALTER TABLE fk_parent_mutation DROP COLUMN code", ())
+        .expect_err("referenced parent column must not be dropped");
+    assert!(drop_error.to_string().contains("referenced column"));
+
+    let rename_error = db
+        .execute(
+            "ALTER TABLE fk_parent_mutation RENAME COLUMN code TO external_code",
+            (),
+        )
+        .expect_err("referenced parent column must not be renamed without FK migration");
+    assert!(rename_error.to_string().contains("referenced column"));
+}
+
+#[test]
+fn r6_transaction_private_child_participates_in_reverse_fk_checks() {
+    let db = setup();
+    db.execute("CREATE TABLE private_parent (id INTEGER PRIMARY KEY)", ())
+        .unwrap();
+    db.execute("INSERT INTO private_parent VALUES (1)", ())
+        .unwrap();
+
+    db.execute("BEGIN", ()).unwrap();
+    db.execute(
+        "CREATE TABLE private_child (\
+             id INTEGER PRIMARY KEY, \
+             parent_id INTEGER REFERENCES private_parent(id))",
+        (),
+    )
+    .unwrap();
+    db.execute("INSERT INTO private_child VALUES (1, 1)", ())
+        .unwrap();
+    let error = db
+        .execute("DELETE FROM private_parent WHERE id = 1", ())
+        .expect_err("private child FK must protect the shared parent");
+    assert!(error.to_string().contains("foreign key"), "{error}");
+    db.execute("ROLLBACK", ()).unwrap();
+    assert_eq!(count(&db, "SELECT COUNT(*) FROM private_parent"), 1);
+}

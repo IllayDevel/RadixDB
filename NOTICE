@@ -1,0 +1,13 @@
+RadixDB
+Copyright (c) 2026 RadixDB contributors
+
+Required Notice: Copyright (c) 2026 RadixDB contributors.
+
+The RadixDB engine, server, embedded engine, and internal engine components are
+licensed under the PolyForm Perimeter License 1.0.1.
+
+Client, ORM, wire-protocol, extension SDK/ABI, extension tooling, and designated
+example extension components are licensed under the Apache License 2.0.
+
+The authoritative component map is in LICENSING.md.
+Commercial licensing steward: Ledenev Nikita.

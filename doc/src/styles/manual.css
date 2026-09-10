@@ -1,0 +1,24 @@
+:root {
+  --sl-color-accent-low: #18462e;
+  --sl-color-accent: #58b47f;
+  --sl-color-accent-high: #c8ebd7;
+  --radixdb-sidebar-hover-bg: #23362c;
+  --radixdb-sidebar-hover-fg: #f4f7f5;
+  --sl-content-width: 52rem;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #edf5ef;
+  --sl-color-accent: #28714c;
+  --sl-color-accent-high: #18462e;
+  --radixdb-sidebar-hover-bg: #e4f1e9;
+  --radixdb-sidebar-hover-fg: #24352b;
+}
+html { letter-spacing: 0; }
+#starlight__sidebar a:not([aria-current='page']):is(:hover, :focus-visible) {
+  background-color: var(--radixdb-sidebar-hover-bg);
+  color: var(--radixdb-sidebar-hover-fg);
+}
+.sl-markdown-content { line-height: 1.7; }
+.sl-markdown-content h1 { font-size: 2rem; }
+.sl-markdown-content :is(h1, h2, h3) { overflow-wrap: anywhere; }
+.sl-markdown-content table { display: block; overflow-x: auto; }

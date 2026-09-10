@@ -1,0 +1,23 @@
+[Unit]
+Description=RadixDB TCP server
+After=network.target
+
+[Service]
+Type=simple
+User=radixdb
+Group=radixdb
+WorkingDirectory=@PREFIX@
+ExecStart=@PREFIX@/bin/radixdb-server --config @PREFIX@/server.toml
+Restart=on-failure
+RestartSec=2s
+TimeoutStopSec=60s
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=@PREFIX@/data @PREFIX@/logs @PREFIX@/run
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

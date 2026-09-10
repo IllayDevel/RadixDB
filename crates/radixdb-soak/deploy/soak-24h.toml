@@ -1,0 +1,53 @@
+format = 1
+profile = "24h"
+duration = "24h"
+seed = 1592594944
+
+[database]
+address = "127.0.0.1:25441"
+name = "radixdb_soak"
+connect_timeout_secs = 5
+read_timeout_secs = 1200
+write_timeout_secs = 120
+
+[status]
+bind = "0.0.0.0:18088"
+auth_file = "/run/credentials/radixdb-soak-agent.service/status-auth"
+event_capacity = 32768
+
+[artifacts]
+root = "/storage/radixdb-soak/runs"
+
+[monitor]
+server_executable = "/storage/radixdb-soak/current/bin/radixdb-server"
+data_dir = "/storage/radixdb-soak/data/current"
+
+[diagnostics]
+enabled = true
+bind = "0.0.0.0:18089"
+auth_file = "/run/credentials/radixdb-soak-observer.service/status-auth"
+channel_path = "/run/radixdb-soak/agent.sock"
+normal_interval = "5s"
+alert_interval = "1s"
+burst_interval = "250ms"
+burst_duration = "60s"
+history_window = "30m"
+history_max_samples = 512
+artifact_quota_bytes = 10737418240
+max_incidents = 128
+engine_snapshot_interval = "5s"
+engine_snapshot_timeout = "2s"
+smart_interval = "30m"
+
+
+[faults]
+graceful_reopen_at = "8h"
+kill_reopen_at = "16h"
+recovery_timeout = "20m"
+
+[load]
+client_steps = [16, 32, 64, 128, 256]
+active_rows = 100000000
+checkpoint_interval = "5m"
+sample_interval = "5s"
+invariant_interval = "30s"

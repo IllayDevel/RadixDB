@@ -1,0 +1,242 @@
+// Copyright 2026 RadixDB Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Version information for RadixDB
+//!
+//!
+//! This module provides version constants and build information.
+
+/// Full version string from Cargo.toml (single source of truth)
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Major version number (parsed at runtime for compatibility)
+pub const MAJOR: u32 = parse_version_component(env!("CARGO_PKG_VERSION_MAJOR"));
+
+/// Minor version number (parsed at runtime for compatibility)
+pub const MINOR: u32 = parse_version_component(env!("CARGO_PKG_VERSION_MINOR"));
+
+/// Patch version number (parsed at runtime for compatibility)
+pub const PATCH: u32 = parse_version_component(env!("CARGO_PKG_VERSION_PATCH"));
+
+/// Parse version component at compile time
+const fn parse_version_component(s: &str) -> u32 {
+    let bytes = s.as_bytes();
+    let mut result: u32 = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        let digit = bytes[i] - b'0';
+        result = result * 10 + digit as u32;
+        i += 1;
+    }
+    result
+}
+
+/// Git commit hash at build time
+/// Set via RADIXDB_GIT_COMMIT environment variable during compilation
+pub const GIT_COMMIT: &str = match option_env!("RADIXDB_GIT_COMMIT") {
+    Some(commit) => commit,
+    None => "unknown",
+};
+
+/// Build timestamp
+/// Set via RADIXDB_BUILD_TIME environment variable during compilation
+pub const BUILD_TIME: &str = match option_env!("RADIXDB_BUILD_TIME") {
+    Some(time) => time,
+    None => "unknown",
+};
+
+/// Cargo profile used for this artifact.
+pub const BUILD_PROFILE: &str = env!("RADIXDB_BUILD_PROFILE");
+
+/// Rust target triple used for this artifact.
+pub const BUILD_TARGET: &str = env!("RADIXDB_BUILD_TARGET");
+
+/// SHA-256 of the Cargo.lock consumed by this build.
+pub const CARGO_LOCK_SHA256: &str = env!("RADIXDB_CARGO_LOCK_SHA256");
+
+/// Returns the full version string
+pub fn version() -> &'static str {
+    VERSION
+}
+
+/// Returns version info as a formatted string
+pub fn version_info() -> String {
+    format!(
+        "radixdb {} (commit: {}, built: {})",
+        VERSION, GIT_COMMIT, BUILD_TIME
+    )
+}
+
+/// Semantic version components
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SemVer {
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+}
+
+impl SemVer {
+    /// Create a new SemVer from components
+    pub const fn new(major: u32, minor: u32, patch: u32) -> Self {
+        Self {
+            major,
+            minor,
+            patch,
+        }
+    }
+
+    /// Get the current version as SemVer
+    pub const fn current() -> Self {
+        Self::new(MAJOR, MINOR, PATCH)
+    }
+
+    /// Check whether this version can consume an API/artifact produced by
+    /// `other` under SemVer's compatibility boundary.
+    pub fn is_compatible_with(&self, other: &SemVer) -> bool {
+        if self.major != other.major {
+            return false;
+        }
+        if self.major == 0 {
+            self.minor == other.minor && self.patch >= other.patch
+        } else {
+            (self.minor, self.patch) >= (other.minor, other.patch)
+        }
+    }
+}
+
+impl std::fmt::Display for SemVer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
+    }
+}
+
+impl std::str::FromStr for SemVer {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split('.').collect();
+        if parts.len() != 3 {
+            return Err(format!("invalid version format: {}", s));
+        }
+
+        let major = parts[0]
+            .parse()
+            .map_err(|_| format!("invalid major version: {}", parts[0]))?;
+        let minor = parts[1]
+            .parse()
+            .map_err(|_| format!("invalid minor version: {}", parts[1]))?;
+        let patch = parts[2]
+            .parse()
+            .map_err(|_| format!("invalid patch version: {}", parts[2]))?;
+
+        Ok(SemVer::new(major, minor, patch))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_version_string() {
+        // Version string should match the constants
+        let expected = format!("{}.{}.{}", MAJOR, MINOR, PATCH);
+        assert_eq!(version(), expected);
+    }
+
+    #[test]
+    fn test_version_info() {
+        let info = version_info();
+        assert!(info.contains("radixdb"));
+        assert!(info.contains(version()));
+    }
+
+    #[test]
+    fn test_git_commit_default() {
+        // Without env var set, should be "unknown"
+        // This tests the default case
+        assert!(!GIT_COMMIT.is_empty());
+    }
+
+    #[test]
+    fn test_build_time_default() {
+        assert_ne!(BUILD_TIME, "1970-01-01T00:00:00Z");
+        chrono::DateTime::parse_from_rfc3339(BUILD_TIME)
+            .expect("build time must be a real RFC3339 timestamp");
+    }
+
+    #[test]
+    fn test_semver_new() {
+        let v = SemVer::new(1, 2, 3);
+        assert_eq!(v.major, 1);
+        assert_eq!(v.minor, 2);
+        assert_eq!(v.patch, 3);
+    }
+
+    #[test]
+    fn test_semver_current() {
+        let v = SemVer::current();
+        assert_eq!(v.major, MAJOR);
+        assert_eq!(v.minor, MINOR);
+        assert_eq!(v.patch, PATCH);
+    }
+
+    #[test]
+    fn test_semver_display() {
+        let v = SemVer::new(1, 2, 3);
+        assert_eq!(v.to_string(), "1.2.3");
+    }
+
+    #[test]
+    fn test_semver_from_str() {
+        let v: SemVer = "1.2.3".parse().unwrap();
+        assert_eq!(v, SemVer::new(1, 2, 3));
+
+        // Current version should parse correctly
+        let v: SemVer = version().parse().unwrap();
+        assert_eq!(v, SemVer::current());
+    }
+
+    #[test]
+    fn test_semver_from_str_invalid() {
+        assert!("1.2".parse::<SemVer>().is_err());
+        assert!("1.2.3.4".parse::<SemVer>().is_err());
+        assert!("a.b.c".parse::<SemVer>().is_err());
+        assert!("".parse::<SemVer>().is_err());
+    }
+
+    #[test]
+    fn test_semver_compatibility() {
+        let v1 = SemVer::new(1, 2, 0);
+        let v2 = SemVer::new(1, 1, 0);
+        let v3 = SemVer::new(1, 3, 0);
+        let v4 = SemVer::new(2, 0, 0);
+
+        // v1 (1.2.0) is compatible with v2 (1.1.0) - same major, higher minor
+        assert!(v1.is_compatible_with(&v2));
+
+        // v1 (1.2.0) is NOT compatible with v3 (1.3.0) - needs higher minor
+        assert!(!v1.is_compatible_with(&v3));
+
+        // v1 (1.2.0) is NOT compatible with v4 (2.0.0) - different major
+        assert!(!v1.is_compatible_with(&v4));
+
+        // Same version is always compatible
+        assert!(v1.is_compatible_with(&v1));
+
+        assert!(SemVer::new(0, 5, 2).is_compatible_with(&SemVer::new(0, 5, 1)));
+        assert!(!SemVer::new(0, 5, 0).is_compatible_with(&SemVer::new(0, 4, 99)));
+        assert!(!SemVer::new(0, 5, 0).is_compatible_with(&SemVer::new(0, 6, 0)));
+    }
+}

@@ -1,0 +1,97 @@
+baseline = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
+project_examples = []
+
+[[gates]]
+id = "tutorial"
+script = "scripts/test-tutorial.mjs"
+kinds = ["sql", "cli"]
+
+[[gates]]
+id = "sql-syntax"
+script = "scripts/test-syntax.mjs"
+kinds = ["sql", "cli"]
+
+[[gates]]
+id = "sql-values"
+script = "scripts/test-values.mjs"
+kinds = ["sql", "cli"]
+
+[[gates]]
+id = "sql-schema"
+script = "scripts/test-schema.mjs"
+kinds = ["sql", "cli"]
+
+[[gates]]
+id = "sql-dml"
+script = "scripts/test-dml.mjs"
+kinds = ["sql", "cli"]
+
+[[gates]]
+id = "sql-queries"
+script = "scripts/test-queries.mjs"
+kinds = ["sql", "cli"]
+
+[[gates]]
+id = "sql-navigation"
+script = "scripts/test-navigation.mjs"
+kinds = ["sql", "cli", "rust"]
+
+[[gates]]
+id = "sql-transactions"
+script = "scripts/test-transactions.mjs"
+kinds = ["sql", "cli", "rust"]
+
+[[gates]]
+id = "sql-command-reference"
+script = "scripts/test-sql-reference.mjs"
+kinds = ["sql", "cli", "rust"]
+
+[[gates]]
+id = "administration-server"
+script = "scripts/test-administration-server.mjs"
+kinds = ["cli", "rust"]
+
+[[gates]]
+id = "configuration"
+script = "scripts/test-configuration.mjs"
+kinds = ["cli", "rust"]
+
+[[gates]]
+id = "backup-restore"
+script = "scripts/test-backup-restore.mjs"
+kinds = ["sql", "cli", "rust"]
+
+[[gates]]
+id = "storage-memory"
+script = "scripts/test-storage-memory.mjs"
+kinds = ["sql", "cli", "rust"]
+
+[[gates]]
+id = "operations"
+script = "scripts/test-operations.mjs"
+kinds = ["sql", "cli", "rust"]
+
+[[gates]]
+id = "clients"
+script = "scripts/test-clients.mjs"
+kinds = ["rust", "sql"]
+
+[[gates]]
+id = "server-programming"
+script = "scripts/test-programming.mjs"
+kinds = ["rust", "sql"]
+
+[[gates]]
+id = "security"
+script = "scripts/test-security.mjs"
+kinds = ["rust", "sql"]
+
+[[gates]]
+id = "program-reference"
+script = "scripts/test-reference-programs.mjs"
+kinds = ["cli", "rust"]
+
+[[gates]]
+id = "native-extensions"
+script = "scripts/test-extensions.mjs"
+kinds = ["rust", "sql", "cli"]

@@ -1,0 +1,13 @@
+[package]
+name = "radixdb-plugin-abi"
+version.workspace = true
+edition = "2021"
+rust-version.workspace = true
+description = "Stable low-level C ABI for trusted RadixDB native plugins"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]

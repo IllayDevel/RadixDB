@@ -1,0 +1,650 @@
+// Copyright 2026 RadixDB Contributors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! Token types for SQL lexer
+//!
+//! This module defines the token types used by the SQL lexer and parser.
+
+use radixdb_core::SmartString;
+use rustc_hash::FxHashSet;
+use std::fmt;
+use std::sync::LazyLock;
+
+/// Position represents a position in the input source
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Position {
+    /// Byte offset, starting at 0
+    pub offset: usize,
+    /// Line number, starting at 1
+    pub line: usize,
+    /// Column number, starting at 1
+    pub column: usize,
+}
+
+impl Position {
+    /// Create a new position
+    pub fn new(offset: usize, line: usize, column: usize) -> Self {
+        Self {
+            offset,
+            line,
+            column,
+        }
+    }
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "line {}, column {}", self.line, self.column)
+    }
+}
+
+/// TokenType represents the type of a token
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TokenType {
+    /// Error token
+    Error,
+    /// End of file
+    Eof,
+    /// Identifier (table name, column name, etc.)
+    Identifier,
+    /// SQL keyword (SELECT, FROM, WHERE, etc.)
+    Keyword,
+    /// String literal ('hello')
+    String,
+    /// Integer number (123)
+    Integer,
+    /// Floating point number (123.45)
+    Float,
+    /// Operator (=, <, >, +, -, etc.)
+    Operator,
+    /// Punctuator (comma, semicolon, parentheses, etc.)
+    Punctuator,
+    /// Comment (-- or /* */)
+    Comment,
+    /// Parameter ($1, ?)
+    Parameter,
+}
+
+impl fmt::Display for TokenType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TokenType::Error => write!(f, "ERROR"),
+            TokenType::Eof => write!(f, "EOF"),
+            TokenType::Identifier => write!(f, "IDENTIFIER"),
+            TokenType::Keyword => write!(f, "KEYWORD"),
+            TokenType::String => write!(f, "STRING"),
+            TokenType::Integer => write!(f, "INTEGER"),
+            TokenType::Float => write!(f, "FLOAT"),
+            TokenType::Operator => write!(f, "OPERATOR"),
+            TokenType::Punctuator => write!(f, "PUNCTUATOR"),
+            TokenType::Comment => write!(f, "COMMENT"),
+            TokenType::Parameter => write!(f, "PARAMETER"),
+        }
+    }
+}
+
+/// Token represents a lexical token
+///
+/// Uses SmartString for literal to avoid heap allocation for tokens up to 24 bytes
+/// (covers most SQL tokens: keywords, operators, short identifiers, numbers).
+/// For error tokens, the literal field contains the error message.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Token {
+    /// The type of the token
+    pub token_type: TokenType,
+    /// The literal string value (SmartString inlines strings up to 24 bytes)
+    /// For error tokens, this contains the error message instead.
+    pub literal: SmartString,
+    /// The position in the source
+    pub position: Position,
+    /// Whether this token was double-quoted (identifier with string fallback)
+    pub quoted: bool,
+}
+
+impl Token {
+    /// Create a new token
+    #[inline]
+    pub fn new(token_type: TokenType, literal: impl AsRef<str>, position: Position) -> Self {
+        Self {
+            token_type,
+            literal: SmartString::from(literal.as_ref()),
+            position,
+            quoted: false,
+        }
+    }
+
+    /// Create a new double-quoted token (identifier with string fallback)
+    #[inline]
+    pub fn new_quoted(token_type: TokenType, literal: impl AsRef<str>, position: Position) -> Self {
+        Self {
+            token_type,
+            literal: SmartString::from(literal.as_ref()),
+            position,
+            quoted: true,
+        }
+    }
+
+    /// Create an error token (error message is stored in literal field)
+    pub fn error(message: impl AsRef<str>, _literal: impl AsRef<str>, position: Position) -> Self {
+        Self {
+            token_type: TokenType::Error,
+            literal: SmartString::from(message.as_ref()),
+            position,
+            quoted: false,
+        }
+    }
+
+    /// Create an EOF token
+    #[inline]
+    pub fn eof(position: Position) -> Self {
+        Self {
+            token_type: TokenType::Eof,
+            literal: SmartString::const_new(""),
+            position,
+            quoted: false,
+        }
+    }
+
+    /// Check if this is an EOF token
+    pub fn is_eof(&self) -> bool {
+        self.token_type == TokenType::Eof
+    }
+
+    /// Check if this is an error token
+    pub fn is_error(&self) -> bool {
+        self.token_type == TokenType::Error
+    }
+
+    /// Check if this is a keyword with the given value (case-insensitive)
+    pub fn is_keyword(&self, keyword: &str) -> bool {
+        self.token_type == TokenType::Keyword && self.literal.eq_ignore_ascii_case(keyword)
+    }
+
+    /// Check if this is an operator with the given value
+    pub fn is_operator(&self, op: &str) -> bool {
+        self.token_type == TokenType::Operator && self.literal == op
+    }
+
+    /// Check if this is a punctuator with the given value
+    pub fn is_punctuator(&self, punct: &str) -> bool {
+        self.token_type == TokenType::Punctuator && self.literal == punct
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.token_type == TokenType::Error {
+            // For error tokens, literal contains the error message
+            write!(
+                f,
+                "{}: {} at {}",
+                self.token_type, self.literal, self.position
+            )
+        } else if self.token_type == TokenType::Keyword {
+            write!(
+                f,
+                "{}: {} at {}",
+                self.token_type, self.literal, self.position
+            )
+        } else {
+            write!(
+                f,
+                "{}: '{}' at {}",
+                self.token_type, self.literal, self.position
+            )
+        }
+    }
+}
+
+/// SQL keywords (case-insensitive)
+pub static KEYWORDS: &[&str] = &[
+    "SELECT",
+    "FROM",
+    "WHERE",
+    "INSERT",
+    "INTO",
+    "VALUES",
+    "UPDATE",
+    "SET",
+    "DELETE",
+    "CREATE",
+    "REPLACE",
+    "TABLE",
+    "DROP",
+    "ALTER",
+    "ADD",
+    "COLUMN",
+    "AND",
+    "OR",
+    "XOR",
+    "NOT",
+    "NULL",
+    "PRIMARY",
+    "PRAGMA",
+    "KEY",
+    "AUTO_INCREMENT",
+    "AUTOINCREMENT",
+    "DEFAULT",
+    "AS",
+    "OF",
+    "DISTINCT",
+    "ORDER",
+    "BY",
+    "ASC",
+    "DESC",
+    "LIMIT",
+    "OFFSET",
+    "GROUP",
+    "HAVING",
+    "JOIN",
+    "INNER",
+    "OUTER",
+    "LEFT",
+    "RIGHT",
+    "FULL",
+    "ON",
+    "DUPLICATE",
+    "CONFLICT",
+    "DO",
+    "NOTHING",
+    "USING",
+    "CROSS",
+    "NATURAL",
+    "TRUE",
+    "FALSE",
+    "INTEGER",
+    "FLOAT",
+    "TEXT",
+    "BOOLEAN",
+    "BOOL",
+    "TIMESTAMP",
+    "TIMESTAMPTZ",
+    "DATETIME",
+    "DATE",
+    "TIME",
+    "JSON",
+    "UUID",
+    "VECTOR",
+    "CASE",
+    "CAST",
+    "EXTRACT",
+    "WHEN",
+    "THEN",
+    "ELSE",
+    "END",
+    "BETWEEN",
+    "IN",
+    "IS",
+    "LIKE",
+    "ILIKE",
+    "ESCAPE",
+    "GLOB",
+    "REGEXP",
+    "RLIKE",
+    "EXISTS",
+    "ALL",
+    "ANY",
+    "SOME",
+    "IF",
+    "UNION",
+    "INTERSECT",
+    "EXCEPT",
+    "WITH",
+    "UNIQUE",
+    "CHECK",
+    "CONSTRAINT",
+    "FOREIGN",
+    "REFERENCES",
+    "SHOW",
+    "DESCRIBE",
+    "DESC",
+    "TABLES",
+    "VIEWS",
+    "INDEXES",
+    "CASCADE",
+    "RESTRICT",
+    "INDEX",
+    "VIEW",
+    "EXTENSION",
+    "TYPE",
+    "VERSION",
+    "TRIGGER",
+    "PROCEDURE",
+    "FUNCTION",
+    "RETURNING",
+    "OVER",
+    "PARTITION",
+    "RANGE",
+    "ROWS",
+    "WINDOW",
+    "UNBOUNDED",
+    "BEGIN",
+    "TRANSACTION",
+    "COMMIT",
+    "ROLLBACK",
+    "SAVEPOINT",
+    "RELEASE",
+    "PRECEDING",
+    "FOLLOWING",
+    "CURRENT",
+    "ROW",
+    "MODIFY",
+    "RENAME",
+    "TO",
+    "VARCHAR",
+    "CHAR",
+    "STRING",
+    "BIGINT",
+    "TINYINT",
+    "SMALLINT",
+    "REAL",
+    "DOUBLE",
+    "DECIMAL",
+    "NUMERIC",
+    "INT",
+    "ISOLATION",
+    "LEVEL",
+    "READ",
+    "COMMITTED",
+    "UNCOMMITTED",
+    "INTERVAL",
+    "RECURSIVE",
+    "UNION",
+    "INTERSECT",
+    "EXCEPT",
+    "NULLS",
+    "FIRST",
+    "LAST",
+    "TRUNCATE",
+    "SOME",
+    "FILTER",
+    "RETURNING",
+    "EXPLAIN",
+    "ANALYZE",
+    "FETCH",
+    "NEXT",
+    "ONLY",
+    "VACUUM",
+    "COPY",
+    "FORMAT",
+    "HEADER",
+    "DELIMITER",
+    "DECLARE",
+    "CURSOR",
+    "CONSTANT",
+    "ELSIF",
+    "THEN",
+    "LOOP",
+    "WHILE",
+    "FOR",
+    "REVERSE",
+    "EXIT",
+    "CONTINUE",
+    "RETURN",
+    "QUERY",
+    "EXCEPTION",
+    "RAISE",
+    "OTHERS",
+    "OPEN",
+    "CLOSE",
+    "CALL",
+    "PERFORM",
+    "EXECUTE",
+    "FUNCTION",
+    "PROCEDURE",
+    "RETURNS",
+    "LANGUAGE",
+    "RADIX",
+    "NATIVE",
+    "OUT",
+    "INOUT",
+    "ARRAY",
+    "ROWTYPE",
+    "IMMUTABLE",
+    "STABLE",
+    "VOLATILE",
+    "SECURITY",
+    "INVOKER",
+    "DEFINER",
+    "SEARCH",
+    "PATH",
+    "RESOURCE",
+    "POLICY",
+    "STRICT",
+    "PRIORITY",
+    "BEFORE",
+    "AFTER",
+    "EACH",
+    "STATEMENT",
+    "OLD",
+    "NEW",
+    "JOB",
+    "SCHEDULE",
+    "EVERY",
+    "AT",
+    "ENABLE",
+    "DISABLE",
+    "RUN",
+    "PRINCIPAL",
+    "PASSWORD",
+    "ROLE",
+    "SCHEMA",
+    "DATABASE",
+    "GRANT",
+    "REVOKE",
+    "CONNECT",
+    "USAGE",
+    "OWNER",
+    "ADMIN",
+    "OPTION",
+    "FOUND",
+    "NOTFOUND",
+    "ROWCOUNT",
+    "ISOPEN",
+    "OPERATOR",
+    "CLASS",
+    "PLANNER",
+    "SUPPORT",
+    "LEFTARG",
+    "RIGHTARG",
+];
+
+/// Compiled keyword set for O(1) lookups
+/// Uses FxHashSet for fast hashing of short strings
+static KEYWORD_SET: LazyLock<FxHashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = FxHashSet::with_capacity_and_hasher(KEYWORDS.len(), Default::default());
+    for kw in KEYWORDS {
+        set.insert(*kw);
+    }
+    set
+});
+
+/// Check if a string is an SQL keyword (case-insensitive)
+/// Uses a compiled HashSet for O(1) lookups instead of O(n) linear search
+#[inline]
+pub fn is_keyword(s: &str) -> bool {
+    // Fast path: check if already uppercase and in set
+    if KEYWORD_SET.contains(s) {
+        return true;
+    }
+    // Slow path: uppercase and check (only for non-uppercase input)
+    // Use a stack buffer for small strings to avoid allocation
+    if s.len() <= 32 {
+        let mut buf = [0u8; 32];
+        let bytes = s.as_bytes();
+        for (i, &b) in bytes.iter().enumerate() {
+            buf[i] = b.to_ascii_uppercase();
+        }
+        // SAFETY: We only uppercased ASCII bytes, result is valid UTF-8
+        let upper = unsafe { std::str::from_utf8_unchecked(&buf[..s.len()]) };
+        KEYWORD_SET.contains(upper)
+    } else {
+        // Very long identifiers (rare) - fall back to allocation
+        let upper = s.to_uppercase();
+        KEYWORD_SET.contains(upper.as_str())
+    }
+}
+
+/// SQL operators
+pub static OPERATORS: &[&str] = &[
+    "=", ">", "<", ">=", "<=", "<>", "!=", "+", "-", "*", "/", "%",
+    "||", // String concatenation
+    "->", "->>", // JSON operators
+    "&", "|", "^", "~", "<<", ">>",  // Bitwise operators
+    "<=>", // Vector distance operator
+    "&&", "@>", "<@", // Extension operator alphabet
+    ":=", "=>",
+];
+
+/// Compiled operator set for O(1) lookups
+static OPERATOR_SET: LazyLock<FxHashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = FxHashSet::with_capacity_and_hasher(OPERATORS.len(), Default::default());
+    for op in OPERATORS {
+        set.insert(*op);
+    }
+    set
+});
+
+/// Check if a string is an SQL operator
+#[inline]
+pub fn is_operator(s: &str) -> bool {
+    OPERATOR_SET.contains(s)
+}
+
+/// SQL punctuators
+pub static PUNCTUATORS: &[char] = &[',', ';', '(', ')', '.', ':', '[', ']'];
+
+/// Check if a character is an SQL punctuator
+pub fn is_punctuator(c: char) -> bool {
+    PUNCTUATORS.contains(&c)
+}
+
+/// Get a static string for a punctuator character (avoids allocation)
+/// Returns None if the character is not a punctuator
+#[inline]
+pub fn punctuator_str(c: char) -> Option<&'static str> {
+    match c {
+        ',' => Some(","),
+        ';' => Some(";"),
+        '(' => Some("("),
+        ')' => Some(")"),
+        '.' => Some("."),
+        ':' => Some(":"),
+        '[' => Some("["),
+        ']' => Some("]"),
+        _ => None,
+    }
+}
+
+/// Characters that can be part of an operator
+pub fn is_operator_char(c: char) -> bool {
+    // `#` is a comment prefix.
+    matches!(
+        c,
+        '=' | '<' | '>' | '!' | '+' | '-' | '*' | '/' | '%' | '|' | '&' | '^' | '~' | ':' | '@'
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_position_display() {
+        let pos = Position::new(10, 2, 5);
+        assert_eq!(pos.to_string(), "line 2, column 5");
+    }
+
+    #[test]
+    fn test_token_type_display() {
+        assert_eq!(TokenType::Keyword.to_string(), "KEYWORD");
+        assert_eq!(TokenType::Identifier.to_string(), "IDENTIFIER");
+        assert_eq!(TokenType::String.to_string(), "STRING");
+        assert_eq!(TokenType::Eof.to_string(), "EOF");
+    }
+
+    #[test]
+    fn test_token_creation() {
+        let token = Token::new(TokenType::Keyword, "SELECT", Position::new(0, 1, 1));
+        assert_eq!(token.token_type, TokenType::Keyword);
+        assert_eq!(token.literal, "SELECT");
+        assert!(token.is_keyword("SELECT"));
+        assert!(token.is_keyword("select"));
+        assert!(!token.is_keyword("FROM"));
+    }
+
+    #[test]
+    fn test_error_token() {
+        let token = Token::error("unexpected character", "x", Position::new(5, 1, 6));
+        assert!(token.is_error());
+        // Error message is stored in literal field
+        assert_eq!(token.literal.as_str(), "unexpected character");
+    }
+
+    #[test]
+    fn test_eof_token() {
+        let token = Token::eof(Position::new(100, 5, 10));
+        assert!(token.is_eof());
+        assert_eq!(token.literal, "");
+    }
+
+    #[test]
+    fn test_is_keyword() {
+        assert!(is_keyword("SELECT"));
+        assert!(is_keyword("select"));
+        assert!(is_keyword("Select"));
+        assert!(!is_keyword("SELEC"));
+        assert!(!is_keyword("mycolumn"));
+    }
+
+    #[test]
+    fn test_is_operator() {
+        assert!(is_operator("="));
+        assert!(is_operator(">="));
+        assert!(is_operator("->"));
+        assert!(is_operator("->>"));
+        assert!(!is_operator("==="));
+    }
+
+    #[test]
+    fn test_is_punctuator() {
+        assert!(is_punctuator(','));
+        assert!(is_punctuator(';'));
+        assert!(is_punctuator('('));
+        assert!(is_punctuator(')'));
+        assert!(!is_punctuator('x'));
+    }
+
+    #[test]
+    fn test_is_operator_char() {
+        assert!(is_operator_char('='));
+        assert!(is_operator_char('+'));
+        assert!(is_operator_char('-'));
+        assert!(is_operator_char('|'));
+        assert!(!is_operator_char('a'));
+        assert!(!is_operator_char('#')); // # is for comments, not operators
+    }
+
+    #[test]
+    fn test_token_display() {
+        let keyword = Token::new(TokenType::Keyword, "SELECT", Position::new(0, 1, 1));
+        assert!(keyword.to_string().contains("KEYWORD: SELECT"));
+
+        let string = Token::new(TokenType::String, "hello", Position::new(7, 1, 8));
+        assert!(string.to_string().contains("STRING: 'hello'"));
+
+        let error = Token::error("bad token", "x", Position::new(0, 1, 1));
+        assert!(error.to_string().contains("ERROR: bad token"));
+    }
+}

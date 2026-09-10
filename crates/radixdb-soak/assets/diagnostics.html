@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>RadixDB soak diagnostics</title>
+  <style>
+    :root{color-scheme:dark}body{background:#111827;color:#e5e7eb;font:14px system-ui;margin:0;padding:22px}h1{margin:0 0 4px}h2{font-size:15px;margin:20px 0 8px;color:#cbd5e1}.muted,.label{color:#94a3b8}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.card{background:#1f2937;border:1px solid #374151;border-radius:8px;padding:12px;min-width:0}.label{font-size:11px;text-transform:uppercase;letter-spacing:.04em}.value{font-size:18px;margin-top:5px;overflow-wrap:anywhere}.ok{color:#34d399}.warn{color:#fbbf24}.bad{color:#f87171}.row{display:flex;gap:10px;align-items:center;justify-content:space-between}.alert{border-left:4px solid #f87171;margin-top:8px}.alert.info{border-left-color:#60a5fa}.alert.warning{border-left-color:#fbbf24}.evidence{margin:8px 0 0;padding-left:20px;color:#cbd5e1}code{color:#93c5fd}#error{white-space:pre-wrap}.footer{margin-top:16px;color:#64748b;font-size:12px}
+  </style>
+</head>
+<body>
+  <h1>RadixDB intelligent soak</h1>
+  <div class="muted" id="run">loading</div>
+  <h2>Liveness and semantic progress</h2><div class="grid" id="progress"></div>
+  <h2>Engine</h2><div class="grid" id="engine"></div>
+  <h2>Host and storage</h2><div class="grid" id="host"></div>
+  <h2>Causal diagnosis</h2><div id="diagnosis" class="card">loading</div>
+  <div id="error" class="bad"></div><div class="footer">Read-only API v2 · refresh 5 s</div>
+<script>
+const esc=v=>String(v??'n/a').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num=(v,d=1)=>Number.isFinite(Number(v))?Number(v).toLocaleString(undefined,{maximumFractionDigits:d}):'n/a';
+const bytes=v=>{v=Number(v);if(!Number.isFinite(v))return'n/a';for(const u of ['B','KiB','MiB','GiB','TiB']){if(Math.abs(v)<1024||u==='TiB')return`${num(v,1)} ${u}`;v/=1024}};
+const age=(now,at)=>at==null?'absent':`${num(Math.max(0,Number(now)-Number(at))/1000,1)} s ago`;
+const card=(k,v,cls='')=>`<div class="card"><div class="label">${esc(k)}</div><div class="value ${cls}">${esc(v)}</div></div>`;
+const render=(id,items)=>document.getElementById(id).innerHTML=items.map(x=>card(...x)).join('');
+async function get(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error(`${url}: HTTP ${r.status}`);return r.json()}
+async function refresh(){try{
+  const [s,m,a,i]=await Promise.all(['/api/v2/status','/api/v2/metrics','/api/v2/alerts','/api/v2/incidents'].map(get));
+  const p=m?.progress||{},g=m?.gauges||{},now=s?.observer_unix_millis;
+  document.getElementById('run').textContent=`run ${s?.run_id??'n/a'} · sample ${s?.samples??0} · mode ${s?.sampling_mode??'n/a'}`;
+  const live=(at)=>at==null?'bad':(Number(now)-Number(at)<=15000?'ok':'warn');
+  render('progress',[
+    ['Observer',age(now,s?.observer_unix_millis),'ok'],['Agent',age(now,s?.agent_unix_millis),live(s?.agent_unix_millis)],['Server',age(now,s?.server_unix_millis),live(s?.server_unix_millis)],['Phase',p.phase],['Work units',num(p.workload_units,0)],['Actual rate',`${num(g['progress.actual_units_per_second'],1)} units/s`],['Expected rate',`${num(g['progress.expected_units_per_second'],1)} units/s`],['Rate / corridor',g['progress.rate_ratio']==null?'learning':`${num(g['progress.rate_ratio']*100,1)}%`],['Last semantic progress',age(now,p.last_workload_progress_unix_millis)],['Telemetry gaps',num(s?.telemetry_gaps,0),s?.telemetry_gaps?'warn':'ok'],['Artifact quota',`${bytes(g['observer.artifact_bytes'])} / ${bytes(g['observer.artifact_quota_bytes'])}`]
+  ]);
+  render('engine',[
+    ['Engine snapshot',g['engine.sample_available']===1?'available':'missing',g['engine.sample_available']===1?'ok':'warn'],['Snapshot age',`${num(g['engine.sample_age_millis'],0)} ms`],['Hot rows',num(g['engine.hot_rows'],0)],['Hot bytes',bytes(g['engine.hot_bytes'])],['Cold rows',num(g['engine.cold_rows'],0)],['Cold resident',bytes(g['engine.cold_resident_bytes'])],['L0 segments',`${num((g['engine.cold_unleveled_segments']||0)+(g['engine.cold_l0_segments']||0),0)} / ${num(g['engine.l0_soft_limit_segments'],0)} soft / ${num(g['engine.l0_hard_limit_segments'],0)} hard`],['L0 bytes',`${bytes(g['engine.cold_l0_debt_physical_bytes'])} / ${bytes(g['engine.l0_soft_limit_bytes'])} soft / ${bytes(g['engine.l0_hard_limit_bytes'])} hard`],['Seal',g['engine.seal_running']===1?'running':'idle',g['engine.seal_running']===1?'warn':'ok'],['Compaction',g['engine.compaction_running']===1?'running':(g['engine.compaction_requested']===1?'requested':'idle'),g['engine.compaction_running']===1||g['engine.compaction_requested']===1?'warn':'ok'],['Checkpoint',g['engine.checkpoint_running']===1?'running':'idle',g['engine.checkpoint_running']===1?'warn':'ok'],['WAL pending',bytes(g['engine.wal_pending_durability_bytes'])],['Transactions',num(g['engine.active_transactions'],0)],['Oldest transaction',`${num(g['engine.oldest_transaction_age_millis'],0)} ms`],['Wait edges',num(g['engine.transaction_wait_edges'],0)],['Sessions',num(g['engine.owner.authenticated_sessions'],0)],['Cursors',num(g['engine.owner.active_cursors'],0)]
+  ]);
+  const diskOps=(g['rate.disk.reads_completed_per_second']||0)+(g['rate.disk.writes_completed_per_second']||0),diskMs=(g['rate.disk.read_millis_per_second']||0)+(g['rate.disk.write_millis_per_second']||0),diskBps=((g['rate.disk.sectors_read_per_second']||0)+(g['rate.disk.sectors_written_per_second']||0))*512;
+  render('host',[
+    ['Server RSS',bytes(g['process.server.rss_bytes'])],['Server PSS',bytes((g['process.server.pss_kib']||0)*1024)],['Server swap',bytes((g['process.server.swap_kib']||0)*1024)],['Memory PSI',`${num(g['host.psi.memory.some_avg10'],1)}%`],['I/O PSI',`${num(g['host.psi.io.some_avg10'],1)}%`],['Server CPU',`${num((g['rate.process.server.user_ticks_per_second']||0)+(g['rate.process.server.system_ticks_per_second']||0),1)} ticks/s`],['Disk throughput',`${bytes(diskBps)}/s`],['Disk await',diskOps?`${num(diskMs/diskOps,2)} ms`:'idle'],['Disk queue',num(g['disk.io_in_progress'],0)],['Filesystem available',bytes(g['filesystem.available_bytes'])],['Filesystem mode',g['filesystem.read_only']===1?'read-only':'read-write',g['filesystem.read_only']===1?'bad':'ok'],['Disk evidence',(s?.disk_degradation_evidence||[]).length?`${s.disk_degradation_evidence.length} signal(s)`:'clean',(s?.disk_degradation_evidence||[]).length?'bad':'ok'],['Disk collector',(s?.disk_degradation_collection_errors||[]).length?'evidence unavailable':'available',(s?.disk_degradation_collection_errors||[]).length?'warn':'ok'],['FD / sockets',`${num(g['process.server.open_fds'],0)} / ${num(g['process.server.socket_fds'],0)}`],['Threads',num(g['process.server.threads'],0)]
+  ]);
+  const latest=[...i].sort((x,y)=>Number(y.opened_unix_millis)-Number(x.opened_unix_millis))[0];
+  const alerts=a.length?a.map(x=>`<div class="card alert ${esc(x.severity)}"><div class="row"><strong>${esc(x.kind)}</strong><span>${esc(x.severity)} · ${esc(x.confidence)}</span></div><div>${esc(x.state)} for ${num((Number(x.last_unix_millis)-Number(x.first_unix_millis))/1000,1)} s</div><ul class="evidence">${(x.evidence||[]).map(e=>`<li>${esc(e.detail)}: <code>${esc(num(e.observed,2))} ${esc(e.unit)}</code></li>`).join('')}${(x.counter_evidence||[]).map(e=>`<li class="muted">${esc(e.detail)}: <code>${esc(num(e.observed,2))} ${esc(e.unit)}</code></li>`).join('')}</ul></div>`).join(''):`<div class="ok">No active causal alerts.</div>`;
+  const incident=latest?`<div class="muted" style="margin-top:10px">Latest incident: <code>${esc(latest.candidate_cause)}</code> · ${esc(latest.confidence)} · missing evidence: ${esc((latest.missing_evidence||[]).length)}</div>`:'';
+  document.getElementById('diagnosis').innerHTML=alerts+incident;document.getElementById('error').textContent='';
+}catch(e){document.getElementById('error').textContent=String(e)}}
+refresh();setInterval(refresh,5000);
+</script>
+</body></html>

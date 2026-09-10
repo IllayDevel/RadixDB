@@ -1,0 +1,12 @@
+format = 1
+package_id = "7c471f38-2224-431f-9248-c7443267411a"
+
+[[types]]
+object_id = "ed3340525392f1b925ecd5dfe8227121"
+codec_version = 1
+codec_fingerprint = "4899dde00ce9b0810701ad36df11a10910d4b46356295f7c8d2f5317effcc998"
+vectors = [
+    "00000000000000000000000000000000",
+    "0100000000000000ffffffffffffffff",
+    "0000000000000080ffffffffffffff7f",
+]
