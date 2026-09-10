@@ -13,7 +13,7 @@ base64 = "0.22"
 clap = { version = "4.4", features = ["derive"] }
 libc = "0.2"
 postgres = "0.19"
-radixdb-client = { path = "../radixdb-client" }
+radixdb-client = { version = "=1.1.0", path = "../radixdb-client" }
 rand = "0.9"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -26,5 +26,5 @@ toml = "0.8"
 sha2 = "0.10"
 
 [dev-dependencies]
-radixdb = { path = "../.." }
+radixdb = { package = "radixdb-database", version = "=1.1.0", path = "../.." }
 tempfile = "3.10"

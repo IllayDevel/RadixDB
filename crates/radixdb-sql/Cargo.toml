@@ -3,12 +3,19 @@ name = "radixdb-sql"
 version.workspace = true
 edition = "2021"
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 description = "SQL syntax contracts and parser for RadixDB"
 license-file = "../../LICENSE"
-publish = false
 
 [dependencies]
-radixdb-core = { path = "../radixdb-core" }
+radixdb-core = { version = "=1.1.0", path = "../radixdb-core" }
 rustc-hash = "1.1"
 
 [dev-dependencies]

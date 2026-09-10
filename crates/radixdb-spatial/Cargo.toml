@@ -3,20 +3,28 @@ name = "radixdb-spatial"
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.97"
+description = "Reference native spatial extension for RadixDB"
+authors = ["RadixDB contributors"]
+homepage = "https://radixdb.org"
+repository = "https://github.com/IllayDevel/RadixDB"
+documentation = "https://radixdb.org/manual/1.2/en/programming/native-extensions/"
+readme = "../../README.md"
+keywords = ["database", "sql", "spatial", "extension", "rust"]
+categories = ["database-implementations"]
 license = "Apache-2.0"
-publish = false
+publish = ["crates-io"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-radixdb-plugin = { path = "../radixdb-plugin" }
+radixdb-plugin = { version = "=1.1.0", path = "../radixdb-plugin" }
 
 [dev-dependencies]
-radixdb-core = { path = "../radixdb-core" }
-radixdb-executor = { path = "../radixdb-executor", features = ["test-hooks"] }
-radixdb-plugin-host = { path = "../radixdb-plugin-host", features = ["test-hooks"] }
-radixdb-storage = { path = "../radixdb-storage", features = ["test-failpoints", "test-hooks"] }
+radixdb-core = { version = "=1.1.0", path = "../radixdb-core" }
+radixdb-executor = { version = "=1.1.0", path = "../radixdb-executor", features = ["test-hooks"] }
+radixdb-plugin-host = { version = "=1.1.0", path = "../radixdb-plugin-host", features = ["test-hooks"] }
+radixdb-storage = { version = "=1.1.0", path = "../radixdb-storage", features = ["test-failpoints", "test-hooks"] }
 smallvec = "1.11"
 tempfile = "3.9"
 

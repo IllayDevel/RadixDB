@@ -3,12 +3,19 @@ name = "radixdb-catalog"
 version.workspace = true
 edition = "2021"
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 description = "Generational logical catalog owner for RadixDB"
 license-file = "../../LICENSE"
-publish = false
 
 [dependencies]
-radixdb-core = { path = "../radixdb-core" }
+radixdb-core = { version = "=1.1.0", path = "../radixdb-core" }
 
 [dev-dependencies]
 proptest = "1.4"

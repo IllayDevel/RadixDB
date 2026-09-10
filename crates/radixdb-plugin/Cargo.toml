@@ -3,13 +3,20 @@ name = "radixdb-plugin"
 version.workspace = true
 edition = "2021"
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 description = "Safe authoring SDK and local test host for RadixDB native plugins"
 license = "Apache-2.0"
-publish = false
 
 [dependencies]
-radixdb-plugin-abi = { path = "../radixdb-plugin-abi" }
-radixdb-plugin-macros = { path = "../radixdb-plugin-macros" }
+radixdb-plugin-abi = { version = "=1.1.0", path = "../radixdb-plugin-abi" }
+radixdb-plugin-macros = { version = "=1.1.0", path = "../radixdb-plugin-macros" }
 sha2 = "0.10"
 
 [dev-dependencies]

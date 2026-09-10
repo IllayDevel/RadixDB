@@ -3,14 +3,21 @@ name = "radixdb-procedural"
 version.workspace = true
 edition = "2021"
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 description = "Verified bounded procedural runtime contracts for RadixDB"
 license-file = "../../LICENSE"
-publish = false
 
 [dependencies]
-radixdb-catalog = { path = "../radixdb-catalog" }
-radixdb-core = { path = "../radixdb-core" }
-radixdb-sql = { path = "../radixdb-sql" }
+radixdb-catalog = { version = "=1.1.0", path = "../radixdb-catalog" }
+radixdb-core = { version = "=1.1.0", path = "../radixdb-core" }
+radixdb-sql = { version = "=1.1.0", path = "../radixdb-sql" }
 
 [dev-dependencies]
 proptest = "1.4"

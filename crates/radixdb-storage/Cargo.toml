@@ -3,9 +3,16 @@ name = "radixdb-storage"
 version.workspace = true
 edition = "2021"
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 description = "Storage contracts and physical persistence engine for RadixDB"
 license-file = "../../LICENSE"
-publish = false
 
 [features]
 default = []
@@ -16,8 +23,8 @@ test-failpoints = []
 test-mutations = []
 
 [dependencies]
-radixdb-core = { path = "../radixdb-core" }
-radixdb-catalog = { path = "../radixdb-catalog" }
+radixdb-core = { version = "=1.1.0", path = "../radixdb-core" }
+radixdb-catalog = { version = "=1.1.0", path = "../radixdb-catalog" }
 chrono = "0.4"
 ahash = "0.8"
 arc-swap = "1"
@@ -40,6 +47,6 @@ lz4_flex = "0.13"
 uuid = "1"
 
 [dev-dependencies]
-radixdb-core = { path = "../radixdb-core", features = ["test-failpoints"] }
+radixdb-core = { version = "=1.1.0", path = "../radixdb-core", features = ["test-failpoints"] }
 serde_json = "1"
 tempfile = "3.9"

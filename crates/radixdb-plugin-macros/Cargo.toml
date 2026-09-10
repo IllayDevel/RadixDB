@@ -3,9 +3,16 @@ name = "radixdb-plugin-macros"
 version.workspace = true
 edition = "2021"
 rust-version.workspace = true
+authors.workspace = true
+homepage.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish.workspace = true
 description = "Procedural macros for the safe RadixDB native plugin SDK"
 license = "Apache-2.0"
-publish = false
 
 [lib]
 proc-macro = true

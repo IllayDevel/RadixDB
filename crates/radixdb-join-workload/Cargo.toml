@@ -11,7 +11,7 @@ chrono = "0.4"
 clap = { version = "4.4", features = ["derive"] }
 libc = "0.2"
 postgres = { version = "0.19", features = ["with-chrono-0_4", "with-uuid-1"], optional = true }
-radixdb = { path = "../.." }
+radixdb = { package = "radixdb-database", version = "=1.1.0", path = "../.." }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"
