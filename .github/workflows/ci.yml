@@ -438,5 +438,10 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Fetch locked dependencies for offline public examples
+        run: |
+          cargo fetch --locked --manifest-path examples/public/rust-client/Cargo.toml
+          cargo fetch --locked --manifest-path examples/public/rust-orm/Cargo.toml
+
       - name: Public server/client runtime smoke
         run: examples/public/rust-client/scripts/smoke.sh

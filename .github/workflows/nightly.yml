@@ -199,8 +199,10 @@ jobs:
           --test durability_test \
           --test snapshot_recovery_test \
           --test persistence_test \
-          --test hnsw_index_test \
           --test wire_scalar_roundtrip_test
+        RUSTFLAGS="-Zsanitizer=address" \
+        cargo +nightly-2026-07-07 test --locked -Zbuild-std \
+          --target x86_64-unknown-linux-gnu -p radixdb-storage --test index_hnsw_graph
         RUSTFLAGS="-Zsanitizer=address" \
         cargo +nightly-2026-07-07 test --locked -Zbuild-std \
           --target x86_64-unknown-linux-gnu -p radixdb-storage --lib v6::
