@@ -45,3 +45,10 @@ site to `.site-artifact/` by default. It includes the versioned manual, search,
 sitemap, 404 page and the legacy redirects; it does not deploy the artifact.
 
 External deployment remains a separate operation.
+
+GitHub Pages serves an English/Russian page with the RadixDB logo and a
+five-second redirect to [radixdb.org](https://radixdb.org/). It also provides
+a direct link for immediate navigation. The full manual remains on the official
+website. `npm run build:pages-redirect` creates the standalone Pages artifact
+in `../_site/` without installing documentation dependencies. GitHub Pages must
+use **GitHub Actions** as its publishing source.

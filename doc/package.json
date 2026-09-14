@@ -7,6 +7,7 @@
     "check:content": "node scripts/check-content.mjs && node --test scripts/check-content.test.mjs scripts/publication.test.mjs scripts/radixdb-sql-grammar.test.mjs",
     "build": "npm run check:content && astro build --force",
     "build:publication": "npm run build && node scripts/package-site.mjs",
+    "build:pages-redirect": "node scripts/build-pages-redirect.mjs",
     "preview": "astro preview --host 127.0.0.1",
     "test:browser": "playwright test",
     "test:tutorial": "node scripts/test-tutorial.mjs",

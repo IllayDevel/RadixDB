@@ -41,5 +41,6 @@ deny.toml
 .secret/
 
 # Documentation build artifacts
+/_site/
 docs/_site/
 docs/.jekyll-cache/

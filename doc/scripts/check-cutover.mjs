@@ -101,7 +101,8 @@ const publication = parse(readFileSync(path.join(root, '_meta/publication.toml')
 assert.equal(publication.version, '1.2.4');
 assert.equal(publication.channel, 'development');
 const workflow = readFileSync(path.join(repo, '.github/workflows/jekyll-gh-pages.yml'), 'utf8');
-assert(workflow.includes('npm run build:publication'));
+assert(workflow.includes('npm run build:pages-redirect'));
+assert(!workflow.includes('npm run build:publication'));
 assert(!workflow.includes('jekyll-build-pages'));
 const ci = readFileSync(path.join(repo, '.github/workflows/ci.yml'), 'utf8');
 assert(ci.includes('npm run test:publication'));
@@ -125,4 +126,4 @@ console.log(JSON.stringify({ active_files: files.length, local_links: localLinks
   public_evidence_files: markdownBelow(path.join(root, 'public/evidence')).length,
   bilingual_evidence_pairs: englishReports.length, private_references: 0,
   official_site: 'https://radixdb.org', metrika_id: 112445210,
-  astro_pages_workflow: true, passed: true }, null, 2));
+  pages_redirect_workflow: true, passed: true }, null, 2));
