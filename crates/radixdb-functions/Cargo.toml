@@ -8,7 +8,7 @@ homepage.workspace = true
 repository.workspace = true
 documentation.workspace = true
 readme.workspace = true
-keywords.workspace = true
+keywords = ["database", "sql", "functions", "plsql", "analytics"]
 categories.workspace = true
 publish.workspace = true
 description = "SQL function contracts and built-in implementations for RadixDB"
@@ -29,7 +29,7 @@ semantic = [
 ]
 
 [dependencies]
-radixdb-core = { version = "=1.2.19", path = "../radixdb-core" }
+radixdb-core = { version = "=1.2.21", path = "../radixdb-core" }
 ahash = "0.8"
 chrono = { version = "0.4", features = ["serde"] }
 crc32fast = "1.4"

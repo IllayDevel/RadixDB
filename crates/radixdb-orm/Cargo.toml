@@ -8,14 +8,14 @@ homepage.workspace = true
 repository.workspace = true
 documentation.workspace = true
 readme.workspace = true
-keywords.workspace = true
+keywords = ["database", "sql", "orm", "query-builder", "rust"]
 categories.workspace = true
 publish.workspace = true
 description = "Language-neutral RadixDB ORM IR, descriptors, and SQL renderer"
 license = "Apache-2.0"
 
 [dependencies]
-radixdb-core = { version = "=1.2.19", path = "../radixdb-core" }
+radixdb-core = { version = "=1.2.21", path = "../radixdb-core" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.10"

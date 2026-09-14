@@ -31,7 +31,7 @@ or workflow may be less direct than in a larger system.
 
 ## Version and Origins
 
-This manual documents the implemented RadixDB 1.2.19 boundary. Recorded benchmark
+This manual documents the implemented RadixDB 1.2.21 boundary. Recorded benchmark
 and recovery results apply to their tested commits and workloads, not
 automatically to every installation or later version.
 

@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-radixdb-plugin"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "clap",
  "libloading",
@@ -3613,7 +3613,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-api"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3634,7 +3634,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-app-sdk"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "radixdb-client",
  "radixdb-orm",
@@ -3645,7 +3645,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-catalog"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "proptest",
  "radixdb-core",
@@ -3654,7 +3654,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-client"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -3671,7 +3671,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-core"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash 0.8.12",
  "chrono",
@@ -3690,7 +3690,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-database"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -3760,7 +3760,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-executor"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash 0.8.12",
  "argon2",
@@ -3792,7 +3792,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-functions"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash 0.8.12",
  "candle-core",
@@ -3814,7 +3814,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-join-workload"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "chrono",
  "clap",
@@ -3831,7 +3831,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-orm"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "jsonschema",
  "radixdb-core",
@@ -3843,7 +3843,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "radixdb-plugin-abi",
  "radixdb-plugin-macros",
@@ -3853,11 +3853,11 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin-abi"
-version = "1.2.19"
+version = "1.2.21"
 
 [[package]]
 name = "radixdb-plugin-host"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "libc",
  "libloading",
@@ -3873,7 +3873,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin-macros"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3885,7 +3885,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-procedural"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "proptest",
  "radixdb-catalog",
@@ -3896,7 +3896,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-protocol"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "bincode",
  "serde",
@@ -3906,7 +3906,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-soak"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -3926,7 +3926,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-sql"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "proptest",
  "radixdb-core",
@@ -3936,7 +3936,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-storage"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash 0.8.12",
  "arc-swap",

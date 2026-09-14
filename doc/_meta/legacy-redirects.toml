@@ -1,4 +1,4 @@
-version = "1.2.19"
+version = "1.2.21"
 
 [[redirects]]
 source = "docs/README.md"

@@ -40,7 +40,7 @@ write conflict cannot leave an earlier row from the same statement published.
 
 Constraints are checked against new values. Competing writers can report a
 retryable serialization conflict or row-lock timeout. Navigable paths are not
-accepted in DML expressions in 1.2.19.
+accepted in DML expressions in 1.2.21.
 
 ## Privileges
 

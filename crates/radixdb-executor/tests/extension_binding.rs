@@ -1593,7 +1593,7 @@ fn incompatible_package_upgrade_fails_closed_and_rollback_reads_old_codec_data()
         engine.close_engine().unwrap();
     }
 
-    let (new_registry, _) = external_registry_with_version("1.2.19");
+    let (new_registry, _) = external_registry_with_version("1.2.21");
     {
         let engine = opened_engine_with_registry(config.clone(), Arc::clone(&new_registry));
         let executor = Executor::with_plugin_registry(Arc::clone(&engine), new_registry);

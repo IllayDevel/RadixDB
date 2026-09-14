@@ -5,7 +5,7 @@ description: Connect to RadixDB protocol 18, execute prepared statements and man
 
 `radixdb-client` is the synchronous Rust client for the RadixDB binary protocol.
 It does not contain the database engine and it is not a PostgreSQL client. The
-1.2.19 documentation baseline negotiates protocol 18.
+1.2.21 documentation baseline negotiates protocol 18.
 
 ## Connect and select a database
 

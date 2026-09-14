@@ -3,7 +3,7 @@ title: Wire protocol
 description: Framing protocol 18, состояния session, cursors, external values и compatibility.
 ---
 
-Server RadixDB 1.2.19 и TCP clients разделяют один binary contract, которым
+Server RadixDB 1.2.21 и TCP clients разделяют один binary contract, которым
 владеет low-level crate `radixdb-protocol`. Это собственный protocol 18 RadixDB,
 а не PostgreSQL wire protocol. Обычно приложения используют `radixdb-client`;
 прямое использование codec является advanced integration boundary.

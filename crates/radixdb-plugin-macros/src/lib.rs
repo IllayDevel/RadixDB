@@ -53,7 +53,7 @@ macro_rules! rejected_attribute {
                 Span::call_site(),
                 concat!(
                     $kind,
-                    " plugin functions are outside the RadixDB 1.2.19 authoring scope"
+                    " plugin functions are outside the RadixDB 1.2.21 authoring scope"
                 ),
             )
             .into_compile_error()
@@ -1180,7 +1180,7 @@ fn generate_scalar_descriptor(
     if cancellation != "bounded" {
         return Err(syn::Error::new(
             function.sig.ident.span(),
-            "RadixDB 1.2.19 scalar cancellation must be \"bounded\"",
+            "RadixDB 1.2.21 scalar cancellation must be \"bounded\"",
         ));
     }
     let arguments = function_arguments(function)?;
@@ -1455,7 +1455,7 @@ fn generate_opclass_descriptor(
         "hnsw" => {
             return Err(syn::Error::new(
                 function.sig.ident.span(),
-                "external HNSW operator classes require planner support outside v1.2.19",
+                "external HNSW operator classes require planner support outside v1.2.21",
             ));
         }
         _ => {

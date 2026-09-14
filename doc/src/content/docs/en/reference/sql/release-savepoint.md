@@ -32,7 +32,7 @@ does not commit any change.
 
 ## Errors and limitations
 
-A missing transaction or savepoint fails. Embedded, TCP and the 1.2.19 CLI route
+A missing transaction or savepoint fails. Embedded, TCP and the 1.2.21 CLI route
 `RELEASE SAVEPOINT` through the active connection-local transaction.
 
 ## Privileges

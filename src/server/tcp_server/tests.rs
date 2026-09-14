@@ -1592,6 +1592,14 @@ fn r6_l01_c_disconnect_releases_cold_and_indexed_join_sessions() {
                 "server did not recover the permit for: {sql}; indexed plan: {plan_lines:#?}",
             );
             if sql == parallel_join_sql {
+                let cancellation_deadline = Instant::now() + Duration::from_secs(5);
+                while crate::executor::parallel::PARALLEL_JOIN_CANCELLATION_OBSERVED
+                    .load(Ordering::Relaxed)
+                    == parallel_cancellation_count
+                    && Instant::now() < cancellation_deadline
+                {
+                    thread::sleep(Duration::from_millis(5));
+                }
                 assert!(
                     crate::executor::parallel::PARALLEL_JOIN_CANCELLATION_OBSERVED
                         .load(Ordering::Relaxed)
@@ -1832,12 +1840,35 @@ fn stock_server_scheduler_executes_persists_and_resumes_jobs_over_tcp() {
                 thread::sleep(Duration::from_millis(20));
             }
 
-            let history = fetch_count(
-                &mut client,
-                "SELECT COUNT(*) FROM radix_system_job_history WHERE outcome = 'succeeded'",
-            );
+            // The procedure effect commits before the scheduler finalizes the
+            // corresponding durable history row and runtime counters. Observe
+            // the completed attempt rather than racing that short boundary.
+            let completion_deadline = Instant::now() + Duration::from_secs(5);
+            let (history, status) = loop {
+                let history = fetch_count(
+                    &mut client,
+                    "SELECT COUNT(*) FROM radix_system_job_history WHERE outcome = 'succeeded'",
+                );
+                let status = client.server_status().expect("server runtime status");
+                if history >= 2
+                    && status.runtime.job_attempts_started >= 2
+                    && status.runtime.job_attempts_succeeded >= 2
+                    && status.runtime.job_attempts_active == 0
+                {
+                    break (history, status);
+                }
+                assert!(
+                    Instant::now() < completion_deadline,
+                    "scheduler did not durably finalize visible effects: history={history}, \
+                     started={}, succeeded={}, failed={}, active={}",
+                    status.runtime.job_attempts_started,
+                    status.runtime.job_attempts_succeeded,
+                    status.runtime.job_attempts_failed,
+                    status.runtime.job_attempts_active,
+                );
+                thread::sleep(Duration::from_millis(20));
+            };
             assert!(history >= 2, "public durable job history is incomplete");
-            let status = client.server_status().expect("server runtime status");
             assert!(status.runtime.job_scheduler_cycles > 0);
             assert!(status.runtime.job_attempts_started >= 2);
             assert!(status.runtime.job_attempts_succeeded >= 2);

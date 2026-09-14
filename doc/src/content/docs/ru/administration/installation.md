@@ -11,7 +11,7 @@ scripts и provenance record не является той же установк�
 
 ## Проверенная платформа
 
-Процедура 1.2.19 выполнена на Fedora Linux 44, x86-64, с GNU ABI и Rust 1.97.0 из
+Процедура 1.2.21 выполнена на Fedora Linux 44, x86-64, с GNU ABI и Rust 1.97.0 из
 `rust-toolchain.toml`. Полученные бинарники имеют target
 `x86_64-unknown-linux-gnu` и динамически используют glibc, `libm` и `libgcc_s`.
 
@@ -54,11 +54,11 @@ cargo build --locked --release \
 ```
 
 Git revision, profile, target и digest Cargo lock должны совпадать. База
-исходников этого руководства 1.2.19 сообщает версию package `1.2.19`;
+исходников этого руководства 1.2.21 сообщает версию package `1.2.21`;
 точный проверяемый artifact определяется полной ревизией и версией протокола.
 
 ```text
-radixdb-server 1.2.19 git=<40-hex-revision> protocol=18 profile=release target=x86_64-unknown-linux-gnu lock=<64-hex-sha256>
+radixdb-server 1.2.21 git=<40-hex-revision> protocol=18 profile=release target=x86_64-unknown-linux-gnu lock=<64-hex-sha256>
 ```
 
 Не развёртывайте идентичность с окончанием `-dirty`, если незакоммиченное

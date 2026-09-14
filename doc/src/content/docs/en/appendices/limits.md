@@ -1,6 +1,6 @@
 ---
 title: Limits
-description: Structural ceilings, configurable admission limits and measured scale for RadixDB 1.2.19.
+description: Structural ceilings, configurable admission limits and measured scale for RadixDB 1.2.21.
 ---
 
 RadixDB does not publish one maximum database size or row count. Capacity is
@@ -10,7 +10,7 @@ below does not produce a supported deployment size.
 
 This appendix separates three kinds of evidence:
 
-- **Hard limit**: a format or semantic ceiling enforced by the 1.2.19 code.
+- **Hard limit**: a format or semantic ceiling enforced by the 1.2.21 code.
 - **Configurable limit**: an operator-controlled admission or resource setting.
 - **Measured scale**: one completed workload under recorded conditions, not a
   hard limit, capacity promise or latency SLA.
@@ -46,7 +46,7 @@ mean that a schema near every ceiling will fit the process memory budget.
 
 ## Native extension ceilings
 
-These limits belong to plugin ABI 1.0 and the 1.2.19 startup loader. They are not
+These limits belong to plugin ABI 1.0 and the 1.2.21 startup loader. They are not
 permission to approach every maximum in one package.
 
 | ID | Limit | Value and unit | Enforcement condition | Source |

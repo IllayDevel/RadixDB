@@ -77,7 +77,7 @@ function releases(source) {
 }
 assert.deepEqual(releases(read('CHANGELOG.md')), releases(read('CHANGELOG.ru.md')));
 assert.deepEqual(releases(read('CHANGELOG.md')), [
-  '1.2.19:2026-09-14', '1.1.0:2026-09-08', '1.0.0:2026-09-07',
+  '1.2.21:2026-09-14', '1.1.0:2026-09-08', '1.0.0:2026-09-07',
 ]);
 
 for (const relative of ['CHANGELOG.md', 'CHANGELOG.ru.md']) {
@@ -88,7 +88,7 @@ for (const relative of ['CHANGELOG.md', 'CHANGELOG.ru.md']) {
 }
 
 for (const relative of ['README.md', 'README.ru.md']) {
-  assert(read(relative).includes('1.2.19'), `${relative} does not name current release`);
+  assert(read(relative).includes('1.2.21'), `${relative} does not name current release`);
 }
 
 for (const relative of ['README.md', 'README.ru.md', 'CONTRIBUTING.md',

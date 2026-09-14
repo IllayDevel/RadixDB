@@ -8,14 +8,14 @@ homepage.workspace = true
 repository.workspace = true
 documentation.workspace = true
 readme.workspace = true
-keywords.workspace = true
+keywords = ["database", "sql", "catalog", "schema", "metadata"]
 categories.workspace = true
 publish.workspace = true
 description = "Generational logical catalog owner for RadixDB"
 license-file = "../../LICENSE"
 
 [dependencies]
-radixdb-core = { version = "=1.2.19", path = "../radixdb-core" }
+radixdb-core = { version = "=1.2.21", path = "../radixdb-core" }
 
 [dev-dependencies]
 toml = "0.8"

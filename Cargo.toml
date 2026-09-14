@@ -44,14 +44,14 @@ exclude = ["crates/radixdb-spatial"]
 resolver = "2"
 
 [workspace.package]
-version = "1.2.19"
+version = "1.2.21"
 rust-version = "1.97"
 authors = ["RadixDB contributors"]
 homepage = "https://radixdb.org"
 repository = "https://github.com/IllayDevel/RadixDB"
-documentation = "https://radixdb.org/manual/1.2.19/"
+documentation = "https://radixdb.org/manual/1.2.21/"
 readme = "README.md"
-keywords = ["database", "sql", "embedded", "analytics", "rust"]
+keywords = ["database", "sql", "mvcc", "columnar-storage", "embedded-database"]
 categories = ["database-implementations"]
 publish = ["crates-io"]
 
@@ -92,16 +92,16 @@ required-features = ["bench-harness"]
 # Error handling
 thiserror = "2.0"
 anyhow = { version = "1.0", optional = true }
-radixdb-client = { version = "=1.2.19", path = "crates/radixdb-client" }
-radixdb-api = { version = "=1.2.19", path = "crates/radixdb-api" }
-radixdb-core = { version = "=1.2.19", path = "crates/radixdb-core" }
-radixdb-executor = { version = "=1.2.19", path = "crates/radixdb-executor" }
-radixdb-functions = { version = "=1.2.19", path = "crates/radixdb-functions" }
-radixdb-orm = { version = "=1.2.19", path = "crates/radixdb-orm" }
-radixdb-plugin-host = { version = "=1.2.19", path = "crates/radixdb-plugin-host" }
-radixdb-protocol = { version = "=1.2.19", path = "crates/radixdb-protocol" }
-radixdb-sql = { version = "=1.2.19", path = "crates/radixdb-sql" }
-radixdb-storage = { version = "=1.2.19", path = "crates/radixdb-storage" }
+radixdb-client = { version = "=1.2.21", path = "crates/radixdb-client" }
+radixdb-api = { version = "=1.2.21", path = "crates/radixdb-api" }
+radixdb-core = { version = "=1.2.21", path = "crates/radixdb-core" }
+radixdb-executor = { version = "=1.2.21", path = "crates/radixdb-executor" }
+radixdb-functions = { version = "=1.2.21", path = "crates/radixdb-functions" }
+radixdb-orm = { version = "=1.2.21", path = "crates/radixdb-orm" }
+radixdb-plugin-host = { version = "=1.2.21", path = "crates/radixdb-plugin-host" }
+radixdb-protocol = { version = "=1.2.21", path = "crates/radixdb-protocol" }
+radixdb-sql = { version = "=1.2.21", path = "crates/radixdb-sql" }
+radixdb-storage = { version = "=1.2.21", path = "crates/radixdb-storage" }
 tokio = { version = "1", features = ["net", "rt", "time"], optional = true }
 
 # Concurrency
@@ -181,11 +181,11 @@ proptest = "1.4"
 tempfile = "3.9"
 dhat = "0.3"
 sqllogictest = "0.29"
-radixdb-core = { version = "=1.2.19", path = "crates/radixdb-core", features = ["test-failpoints"] }
-radixdb-executor = { version = "=1.2.19", path = "crates/radixdb-executor", features = ["test-hooks"] }
-radixdb-plugin-abi = { version = "=1.2.19", path = "crates/radixdb-plugin-abi" }
-radixdb-plugin-host = { version = "=1.2.19", path = "crates/radixdb-plugin-host", features = ["test-hooks"] }
-radixdb-storage = { version = "=1.2.19", path = "crates/radixdb-storage", features = ["test-hooks", "test-failpoints"] }
+radixdb-core = { version = "=1.2.21", path = "crates/radixdb-core", features = ["test-failpoints"] }
+radixdb-executor = { version = "=1.2.21", path = "crates/radixdb-executor", features = ["test-hooks"] }
+radixdb-plugin-abi = { version = "=1.2.21", path = "crates/radixdb-plugin-abi" }
+radixdb-plugin-host = { version = "=1.2.21", path = "crates/radixdb-plugin-host", features = ["test-hooks"] }
+radixdb-storage = { version = "=1.2.21", path = "crates/radixdb-storage", features = ["test-hooks", "test-failpoints"] }
 rcgen = "0.14"
 
 [build-dependencies]

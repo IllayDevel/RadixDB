@@ -7,6 +7,17 @@ compatibility are governed by their dedicated version gates.
 
 ## Unreleased
 
+## 1.2.21 - 2026-09-14
+
+### Release quality and package discovery
+
+- Strengthened timing-sensitive CI checks for TCP peer cancellation and durable
+  Job scheduler finalization without changing runtime behavior, SQL, wire
+  protocol, storage format or public APIs.
+- Added role-specific crates.io keywords for the database engine, storage,
+  executor, client, ORM, application SDK, procedural runtime and native
+  extension packages.
+
 ## 1.2.19 - 2026-09-14
 
 ### Application interfaces

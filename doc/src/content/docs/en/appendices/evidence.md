@@ -1,6 +1,6 @@
 ---
 title: Evidence archive
-description: Accepted benchmark, resource-use and reliability evidence distributed with the RadixDB 1.2.19 manual.
+description: Accepted benchmark, resource-use and reliability evidence distributed with the RadixDB 1.2.21 manual.
 ---
 
 This archive contains the compact source reports behind the measured claims in

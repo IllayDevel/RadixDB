@@ -1,6 +1,6 @@
 ---
 title: Memory Management
-description: Memory budgets, process RSS, operating-system page cache and measured profiles for RadixDB 1.2.19.
+description: Memory budgets, process RSS, operating-system page cache and measured profiles for RadixDB 1.2.21.
 ---
 
 RadixDB does not load an entire database into the process before serving it.

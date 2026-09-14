@@ -14,7 +14,7 @@ const env = {
   ...process.env,
   DOCS_SITE: 'https://docs.invalid',
   DOCS_ROOT_BASE: '/preview/',
-  DOCS_BASE: '/preview/manual/1.2.19/',
+  DOCS_BASE: '/preview/manual/1.2.21/',
   DOCS_OUT_DIR: dist,
 };
 
@@ -40,18 +40,18 @@ try {
   const packaged = packageSite({ env, artifactDir: artifact, distDir: dist });
   const publication = parse(readFileSync(path.join(root, '_meta/publication.toml'), 'utf8'));
   assert.deepEqual(packaged.manifest, {
-    version: '1.2.19',
+    version: '1.2.21',
     channel: publication.channel,
     site: 'https://docs.invalid',
     root_base: '/preview/',
-    docs_base: '/preview/manual/1.2.19/',
+    docs_base: '/preview/manual/1.2.21/',
     redirect_sources: 51,
     redirect_routes: 102,
     redirect_files: 97,
     evidence_files: 21,
   });
 
-  const canonicalRoot = path.join(artifact, 'manual/1.2.19');
+  const canonicalRoot = path.join(artifact, 'manual/1.2.21');
   for (const file of [
     'en/index.html',
     'ru/index.html',
@@ -68,19 +68,19 @@ try {
     assert(readFileSync(path.join(canonicalRoot, file)).length > 0, `Missing publication file: ${file}`);
   }
   const sitemap = readFileSync(path.join(canonicalRoot, 'sitemap-0.xml'), 'utf8');
-  assert(sitemap.includes('https://docs.invalid/preview/manual/1.2.19/en/'));
-  assert(sitemap.includes('https://docs.invalid/preview/manual/1.2.19/ru/'));
+  assert(sitemap.includes('https://docs.invalid/preview/manual/1.2.21/en/'));
+  assert(sitemap.includes('https://docs.invalid/preview/manual/1.2.21/ru/'));
 
   const registry = parse(readFileSync(path.join(root, '_meta/legacy-redirects.toml'), 'utf8'));
   for (const redirect of registry.redirects) for (const route of redirect.routes) {
     const html = readFileSync(path.join(artifact, routeOutput(route)), 'utf8');
-    const target = `/preview/manual/1.2.19/${redirect.target}`;
+    const target = `/preview/manual/1.2.21/${redirect.target}`;
     assert(html.includes(target), `${route} does not redirect to ${target}`);
     assert(html.includes('location.search + location.hash'), `${route} does not preserve URL suffixes`);
   }
 
   const page = readFileSync(path.join(canonicalRoot, 'en/index.html'), 'utf8');
-  const asset = page.match(/(?:href|src)="(\/preview\/manual\/1\.2\.19\/_astro\/[^"]+)"/)?.[1];
+  const asset = page.match(/(?:href|src)="(\/preview\/manual\/1\.2\.21\/_astro\/[^"]+)"/)?.[1];
   assert(asset, 'Canonical page does not use the publication prefix for assets');
   assert(readFileSync(path.join(artifact, asset.slice('/preview/'.length))).length > 0,
     `Missing prefixed asset: ${asset}`);

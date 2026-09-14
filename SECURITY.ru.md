@@ -37,7 +37,7 @@ maintainers непублично и не размещайте детали эк�
 - [Current limitations](doc/src/content/docs/en/appendices/limits.md)
 - [Текущие ограничения](doc/src/content/docs/ru/appendices/limits.md)
 
-Разрабатываемый сервер 1.2.19 аутентифицирует catalog Principal по паролям с
+Разрабатываемый сервер 1.2.21 аутентифицирует catalog Principal по паролям с
 Argon2id verifier. Plain TCP предназначен для доверенного host или защищенной
 сети; direct TLS проверяет цепочку сертификатов и имя сервера и не допускает
 plaintext downgrade на этом endpoint. Настроенный Argon2id verifier требует

@@ -91,7 +91,7 @@ async function startAndStop(config, signal) {
     assert(host && port && !extra, endpoint.stdout);
     const smoke = run(smokeBin, [`${host}:${port}`], { timeout: 15000 });
     assert.equal(smoke.status, 0, smoke.stderr);
-    assert.match(smoke.stdout, /^ready version=1\.2\.19 protocol=18 state=Ready\s*$/);
+    assert.match(smoke.stdout, /^ready version=1\.2\.21 protocol=18 state=Ready\s*$/);
 
     const exited = once(child, 'exit');
     assert(child.kill(signal), `failed to send ${signal}`);

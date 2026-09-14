@@ -681,14 +681,14 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "radixdb-catalog"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "radixdb-core",
 ]
 
 [[package]]
 name = "radixdb-core"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash",
  "chrono",
@@ -705,7 +705,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-executor"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash",
  "argon2",
@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-functions"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash",
  "chrono",
@@ -747,7 +747,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "radixdb-plugin-abi",
  "radixdb-plugin-macros",
@@ -756,11 +756,11 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin-abi"
-version = "1.2.19"
+version = "1.2.21"
 
 [[package]]
 name = "radixdb-plugin-host"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "libc",
  "libloading",
@@ -775,7 +775,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin-macros"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -787,7 +787,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-procedural"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "radixdb-catalog",
  "radixdb-core",
@@ -796,7 +796,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-spatial"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "radixdb-core",
  "radixdb-executor",
@@ -809,7 +809,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-sql"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "radixdb-core",
  "rustc-hash",
@@ -817,7 +817,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-storage"
-version = "1.2.19"
+version = "1.2.21"
 dependencies = [
  "ahash",
  "arc-swap",
