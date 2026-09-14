@@ -4,19 +4,22 @@ description: Scalar types, aliases and type modifiers supported by RadixDB.
 ---
 
 A column's type defines how its values are represented and which conversions
-are required when writing data. SQL spellings are not always distinct types:
-several names below map to the same internal representation.
+are required when writing data. Some SQL spellings are aliases, while other
+types share a physical codec but retain distinct SQL and catalog identities.
 
 ## Supported Types
 
 | Type | Accepted aliases | Representation |
 | --- | --- | --- |
 | INTEGER | INT, BIGINT, SMALLINT, TINYINT | Signed 64-bit integer |
-| FLOAT | DOUBLE, REAL | 64-bit floating point |
+| FLOAT | REAL | 64-bit floating point |
+| DOUBLE PRECISION | DOUBLE | 64-bit floating point with a distinct SQL and catalog identity |
 | DECIMAL | NUMERIC | Exact decimal with precision and scale |
-| TEXT | VARCHAR, CHAR, STRING, CLOB | UTF-8 text |
+| TEXT | VARCHAR, CHAR, STRING, CLOB | Variable-length UTF-8 text, optionally bounded by characters |
 | BOOLEAN | BOOL | True or false |
-| TIMESTAMP | DATETIME, TIME | Timestamp value, not a separate time-of-day type |
+| TIMESTAMPTZ | TIMESTAMP WITH TIME ZONE | Absolute instant normalized to UTC nanoseconds |
+| TIMESTAMP | TIMESTAMP WITHOUT TIME ZONE, DATETIME | Civil date and time without a time zone |
+| TIME | TIME WITHOUT TIME ZONE | Civil time of day without a date or time zone |
 | DATE | | Calendar date |
 | UUID | | 16-byte identifier |
 | BYTES | BLOB, BINARY, VARBINARY | Raw bytes |
@@ -36,9 +39,9 @@ payload and optional equality, hash and ordering semantics. The SQL name is a
 schema alias for that identity and can be renamed without changing stored
 bytes.
 
-External values travel through protocol 17 with their type object ID and codec
+External values travel through protocol 18 with their type object ID and codec
 revision. They do not fall back to `BYTES`, and the generic ORM does not decode
-them without a plugin-aware adapter. The Rust SDK 1.2.4 also has no generic SQL
+them without a plugin-aware adapter. The Rust SDK 1.2.19 also has no generic SQL
 literal input/output callback, so value construction normally uses a native
 function or typed client adapter. See
 [Native extension commands](../../reference/sql/extensions/) and
@@ -56,13 +59,33 @@ SELECT id, label, active FROM typed_values;
 ```
 
 The row contains 100000, `ready` and true. INTEGER ranges from
--9223372036854775808 to 9223372036854775807. FLOAT is approximate and should
-not be confused with exact decimal representation.
+-9223372036854775808 to 9223372036854775807. FLOAT and DOUBLE PRECISION are
+approximate and should not be confused with exact decimal representation.
+DOUBLE and DOUBLE PRECISION preserve the DOUBLE PRECISION SQL and catalog
+identity; FLOAT and REAL preserve FLOAT identity. Both use an f64 physical
+representation.
 
-Use `TEXT` or a bare text alias such as `VARCHAR`. Length modifiers such as
-`VARCHAR(255)` and `CHAR(10)` are rejected in this version. They are not accepted
-as silently ignored length constraints. The same rule rejects type modifiers
-for types other than DECIMAL/NUMERIC and VECTOR.
+Bare `TEXT`, `VARCHAR`, `CHAR`, `STRING` and `CLOB` are unbounded text aliases.
+`TEXT(n)`, `VARCHAR(n)` and `CHAR(n)` enforce a positive maximum of `n` Unicode
+scalar values. The limit counts characters rather than UTF-8 bytes, does not
+change variable-length storage and does not add blank padding for `CHAR(n)`.
+Schema output canonicalizes every bounded spelling as `TEXT(n)`.
+
+```sql
+CREATE TABLE labels (
+    id INTEGER PRIMARY KEY,
+    code TEXT(2) NOT NULL,
+    title VARCHAR(5) NOT NULL,
+    marker CHAR(1)
+);
+INSERT INTO labels VALUES (1, 'AB', 'ready', 'x');
+SELECT code, title, marker FROM labels;
+```
+
+Zero, malformed or overflowing limits are rejected. A default, INSERT, UPDATE
+or other write whose value exceeds the declared character limit also fails.
+Type modifiers remain unsupported for scalar types other than TEXT aliases,
+DECIMAL/NUMERIC and VECTOR.
 
 ## Decimals
 
@@ -81,12 +104,43 @@ arithmetic expression follows another database's rounding rules. Use typed
 client parameters for exact values, and check the conversion and arithmetic
 contract of the operation you need.
 
+## Temporal Types
+
+Use `TIMESTAMPTZ` for an event that happened at one absolute instant. An input
+offset is applied and the value is normalized to UTC. Use `TIMESTAMP` for a
+civil date and time whose meaning does not include a zone, such as the local
+opening time printed on a timetable. `DATETIME` is an alias of this civil type.
+Use `TIME` for a time of day without a date. A civil TIMESTAMP rejects an input
+that contains a UTC offset instead of silently discarding it.
+
+```sql
+SELECT CAST(TIMESTAMPTZ '2026-09-11T10:20:30.123456789+07:00' AS TEXT) AS instant,
+       TYPEOF(TIMESTAMPTZ '2026-09-11T10:20:30.123456789+07:00') AS instant_type,
+       CAST(TIMESTAMP '2026-09-11 10:20:30.123456789' AS TEXT) AS civil,
+       TYPEOF(TIMESTAMP '2026-09-11 10:20:30.123456789') AS civil_type,
+       CAST(TIME '23:59:59.999999999' AS TEXT) AS clock,
+       TYPEOF(TIME '23:59:59.999999999') AS clock_type,
+       TYPEOF(CURRENT_TIMESTAMP) AS current_type;
+```
+
+This returns the normalized instant
+`2026-09-11T03:20:30.123456789+00:00`, the unchanged civil value and the time
+of day, with types `TIMESTAMPTZ`, `TIMESTAMP` and `TIME` respectively. The final
+column confirms that CURRENT_TIMESTAMP is TIMESTAMPTZ.
+
+`CIVIL_TO_TIMESTAMPTZ(value, zone)` converts a civil value using an explicit
+IANA zone or fixed offset. `TIMESTAMPTZ_TO_CIVIL(value, zone)` performs the
+reverse conversion. Ambiguous or nonexistent local times at daylight-saving
+transitions are rejected. TCP sessions start in UTC; `SET TIME ZONE` and
+`SHOW TIME ZONE` manage connection-local parsing and rendering when a
+TIMESTAMPTZ value has no explicit offset. `CURRENT_TIMESTAMP` returns
+TIMESTAMPTZ.
+
 ## Dates, Identifiers and Bytes
 
-DATE represents a calendar day; TIMESTAMP, DATETIME and TIME share timestamp
-storage. Do not treat the TIME alias as a separate SQL time-only type.
-UUID has a typed representation rather than being an arbitrary text column.
-BYTES stores binary values without requiring valid UTF-8.
+DATE represents a calendar day. UUID has a typed representation rather than
+being an arbitrary text column. BYTES stores binary values without requiring
+valid UTF-8.
 
 ```sql
 SELECT CAST('2026-09-08' AS DATE) AS day,

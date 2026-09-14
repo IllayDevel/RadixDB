@@ -122,7 +122,7 @@ dependency. Явный `CASCADE` удаляет dependent catalog objects в т�
 
 Definitions связывают static object references со stable catalog IDs. Compiled
 IR является rebuildable cache с key по revisions definition и dependencies.
-Принятые tests 1.2.4 пересобирают routines из source после persistent reopen.
+Принятые tests 1.2.19 пересобирают routines из source после persistent reopen.
 
 ## Resource budgets
 
@@ -139,12 +139,12 @@ triggers разделяют одного budget owner:
 | Result and retained bytes | 256 MiB | 1 GiB |
 | Deadline | 60 s | 24 h |
 
-Необязательный clause `RESOURCE POLICY` в 1.2.4 принимает только встроенное имя
+Необязательный clause `RESOURCE POLICY` в 1.2.19 принимает только встроенное имя
 `default` или `default_call`; DDL для custom policy objects отсутствует.
 Resource errors откатывают call, а не обрезают result.
 
 Embedded diagnostics предоставляют stable `PL_*` kinds и bounded details. TCP
-protocol 17 передаёт только coarse `SqlError` либо `AuthorizationDenied` и
+protocol 18 передаёт только coarse `SqlError` либо `AuthorizationDenied` и
 message с prefix `PL_*:`; structured procedural envelope по wire не передаётся.
 Не определяйте retry policy разбором prose.
 

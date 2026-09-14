@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const worktree = process.env.RADIXDB_DOCS_WORKTREE;
 const revision = process.env.RADIXDB_DOCS_REVISION
-  ?? '40b1b3d13e050afa2666a0414b7215d5ac1452c0';
+  ?? '4a9f254f801ba73dc950f080343d7d96990ed59f';
 const release = '804027a4ee8426b6f7bd083c6e26a1895603dc38';
 assert(worktree && path.isAbsolute(worktree), 'Set RADIXDB_DOCS_WORKTREE to the pinned worktree');
 
@@ -63,8 +63,8 @@ for (const locale of ['en', 'ru']) {
     locale === 'ru' ? '11 870,421' : '11,870.421',
   ]) assert(benchmark.includes(marker), `${locale} benchmark is missing ${marker}`);
   for (const marker of [
-    '1.2.4',
-    'protocol 17',
+    '1.2.19',
+    'protocol 18',
     'Argon2id',
     'CONNECT',
     'TLS',

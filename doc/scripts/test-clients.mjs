@@ -92,7 +92,7 @@ assert.equal(head.stdout.trim(), revision);
 const identity = run(serverBin, ['--version'], { timeout: 15000 });
 assert.equal(identity.status, 0, identity.stderr);
 assert(identity.stdout.includes(`git=${revision} `), identity.stdout);
-assert(identity.stdout.includes('protocol=17 '), identity.stdout);
+assert(identity.stdout.includes('protocol=18 '), identity.stdout);
 assert(identity.stdout.includes('profile=release '), identity.stdout);
 
 let pairedCodeBlocks = 0;
@@ -150,7 +150,7 @@ try {
     copyFileSync(path.join(root, 'examples/clients', `${name}.rs`),
       path.join(temp, `${name}.rs`));
   }
-  writeFileSync(path.join(temp, 'Cargo.toml'), `[package]\nname = "radixdb-docs-clients"\nversion = "0.0.0"\nedition = "2021"\nrust-version = "1.97"\npublish = false\n\n[workspace]\n\n[dependencies]\nradixdb = { path = "${rustPath(worktree)}" }\nradixdb-client = { path = "${rustPath(path.join(worktree, 'crates/radixdb-client'))}" }\nradixdb-orm = { path = "${rustPath(path.join(worktree, 'crates/radixdb-orm'))}" }\n\n[[bin]]\nname = "embedded"\npath = "embedded.rs"\n\n[[bin]]\nname = "tcp"\npath = "tcp.rs"\n\n[[bin]]\nname = "orm"\npath = "orm.rs"\n`);
+  writeFileSync(path.join(temp, 'Cargo.toml'), `[package]\nname = "radixdb-docs-clients"\nversion = "0.0.0"\nedition = "2021"\nrust-version = "1.97"\npublish = false\n\n[workspace]\n\n[dependencies]\nradixdb = { package = "radixdb-database", path = "${rustPath(worktree)}" }\nradixdb-client = { path = "${rustPath(path.join(worktree, 'crates/radixdb-client'))}" }\nradixdb-orm = { path = "${rustPath(path.join(worktree, 'crates/radixdb-orm'))}" }\n\n[[bin]]\nname = "embedded"\npath = "embedded.rs"\n\n[[bin]]\nname = "tcp"\npath = "tcp.rs"\n\n[[bin]]\nname = "orm"\npath = "orm.rs"\n`);
   const cargoEnv = { ...process.env, CARGO_TARGET_DIR: path.join(worktree, 'target') };
   let result = run('cargo', ['generate-lockfile', '--offline'], { cwd: temp, env: cargoEnv });
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);

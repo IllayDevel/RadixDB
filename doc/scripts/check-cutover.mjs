@@ -98,8 +98,8 @@ for (const englishPath of englishReports) {
 }
 
 const publication = parse(readFileSync(path.join(root, '_meta/publication.toml'), 'utf8'));
-assert.equal(publication.version, '1.2.4');
-assert.equal(publication.channel, 'development');
+assert.equal(publication.version, '1.2.19');
+assert.equal(publication.channel, 'release');
 const workflow = readFileSync(path.join(repo, '.github/workflows/jekyll-gh-pages.yml'), 'utf8');
 assert(workflow.includes('npm run build:pages-redirect'));
 assert(!workflow.includes('npm run build:publication'));

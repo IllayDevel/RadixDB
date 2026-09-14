@@ -67,11 +67,11 @@ operator class, key codec или поведение planner support.
 
 Принимается только точный canonical SemVer без build metadata. Version range,
 package path, URL, checksum override, `CASCADE`, `FORCE` и `IGNORE MISSING` не
-входят в grammar 1.2.4. `IF NOT EXISTS` успешен только тогда, когда существующий
+входят в grammar 1.2.19. `IF NOT EXISTS` успешен только тогда, когда существующий
 binding имеет тот же package UUID, version и fingerprint.
 
 Registry выбирает одну active version для каждого package UUID при запуске.
-Database остается привязанной к записанным version и fingerprint. В 1.2.4 нет
+Database остается привязанной к записанным version и fingerprint. В 1.2.19 нет
 `ALTER EXTENSION UPDATE`.
 
 ## External types
@@ -79,9 +79,9 @@ Database остается привязанной к записанным version
 Указанный descriptor должен быть external type. Stable object ID, codec
 revision, semantic revision, storage shape, предел payload и callbacks
 сравнения берутся из package. Значения сохраняют эту identity в catalog 6.2 и
-protocol 17; они не взаимозаменяемы с `BYTES`.
+protocol 18; они не взаимозаменяемы с `BYTES`.
 
-Rust SDK 1.2.4 не публикует generic SQL text input/output callbacks. Создавайте
+Rust SDK 1.2.19 не публикует generic SQL text input/output callbacks. Создавайте
 external values через native functions или plugin-aware protocol adapter, а не
 через untyped SQL literal.
 
@@ -89,7 +89,7 @@ external values через native functions или plugin-aware protocol adapter
 
 Типы arguments и result, nullability, strictness, volatility, parallel-safety,
 cost, cancellation и batch capability должны в точности совпадать с
-descriptor. Native aggregate, window и table-valued functions в 1.2.4 не
+descriptor. Native aggregate, window и table-valued functions в 1.2.19 не
 принимаются. Routines `LANGUAGE RADIX` являются отдельным механизмом.
 
 ## Operators и operator classes
@@ -105,7 +105,7 @@ alphabet:
 Operator class связывает объявленные operators и canonical key encoder с
 core-owned access method `BTREE`, `HASH`, `BITMAP` или `HNSW`. Strategy slots
 определяет descriptor. B-tree classes требуют `<`, `<=`, `=`, `>=` и `>`;
-hash и bitmap classes требуют `=`. Authoring SDK Rust 1.2.4 отклоняет external
+hash и bitmap classes требуют `=`. Authoring SDK Rust 1.2.19 отклоняет external
 HNSW classes, хотя SQL grammar резервирует этот method.
 
 External operator class указывается в index definition так:

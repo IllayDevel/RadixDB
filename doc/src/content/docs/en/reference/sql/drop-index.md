@@ -13,7 +13,7 @@ DROP INDEX [IF EXISTS] index_name ON table_name
 
 ## Description
 
-The 1.2.4 execution contract requires the ON table clause even though the parser
+The 1.2.19 execution contract requires the ON table clause even though the parser
 can represent an omitted table name. IF EXISTS suppresses a missing-index error.
 
 ## Parameters
@@ -31,7 +31,7 @@ Index removal is transactional. ROLLBACK keeps the prior index visible.
 
 ## Errors and limitations
 
-Omitting `ON table_name` is rejected in 1.2.4. A mismatched table, missing index
+Omitting `ON table_name` is rejected in 1.2.19. A mismatched table, missing index
 without IF EXISTS, or attempt to remove an implicit primary-key structure fails.
 
 ## Privileges

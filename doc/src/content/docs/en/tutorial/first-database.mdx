@@ -24,7 +24,7 @@ The `file://` address selects persistent storage. Keep the shell variable
 inside it. `sync_mode=full` explicitly selects full synchronization for this
 exercise; it is not a guarantee against physical loss of the storage device.
 
-In the tested 1.2.4 baseline, the startup banner does not reflect a sync
+In the tested 1.2.19 baseline, the startup banner does not reflect a sync
 mode supplied in the address. Use the address shown here; the separate
 `--sync full` flag is not functional in that build.
 
@@ -64,4 +64,4 @@ the SELECT again: the committed rows remain in the database. Keep this
 database for the following relationship and transaction exercises.
 
 The English and Russian pages use the same SQL files. The tutorial runner
-executes those files against the pinned 1.2.4 verification baseline.
+executes those files against the pinned 1.2.19 verification baseline.

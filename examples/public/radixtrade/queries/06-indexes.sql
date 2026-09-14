@@ -6,7 +6,7 @@ CREATE TABLE rt_index_soft_delete_demo (
     id UUID PRIMARY KEY AUTO_INCREMENT,
     email TEXT NOT NULL,
     external_ref TEXT NOT NULL,
-    __deleted_at TIMESTAMP
+    __deleted_at TIMESTAMPTZ
 );
 
 CREATE UNIQUE INDEX rt_index_demo_email_active_uidx
@@ -35,4 +35,3 @@ FROM rt_index_soft_delete_demo
 ORDER BY external_ref;
 
 SHOW INDEXES FROM rt_index_soft_delete_demo;
-

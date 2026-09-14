@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const worktree = process.env.RADIXDB_DOCS_WORKTREE;
 const revision = process.env.RADIXDB_DOCS_REVISION
-  ?? '40b1b3d13e050afa2666a0414b7215d5ac1452c0';
+  ?? '4a9f254f801ba73dc950f080343d7d96990ed59f';
 assert(worktree && path.isAbsolute(worktree),
   'Set RADIXDB_DOCS_WORKTREE to the absolute frozen worktree path');
 
@@ -77,7 +77,7 @@ for (const marker of [
 
 const protocol = source('crates/radixdb-protocol/src/lib.rs');
 for (const marker of [
-  'pub const PROTOCOL_VERSION: u16 = 17;',
+  'pub const PROTOCOL_VERSION: u16 = 18;',
   'pub const DEFAULT_MAX_FRAME_BYTES: u32 = 64 * 1024 * 1024;',
   'pub const DEFAULT_MAX_DECODED_BYTES: usize = 256 * 1024 * 1024;',
   'pub enum ClientMessage',
@@ -142,7 +142,7 @@ console.log(JSON.stringify({
   revision,
   documents: documents.length * 2,
   code_blocks: blockCount,
-  protocol_version: 17,
+  protocol_version: 18,
   engine_tests: engineTests,
   passed: true,
 }, null, 2));

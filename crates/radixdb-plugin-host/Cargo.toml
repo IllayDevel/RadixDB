@@ -24,8 +24,8 @@ test-hooks = []
 [dependencies]
 libc = "0.2"
 libloading = "0.8"
-radixdb-plugin-abi = { version = "=1.2.4", path = "../radixdb-plugin-abi" }
-radixdb-core = { version = "=1.2.4", path = "../radixdb-core" }
+radixdb-plugin-abi = { version = "=1.2.19", path = "../radixdb-plugin-abi" }
+radixdb-core = { version = "=1.2.19", path = "../radixdb-core" }
 semver = { version = "1", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"

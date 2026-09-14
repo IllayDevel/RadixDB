@@ -8,16 +8,16 @@ description: Перенос базы на новую версию RadixDB без
 дампа разные границы совместимости. До изменения production-сервиса нужно
 проверить каждую границу для целевой версии.
 
-Эта процедура проверена на базе документации
-`40b1b3d13e050afa2666a0414b7215d5ac1452c0`. База использует wire-протокол 17
-и строгий физический reader V6. В ней нет in-place миграции физических файлов,
-а устаревшие поколения хранения не открываются через compatibility defaults.
+Эта процедура проверена на зафиксированных исходниках выпуска RadixDB 1.2.19.
+Выпуск использует wire-протокол 18 и строгий физический reader V6. В нём нет
+in-place миграции физических файлов, а устаревшие поколения хранения не
+открываются через compatibility defaults.
 
 ## Границы совместимости
 
 | Граница | Правило обновления |
 | --- | --- |
-| Сервер и клиент | Build identity и wire-протокол должны быть совместимы; protocol 17 отклоняет несовместимый handshake |
+| Сервер и клиент | Build identity и wire-протокол должны быть совместимы; protocol 18 отклоняет несовместимый handshake |
 | SQL и приложение | Выполнить запросы и инварианты приложения на кандидате; одного разбора синтаксиса недостаточно |
 | Конфигурация | Проверить полный кандидат `server.toml`; неизвестные и неверные значения запрещают старт, изменения требуют restart |
 | Native extensions | Сохранить каждый exact package, fingerprint и codec, требуемый базами; packages не входят в physical backup |
@@ -38,7 +38,7 @@ SemVer с тем же package UUID делает эту version active при с�
 version, откроется в restricted diagnostic mode, если старый exact package
 перестал быть active.
 
-В RadixDB 1.2.4 нет `ALTER EXTENSION UPDATE`, hot reload или automatic codec
+В RadixDB 1.2.19 нет `ALTER EXTENSION UPDATE`, hot reload или automatic codec
 migration. Сохраняйте старый package для rollback, а при смене identity или
 codec выполняйте explicit logical либо application migration в отдельно
 проверенные objects. Compatibility report команды
@@ -53,7 +53,7 @@ codec выполняйте explicit logical либо application migration в о
 
 ```sh
 OLD_BUNDLE=/srv/radixdb-releases/old
-NEW_BUNDLE=/srv/radixdb-releases/1.2.4
+NEW_BUNDLE=/srv/radixdb-releases/1.2.19
 OLD_ROOT=/opt/radixdb/data/databases/app
 NEW_ROOT=/opt/radixdb/data/databases/app-v11
 DUMP=/srv/radixdb-migrations/app-v11.sql
@@ -72,7 +72,7 @@ df -B1 "$OLD_ROOT" "$(dirname "$NEW_ROOT")" "$(dirname "$DUMP")"
    constraints, indexes, views и прикладных данных.
 3. Проверьте конфигурацию кандидата и протокол клиента в отдельном сервисе.
 4. Оцените место для dump, нового физического root и rollback-копии.
-5. Определите момент остановки записи приложения. RadixDB 1.2.4 не предоставляет
+5. Определите момент остановки записи приложения. RadixDB 1.2.19 не предоставляет
    replication, online logical catch-up или automatic failover для перехода.
 
 ## Экспорт старым движком

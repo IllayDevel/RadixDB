@@ -8,7 +8,7 @@ description: Наблюдение за процессом RadixDB, готовн�
 приближается ли storage engine к пределу ресурсов или обслуживания. Один
 зелёный сигнал не подтверждает остальные.
 
-RadixDB 1.2.4 не предоставляет HTTP health или Prometheus endpoint. Проверенные
+RadixDB 1.2.19 не предоставляет HTTP health или Prometheus endpoint. Проверенные
 интерфейсы: service manager и journal, status methods бинарного протокола, SQL
 `PRAGMA RUNTIME_STATS` и счётчики ресурсов операционной системы.
 

@@ -47,7 +47,7 @@ for (const identity of [cliIdentity, serverIdentity, passwordIdentity]) {
   assert(identity.stdout.includes(`git=${revision} `), identity.stdout);
   assert(identity.stdout.includes('profile=release '), identity.stdout);
 }
-assert(serverIdentity.stdout.includes('protocol=17 '), serverIdentity.stdout);
+assert(serverIdentity.stdout.includes('protocol=18 '), serverIdentity.stdout);
 
 const documents = [
   'reference/programs/cli.md',

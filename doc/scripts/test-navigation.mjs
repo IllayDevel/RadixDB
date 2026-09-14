@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 const cli = process.env.RADIXDB_DOCS_CLI;
 const worktree = process.env.RADIXDB_DOCS_WORKTREE;
 const revision = process.env.RADIXDB_DOCS_REVISION
-  ?? '40b1b3d13e050afa2666a0414b7215d5ac1452c0';
+  ?? '4a9f254f801ba73dc950f080343d7d96990ed59f';
 assert(cli && path.isAbsolute(cli), 'Set RADIXDB_DOCS_CLI to the pinned binary');
 assert(worktree && path.isAbsolute(worktree), 'Set RADIXDB_DOCS_WORKTREE to the pinned worktree');
 

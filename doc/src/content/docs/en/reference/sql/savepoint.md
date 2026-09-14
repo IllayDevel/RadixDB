@@ -34,7 +34,7 @@ savepoints owned by that transaction.
 
 ## Errors and limitations
 
-Using the command outside a transaction fails. Embedded, TCP and the 1.2.4 CLI
+Using the command outside a transaction fails. Embedded, TCP and the 1.2.19 CLI
 all route `SAVEPOINT` and `ROLLBACK TO SAVEPOINT` through the active
 connection-local transaction.
 

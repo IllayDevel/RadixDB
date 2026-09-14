@@ -1,6 +1,6 @@
 ---
 title: Backup and Restore
-description: Create a consistent RadixDB 1.2.4 backup, keep it outside the database root, and restore it into a new directory.
+description: Create a consistent RadixDB 1.2.19 backup, keep it outside the database root, and restore it into a new directory.
 ---
 
 A restartable database directory is not yet a backup. A backup must represent a
@@ -85,7 +85,7 @@ external copy; there is no fixed size ratio because indexes and the WAL suffix
 vary by workload.
 
 ```sh
-BUNDLE=/srv/radixdb-releases/1.2.4
+BUNDLE=/srv/radixdb-releases/1.2.19
 DATABASE_ROOT=/opt/radixdb/data/databases/app
 BACKUP_PARENT=/srv/radixdb-backups
 BACKUP="$BACKUP_PARENT/app-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -138,7 +138,7 @@ Use a valid server database name for the new directory: ASCII letters, digits,
 `_` and `-` only.
 
 ```sh
-BUNDLE=/srv/radixdb-releases/1.2.4
+BUNDLE=/srv/radixdb-releases/1.2.19
 BACKUP=/srv/radixdb-backups/app-20260908T080000Z
 RESTORED=/opt/radixdb/data/databases/app-restore-20260908
 
@@ -151,7 +151,7 @@ sudo -u radixdb "$BUNDLE/restore-external.sh" "$BACKUP" "$RESTORED"
 The restored root receives new runtime directories and CONTROL publication only
 after manifest, member, checksum, database identity, reachability and WAL-range
 validation. The source backup remains read-only. Index artifacts included by
-the 1.2.4 snapshot are restored; a snapshot format that explicitly omits a
+the 1.2.19 snapshot are restored; a snapshot format that explicitly omits a
 rebuildable index must still pass the engine's rebuild-state checks.
 
 ## Validate before cutover

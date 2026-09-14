@@ -21,10 +21,12 @@ ALTER JOB maintenance.expire_sessions ENABLE;
 DROP JOB maintenance.expire_sessions RESTRICT;
 ```
 
-One-time Job использует `SCHEDULE AT TIMESTAMP
+One-time Job использует `SCHEDULE AT TIMESTAMPTZ
 '2026-12-31T23:59:00Z'`. Для interval допустимы seconds, minutes, hours, days и
-weeks; календарные months/years отклоняются. Timestamp нормализуется в UTC
-nanoseconds.
+weeks; календарные months/years отклоняются. Расписание является абсолютным
+моментом и нормализуется в UTC nanoseconds. Legacy-вариант `AT TIMESTAMP`
+сохраняется для catalog compatibility, но в новых определениях следует
+использовать TIMESTAMPTZ с явным смещением.
 
 Principal и Procedure overload должны существовать при admission. Named/default
 arguments и checked conversions фиксируются в definition, а Job arguments
@@ -68,7 +70,7 @@ Procedure читает immutable values:
 
 - `CURRENT_JOB_ID` (`UUID`);
 - `CURRENT_JOB_ATTEMPT` (`INTEGER`);
-- `CURRENT_JOB_SCHEDULED_AT` (`TIMESTAMP`);
+- `CURRENT_JOB_SCHEDULED_AT` (`TIMESTAMPTZ`);
 - `CURRENT_IDEMPOTENCY_KEY` (`TEXT`).
 
 Вне Job frame они равны NULL. Principal, effective Principal, transaction и

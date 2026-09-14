@@ -21,9 +21,11 @@ ALTER JOB maintenance.expire_sessions ENABLE;
 DROP JOB maintenance.expire_sessions RESTRICT;
 ```
 
-A one-time Job uses `SCHEDULE AT TIMESTAMP '2026-12-31T23:59:00Z'`. Interval
+A one-time Job uses `SCHEDULE AT TIMESTAMPTZ '2026-12-31T23:59:00Z'`. Interval
 units are seconds, minutes, hours, days or weeks; calendar months and years are
-rejected. Timestamps are normalized to UTC nanoseconds.
+rejected. The schedule is an absolute instant normalized to UTC nanoseconds.
+The legacy `AT TIMESTAMP` spelling remains accepted for catalog compatibility,
+but new definitions should use TIMESTAMPTZ and an explicit offset.
 
 The Principal and Procedure overload must exist at admission. Named/default
 arguments and checked conversions are frozen into the definition, and Job
@@ -66,7 +68,7 @@ The Procedure can read these immutable values:
 
 - `CURRENT_JOB_ID` (`UUID`);
 - `CURRENT_JOB_ATTEMPT` (`INTEGER`);
-- `CURRENT_JOB_SCHEDULED_AT` (`TIMESTAMP`);
+- `CURRENT_JOB_SCHEDULED_AT` (`TIMESTAMPTZ`);
 - `CURRENT_IDEMPOTENCY_KEY` (`TEXT`).
 
 They are NULL outside a Job frame. Principal, effective Principal, transaction

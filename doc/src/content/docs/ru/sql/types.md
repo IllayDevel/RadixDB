@@ -4,19 +4,22 @@ description: Скалярные типы, псевдонимы и модифик
 ---
 
 Тип столбца определяет представление значений и преобразования, необходимые
-при записи. Разные названия SQL не всегда обозначают разные типы:
-некоторые имена ниже соответствуют одному внутреннему представлению.
+при записи. Некоторые названия SQL являются псевдонимами, а другие типы
+используют общий физический кодек, сохраняя разные SQL- и catalog-идентичности.
 
 ## Поддерживаемые типы
 
 | Тип | Допустимые псевдонимы | Представление |
 | --- | --- | --- |
 | INTEGER | INT, BIGINT, SMALLINT, TINYINT | Знаковое 64-битное целое |
-| FLOAT | DOUBLE, REAL | 64-битное число с плавающей точкой |
+| FLOAT | REAL | 64-битное число с плавающей точкой |
+| DOUBLE PRECISION | DOUBLE | 64-битное число с плавающей точкой с отдельной SQL- и catalog-идентичностью |
 | DECIMAL | NUMERIC | Точное десятичное число с precision и scale |
-| TEXT | VARCHAR, CHAR, STRING, CLOB | Текст UTF-8 |
+| TEXT | VARCHAR, CHAR, STRING, CLOB | Текст UTF-8 переменной длины с необязательным ограничением числа символов |
 | BOOLEAN | BOOL | Истина или ложь |
-| TIMESTAMP | DATETIME, TIME | Временная метка, не отдельный тип времени суток |
+| TIMESTAMPTZ | TIMESTAMP WITH TIME ZONE | Абсолютный момент, нормализованный в наносекунды UTC |
+| TIMESTAMP | TIMESTAMP WITHOUT TIME ZONE, DATETIME | Календарные дата и время без часового пояса |
+| TIME | TIME WITHOUT TIME ZONE | Время суток без даты и часового пояса |
 | DATE | | Календарная дата |
 | UUID | | 16-байтовый идентификатор |
 | BYTES | BLOB, BINARY, VARBINARY | Произвольные байты |
@@ -34,9 +37,9 @@ fixed или variable storage shape, canonical codec revision, maximum payload �
 optional semantics equality, hash и ordering. SQL name является schema alias
 этой identity и может быть переименован без изменения stored bytes.
 
-External values передаются через protocol 17 вместе с type object ID и codec
+External values передаются через protocol 18 вместе с type object ID и codec
 revision. Они не заменяются на `BYTES`, а generic ORM не декодирует их без
-plugin-aware adapter. В Rust SDK 1.2.4 также нет generic SQL literal input/output
+plugin-aware adapter. В Rust SDK 1.2.19 также нет generic SQL literal input/output
 callback, поэтому value обычно создается native function или typed client
 adapter. См. [«Команды native extensions»](../../reference/sql/extensions/) и
 [«Разработку native extensions»](../../programming/native-extensions/).
@@ -53,13 +56,34 @@ SELECT id, label, active FROM typed_values;
 ```
 
 Строка содержит 100000, `ready` и true. Диапазон INTEGER:
-от -9223372036854775808 до 9223372036854775807. FLOAT является приближённым
-представлением и не равнозначен точному десятичному числу.
+от -9223372036854775808 до 9223372036854775807. FLOAT и DOUBLE PRECISION
+являются приближёнными представлениями и не равнозначны точному десятичному
+числу. DOUBLE и DOUBLE PRECISION сохраняют SQL- и catalog-идентичность DOUBLE
+PRECISION, а FLOAT и REAL - идентичность FLOAT. Оба типа используют физическое
+представление f64.
 
-Используйте `TEXT` или текстовый псевдоним без параметров, например `VARCHAR`.
-Модификаторы длины `VARCHAR(255)` и `CHAR(10)` в этой версии отклоняются,
-а не принимаются как молча игнорируемые ограничения. Это правило также
-отклоняет модификаторы других типов, кроме DECIMAL/NUMERIC и VECTOR.
+`TEXT`, `VARCHAR`, `CHAR`, `STRING` и `CLOB` без параметров являются
+псевдонимами неограниченного текста. `TEXT(n)`, `VARCHAR(n)` и `CHAR(n)` задают
+положительный максимум из `n` скалярных значений Unicode. Ограничение считает
+символы, а не байты UTF-8, не меняет хранение переменной длины и не дополняет
+`CHAR(n)` пробелами. В выводе схемы все ограниченные варианты канонизируются
+как `TEXT(n)`.
+
+```sql
+CREATE TABLE labels (
+    id INTEGER PRIMARY KEY,
+    code TEXT(2) NOT NULL,
+    title VARCHAR(5) NOT NULL,
+    marker CHAR(1)
+);
+INSERT INTO labels VALUES (1, 'AB', 'ready', 'x');
+SELECT code, title, marker FROM labels;
+```
+
+Нулевые, некорректные и выходящие за диапазон ограничения отклоняются.
+DEFAULT, INSERT, UPDATE и любая другая запись также завершаются ошибкой, если
+значение длиннее объявленного предела. Для остальных скалярных типов параметры
+по-прежнему не поддерживаются, кроме TEXT-псевдонимов, DECIMAL/NUMERIC и VECTOR.
 
 ## Десятичные числа
 
@@ -79,12 +103,44 @@ SELECT CAST(amount AS TEXT) AS amount FROM prices;
 Для точных значений используйте типизированные параметры клиента и проверяйте
 контракт преобразования и арифметики нужной операции.
 
+## Типы даты и времени
+
+Используйте `TIMESTAMPTZ` для события, произошедшего в один абсолютный момент.
+Смещение входного значения применяется, после чего момент нормализуется в UTC.
+`TIMESTAMP` предназначен для календарных даты и времени без часового пояса,
+например для указанного в расписании местного времени открытия. `DATETIME`
+является псевдонимом этого календарного типа. `TIME` хранит время суток без
+даты. Календарный TIMESTAMP отклоняет входное значение со смещением UTC вместо
+того, чтобы молча отбросить его.
+
+```sql
+SELECT CAST(TIMESTAMPTZ '2026-09-11T10:20:30.123456789+07:00' AS TEXT) AS instant,
+       TYPEOF(TIMESTAMPTZ '2026-09-11T10:20:30.123456789+07:00') AS instant_type,
+       CAST(TIMESTAMP '2026-09-11 10:20:30.123456789' AS TEXT) AS civil,
+       TYPEOF(TIMESTAMP '2026-09-11 10:20:30.123456789') AS civil_type,
+       CAST(TIME '23:59:59.999999999' AS TEXT) AS clock,
+       TYPEOF(TIME '23:59:59.999999999') AS clock_type,
+       TYPEOF(CURRENT_TIMESTAMP) AS current_type;
+```
+
+Запрос возвращает нормализованный момент
+`2026-09-11T03:20:30.123456789+00:00`, неизменённое календарное значение и
+время суток с типами `TIMESTAMPTZ`, `TIMESTAMP` и `TIME` соответственно.
+Последний столбец подтверждает, что CURRENT_TIMESTAMP имеет тип TIMESTAMPTZ.
+
+`CIVIL_TO_TIMESTAMPTZ(value, zone)` преобразует календарное значение с явно
+заданным часовым поясом IANA или фиксированным смещением.
+`TIMESTAMPTZ_TO_CIVIL(value, zone)` выполняет обратное преобразование.
+Неоднозначное и несуществующее локальное время при переходах летнего времени
+отклоняется. TCP-соединения начинают работу в UTC; `SET TIME ZONE` и
+`SHOW TIME ZONE` управляют разбором и выводом TIMESTAMPTZ без явного смещения
+в пределах соединения. `CURRENT_TIMESTAMP` возвращает TIMESTAMPTZ.
+
 ## Даты, идентификаторы и байты
 
-DATE представляет календарный день; TIMESTAMP, DATETIME и TIME используют
-одно представление временной метки. Не воспринимайте TIME как отдельный SQL-тип
-только для времени суток. UUID имеет типизированное представление, а не является
-произвольным текстовым столбцом. BYTES хранит данные без требования корректного UTF-8.
+DATE представляет календарный день. UUID имеет типизированное представление,
+а не является произвольным текстовым столбцом. BYTES хранит данные без
+требования корректного UTF-8.
 
 ```sql
 SELECT CAST('2026-09-08' AS DATE) AS day,

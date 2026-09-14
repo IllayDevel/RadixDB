@@ -24,14 +24,14 @@ contracts remain product-specific.
 
 ## Dependencies
 
-For RadixDB 1.2.4, add the SDK, asynchronous client and ORM to the
+For RadixDB 1.2.19, add the SDK, asynchronous client and ORM to the
 trusted service:
 
 ```toml
 [dependencies]
-radixdb-app-sdk = "1.2.4"
-radixdb-client = { version = "1.2.4", features = ["tokio"] }
-radixdb-orm = "1.2.4"
+radixdb-app-sdk = "1.2.19"
+radixdb-client = { version = "1.2.19", features = ["tokio"] }
+radixdb-orm = "1.2.19"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 ```

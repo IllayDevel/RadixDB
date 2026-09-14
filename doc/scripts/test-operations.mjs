@@ -138,7 +138,7 @@ assert(statusSource.includes('ARTIFACT_STATUS_MAX_DEPTH'));
 assert(statusSource.includes('child_in_snapshot'));
 const protocolSource = readFileSync(path.join(worktree,
   'crates/radixdb-protocol/src/lib.rs'), 'utf8');
-assert(protocolSource.includes('pub const PROTOCOL_VERSION: u16 = 17;'));
+assert(protocolSource.includes('pub const PROTOCOL_VERSION: u16 = 18;'));
 for (const typeName of [
   'ServerStatus', 'ServerRuntimeStatus', 'DatabaseStatus', 'DatabaseArtifactSummary',
 ]) assert(protocolSource.includes(`struct ${typeName}`), `missing ${typeName}`);

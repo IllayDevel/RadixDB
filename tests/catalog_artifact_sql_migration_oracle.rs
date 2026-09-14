@@ -34,7 +34,8 @@ use sha2::{Digest, Sha256};
 #[cfg(feature = "cli")]
 const FROZEN_OLD_EXPORTER_DUMP_SHA256: &str =
     "25ad00ee0c9f71a67cb387477387c74ed423e696a4af8a322979a8ad0be45de1";
-const CURRENT_DUMP_SHA256: &str =
+// Normalize only release metadata to the version used to freeze this oracle.
+const VERSION_NORMALIZED_DUMP_SHA256: &str =
     "b108ab01415430e321e4b2ded95875fbb85ed7799252cda6be4d5d45d12c5ba3";
 const EXPECTED_LOGICAL_SHA256: &str =
     "b3ccd40fb608b8ebb2bc3fbf571e39ee08d4326e7b65e44d49709966ba67da7e";
@@ -77,6 +78,24 @@ fn dsn(path: &Path) -> String {
         "file://{}?checkpoint_interval=3600&cleanup_interval=3600&checkpoint_on_close=on",
         path.display()
     )
+}
+
+fn assert_current_dump_transport(dump: &str) {
+    let (body, footer) = dump
+        .rsplit_once("-- radixdb-sql-dump-sha256: ")
+        .expect("checksum footer");
+    let checksum = footer
+        .strip_suffix('\n')
+        .expect("terminated checksum footer");
+    assert_eq!(format!("{:x}", Sha256::digest(body.as_bytes())), checksum);
+    let release_header = format!("-- source-engine-version: {}\n", env!("CARGO_PKG_VERSION"));
+    assert!(body.starts_with(&format!("-- radixdb-sql-dump: 1\n{release_header}")));
+    let normalized = body.replacen(&release_header, "-- source-engine-version: 1.1.0\n", 1);
+    assert_eq!(
+        format!("{:x}", Sha256::digest(normalized.as_bytes())),
+        VERSION_NORMALIZED_DUMP_SHA256,
+        "current SQL transport changed beyond release metadata:\n{dump}"
+    );
 }
 
 fn logical_checksum(database: &Database) -> Result<String> {
@@ -280,12 +299,12 @@ fn ca_00_6_sql_export_import_checksum_oracle() -> Result<()> {
     let exported = export_sql_dump_to_file(&source, &dump_path)?;
     assert_eq!(exported.tables, 2);
     assert_eq!(exported.rows, 4);
-    assert_eq!(
-        exported.sha256,
-        CURRENT_DUMP_SHA256,
-        "fresh current database changed the current SQL transport:\n{}",
-        std::fs::read_to_string(&dump_path)?
-    );
+    let dump = std::fs::read_to_string(&dump_path)?;
+    assert_current_dump_transport(&dump);
+    assert!(dump.ends_with(&format!(
+        "-- radixdb-sql-dump-sha256: {}\n",
+        exported.sha256
+    )));
     source.close()?;
     drop(source);
 
@@ -387,16 +406,16 @@ fn ca_70_3_old_exporter_to_current_importer_is_source_free() -> Result<()> {
     );
 
     let dump = std::fs::read(&dump_path)?;
-    let expected_sha = if exporter_is_current {
-        CURRENT_DUMP_SHA256
+    if exporter_is_current {
+        assert_current_dump_transport(std::str::from_utf8(&dump).expect("SQL dump UTF-8"));
     } else {
-        FROZEN_OLD_EXPORTER_DUMP_SHA256
-    };
-    let expected_footer = format!("-- radixdb-sql-dump-sha256: {expected_sha}\n");
-    assert!(
-        dump.ends_with(expected_footer.as_bytes()),
-        "old exporter changed the frozen SQL transport identity"
-    );
+        let expected_footer =
+            format!("-- radixdb-sql-dump-sha256: {FROZEN_OLD_EXPORTER_DUMP_SHA256}\n");
+        assert!(
+            dump.ends_with(expected_footer.as_bytes()),
+            "old exporter changed the frozen SQL transport identity"
+        );
+    }
 
     // Import receives only the dump path. Removing the old physical source
     // makes any accidental compatibility reader or filesystem copier fail.

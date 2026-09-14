@@ -123,6 +123,28 @@ DROP TABLE fk_child
 statement ok
 DROP TABLE fk_parent
 
-# Composite PRIMARY KEY is rejected until the schema has a real composite-PK owner.
-statement error
+# Composite keys constrain the full tuple, with every component non-null.
+statement ok
 CREATE TABLE composite_pk (a INTEGER, b INTEGER, c TEXT, PRIMARY KEY (a, b))
+
+statement ok
+INSERT INTO composite_pk VALUES (1, 1, 'first'), (1, 2, 'second'), (2, 1, 'third')
+
+statement error
+INSERT INTO composite_pk VALUES (1, 1, 'duplicate')
+
+statement error
+INSERT INTO composite_pk VALUES (NULL, 3, 'null first')
+
+statement error
+INSERT INTO composite_pk VALUES (3, NULL, 'null second')
+
+query IIT rowsort
+SELECT a, b, c FROM composite_pk
+----
+1 1 first
+1 2 second
+2 1 third
+
+statement ok
+DROP TABLE composite_pk

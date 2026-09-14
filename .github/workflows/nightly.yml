@@ -281,16 +281,32 @@ jobs:
         TOTAL_SHARDS=24
         echo "Running shard ${SHARD_INDEX}/${TOTAL_SHARDS}"
 
-        cargo mutants --cargo-arg=--locked --package radixdb \
+        selection=(
+          --package radixdb-executor --package radixdb-functions --package radixdb-storage
+          --test-package radixdb-database --test-package radixdb-executor
+          --test-package radixdb-functions --test-package radixdb-storage
+          -f 'crates/radixdb-executor/src/expression/**/*.rs'
+          -f 'crates/radixdb-executor/src/aggregation/**/*.rs'
+          -f 'crates/radixdb-executor/src/subquery/**/*.rs'
+          -f 'crates/radixdb-functions/src/scalar/**/*.rs'
+          -f 'crates/radixdb-storage/src/mvcc/transaction.rs'
+          -f 'crates/radixdb-storage/src/mvcc/registry.rs'
+        )
+        cargo mutants --cargo-arg=--locked "${selection[@]}" \
+          --list --json > /tmp/mutation-selection.json
+        python3 - <<'PY'
+        import json
+
+        with open('/tmp/mutation-selection.json', encoding='utf-8') as source:
+            selected = json.load(source)
+        if not selected:
+            raise SystemExit('Mutation rotation selected zero mutants')
+        print(f'Mutation inventory: {len(selected)} mutants')
+        PY
+        cargo mutants --cargo-arg=--locked "${selection[@]}" \
           --in-place \
           --timeout 420 \
           --shard "${SHARD_INDEX}/${TOTAL_SHARDS}" \
-          -f src/executor/expression/ \
-          -f src/executor/aggregation.rs \
-          -f src/executor/subquery.rs \
-          -f src/functions/scalar/ \
-          -f src/storage/mvcc/transaction.rs \
-          -f src/storage/mvcc/registry.rs \
           -- --lib --tests
       timeout-minutes: 100
 

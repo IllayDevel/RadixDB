@@ -54,7 +54,7 @@ function redirectHtml(site, target) {
   <title>RadixDB documentation moved</title>
 </head>
 <body>
-  <p><a href="${htmlEscape(target)}">Continue to the RadixDB 1.2.4 manual</a></p>
+  <p><a href="${htmlEscape(target)}">Continue to the RadixDB 1.2.19 manual</a></p>
   <script>location.replace(${JSON.stringify(target)} + location.search + location.hash);</script>
 </body>
 </html>
@@ -72,7 +72,7 @@ export function publicationSettings(env = process.env) {
 }
 
 export function validateRedirects(registry) {
-  assert.equal(registry.version, '1.2.4', 'Legacy redirect version mismatch');
+  assert.equal(registry.version, '1.2.19', 'Legacy redirect version mismatch');
 
   const routes = new Map();
   const sources = new Set();

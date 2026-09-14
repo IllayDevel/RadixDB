@@ -6,7 +6,7 @@ description: Atomic changes, MVCC visibility, isolation levels, savepoints and c
 A transaction groups statements into one atomic change. RadixDB uses multiversion
 concurrency control (MVCC): readers choose visible committed row versions while a
 writer keeps its uncommitted versions private. This chapter describes the actual
-1.2.4 contract, including the differences between `READ COMMITTED` and `SNAPSHOT`.
+1.2.19 contract, including the differences between `READ COMMITTED` and `SNAPSHOT`.
 
 ## Autocommit and explicit transactions
 
@@ -175,7 +175,7 @@ catalog changes owned by that transaction remain private until commit.
 
 ## Supported isolation boundary
 
-The 1.2.4 SQL executor accepts only `READ COMMITTED` and `SNAPSHOT`. The following
+The 1.2.19 SQL executor accepts only `READ COMMITTED` and `SNAPSHOT`. The following
 levels are rejected rather than silently treated as a weaker level:
 
 ```sql
@@ -190,14 +190,14 @@ rejected inside an active transaction because its isolation was fixed by
 `BEGIN`. `SHOW ISOLATION_LEVEL` returns the effective connection-local default;
 another handle that shares the engine is unaffected.
 
-## Client boundaries in 1.2.4
+## Client boundaries in 1.2.19
 
 The embedded Rust API selects isolation with `begin_with_isolation`. The TCP
 client sends a dedicated transaction message through the method of the same name;
 generic wire `execute` deliberately rejects transaction-control SQL. Both APIs
 also expose dedicated commit, rollback and savepoint methods.
 
-The 1.2.4 CLI preserves `READ COMMITTED` and `SNAPSHOT` clauses on `BEGIN` and
+The 1.2.19 CLI preserves `READ COMMITTED` and `SNAPSHOT` clauses on `BEGIN` and
 routes `SAVEPOINT`, `ROLLBACK TO` and `RELEASE` through its active transaction
 handle. Unsupported levels fail closed. If a multi-statement batch fails, the
 CLI rolls back and does not publish a successful prefix.

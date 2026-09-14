@@ -4,14 +4,14 @@ import { validatePublication, chapterDestination, chapterRoute } from './publica
 import { normalizeBase, redirectHtml, routeOutput, validateSite } from './package-site.mjs';
 
 test('development target must exactly match the application version', () => {
-  validatePublication({ version: '1.2.4', channel: 'development' }, '1.2.4');
-  assert.throws(() => validatePublication({ version: '1.2', channel: 'development' }, '1.2.4'));
-  assert.throws(() => validatePublication({ version: '1.2.4', channel: 'development' }, '1.2.3'));
+  validatePublication({ version: '1.2.19', channel: 'development' }, '1.2.19');
+  assert.throws(() => validatePublication({ version: '1.2', channel: 'development' }, '1.2.19'));
+  assert.throws(() => validatePublication({ version: '1.2.19', channel: 'development' }, '1.2.3'));
 });
 test('release must exactly match application and have a valid channel', () => {
-  validatePublication({ version: '1.2.4', channel: 'release' }, '1.2.4');
-  assert.throws(() => validatePublication({ version: '1.2.4', channel: 'release' }, '1.2.3'));
-  assert.throws(() => validatePublication({ version: '1.2.4', channel: 'draft' }, '1.2.4'));
+  validatePublication({ version: '1.2.19', channel: 'release' }, '1.2.19');
+  assert.throws(() => validatePublication({ version: '1.2.19', channel: 'release' }, '1.2.3'));
+  assert.throws(() => validatePublication({ version: '1.2.19', channel: 'draft' }, '1.2.19'));
 });
 test('version routing preserves language and chapter or returns to contents', () => {
   const build = { base: '/manual/1.0/', locales: ['en', 'ru'], chapters: ['', 'appendices/glossary'] };

@@ -255,7 +255,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     execute(
         &executor,
         "CREATE JOB acl_job_without_execute
-         SCHEDULE AT TIMESTAMP '2026-09-08T00:00:00Z'
+         SCHEDULE AT TIMESTAMPTZ '2026-09-08T00:00:00Z'
          RUN AS acl_alice CALL acl_job_definer() ENABLE;",
     )?;
     let job_id = object_id(&executor, ObjectKind::Job, "acl_job_without_execute");

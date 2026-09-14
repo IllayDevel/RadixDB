@@ -1,6 +1,6 @@
 ---
 title: Резервное копирование и восстановление
-description: Создание согласованной резервной копии RadixDB 1.2.4 вне каталога базы и восстановление в новый каталог.
+description: Создание согласованной резервной копии RadixDB 1.2.19 вне каталога базы и восстановление в новый каталог.
 ---
 
 Каталог базы, который открывается после restart, ещё не является резервной
@@ -86,7 +86,7 @@ CLI в `/opt/radixdb/bin`, но не устанавливает backup scripts. 
 от нагрузки.
 
 ```sh
-BUNDLE=/srv/radixdb-releases/1.2.4
+BUNDLE=/srv/radixdb-releases/1.2.19
 DATABASE_ROOT=/opt/radixdb/data/databases/app
 BACKUP_PARENT=/srv/radixdb-backups
 BACKUP="$BACKUP_PARENT/app-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -139,7 +139,7 @@ database.
 letters, digits, `_` и `-`.
 
 ```sh
-BUNDLE=/srv/radixdb-releases/1.2.4
+BUNDLE=/srv/radixdb-releases/1.2.19
 BACKUP=/srv/radixdb-backups/app-20260908T080000Z
 RESTORED=/opt/radixdb/data/databases/app-restore-20260908
 
@@ -151,7 +151,7 @@ sudo -u radixdb "$BUNDLE/restore-external.sh" "$BACKUP" "$RESTORED"
 
 Restored root получает новые runtime directories и CONTROL publication только
 после проверки manifest, members, checksums, database identity, reachability и
-WAL range. Source backup остаётся read-only. Включённые snapshot версии 1.2.4
+WAL range. Source backup остаётся read-only. Включённые snapshot версии 1.2.19
 index artifacts восстанавливаются; формат, явно исключающий rebuildable index,
 всё равно должен пройти engine checks rebuild state.
 

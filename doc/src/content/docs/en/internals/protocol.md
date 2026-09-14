@@ -1,12 +1,12 @@
 ---
 title: Wire protocol
-description: Protocol 17 framing, session states, cursors, external values and compatibility.
+description: Protocol 18 framing, session states, cursors, external values and compatibility.
 ---
 
-RadixDB 1.2.4 server and TCP clients share one binary contract owned by the
-private `radixdb-protocol` crate. This is RadixDB protocol 17, not the
-PostgreSQL wire protocol. Applications use `radixdb-client`; direct codec use
-is an internal integration boundary.
+RadixDB 1.2.19 server and TCP clients share one binary contract owned by the
+low-level `radixdb-protocol` crate. This is RadixDB protocol 18, not the
+PostgreSQL wire protocol. Applications normally use `radixdb-client`; direct
+codec use is an advanced integration boundary.
 
 ## Frame and negotiation
 
@@ -24,7 +24,7 @@ in-flight frame-byte budget.
 
 Protocol enums use bincode's standard configuration and are not
 self-describing. The first client message must therefore name exactly protocol
-17. A different version is rejected rather than decoded as a nearby layout.
+18. A different version is rejected rather than decoded as a nearby layout.
 
 ## Session state machine
 
@@ -71,8 +71,9 @@ published.
 
 Every cursor starts with ordered column metadata. The baseline result path is
 row-major and carries the complete scalar wire domain: NULL, signed and
-unsigned integers, floating point, DECIMAL, UTF-8 text, bytes, DATE, DATETIME,
-nanosecond TIMESTAMP, JSON, packed `f32` VECTOR and UUID.
+unsigned integers, floating point, DECIMAL, UTF-8 text, bytes, DATE, legacy
+millisecond DATETIME, nanosecond TIMESTAMPTZ, civil nanosecond TIMESTAMP,
+nanosecond TIME, JSON, packed `f32` VECTOR and UUID.
 
 `ColumnBatchV1` is an optional negotiated capability for eligible
 artifact-backed scans. It carries typed integer, float, boolean, timestamp,
@@ -95,7 +96,7 @@ client validates every value before exposing it.
 
 The type object ID is derived from package UUID and stable local ID. It is not
 the SQL type name and does not change when the schema object is renamed. The
-payload limit is 16 MiB and can be lower in the type descriptor. Protocol 17
+payload limit is 16 MiB and can be lower in the type descriptor. Protocol 18
 never falls back from an external value to `BYTES`; a client without the
 capability receives `UnsupportedType`.
 

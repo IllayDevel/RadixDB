@@ -1755,6 +1755,13 @@ fn committed_transaction_survives_restart_and_rollback_stays_gone() {
 
 #[test]
 fn stock_server_scheduler_executes_persists_and_resumes_jobs_over_tcp() {
+    struct ShutdownOnDrop<'a>(&'a AtomicBool);
+    impl Drop for ShutdownOnDrop<'_> {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Release);
+        }
+    }
+
     let temp = tempfile::tempdir().expect("temp dir");
     let data_dir = temp.path().join("data");
     let config = test_config(data_dir);
@@ -1765,6 +1772,7 @@ fn stock_server_scheduler_executes_persists_and_resumes_jobs_over_tcp() {
         let shutdown = AtomicBool::new(false);
         thread::scope(|scope| {
             let worker = scope.spawn(|| server.run_until(&shutdown));
+            let _shutdown_guard = ShutdownOnDrop(&shutdown);
             let mut client = connect_and_select_eventually(address, "jobs");
             assert_command(
                 client
@@ -1855,6 +1863,7 @@ fn stock_server_scheduler_executes_persists_and_resumes_jobs_over_tcp() {
     let shutdown = AtomicBool::new(false);
     thread::scope(|scope| {
         let worker = scope.spawn(|| server.run_until(&shutdown));
+        let _shutdown_guard = ShutdownOnDrop(&shutdown);
         let mut client = connect_and_select_eventually(address, "jobs");
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {

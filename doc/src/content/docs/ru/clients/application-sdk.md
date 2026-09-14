@@ -24,14 +24,14 @@ browser or API consumer
 
 ## Зависимости
 
-Для RadixDB 1.2.4 добавьте SDK, асинхронный клиент и ORM в
+Для RadixDB 1.2.19 добавьте SDK, асинхронный клиент и ORM в
 доверенный сервис:
 
 ```toml
 [dependencies]
-radixdb-app-sdk = "1.2.4"
-radixdb-client = { version = "1.2.4", features = ["tokio"] }
-radixdb-orm = "1.2.4"
+radixdb-app-sdk = "1.2.19"
+radixdb-client = { version = "1.2.19", features = ["tokio"] }
+radixdb-orm = "1.2.19"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 ```

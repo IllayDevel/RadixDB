@@ -122,7 +122,7 @@ ORM query видит raw uncommitted write, потому что оба заим�
 
 ## Границы автоматизации
 
-ORM 1.2.4 намеренно не предоставляет identity map, lazy loading, automatic
+ORM 1.2.19 намеренно не предоставляет identity map, lazy loading, automatic
 relationship fetch, cascade save/delete, reverse collections, automatic schema
 diff или migration. References являются одно-столбцовыми keys. Приложение
 управляет границами транзакций, batching, retries и сверкой после неопределённого

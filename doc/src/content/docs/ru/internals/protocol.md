@@ -1,12 +1,12 @@
 ---
 title: Wire protocol
-description: Framing protocol 17, состояния session, cursors, external values и compatibility.
+description: Framing protocol 18, состояния session, cursors, external values и compatibility.
 ---
 
-Server RadixDB 1.2.4 и TCP clients разделяют один binary contract, которым владеет
-private crate `radixdb-protocol`. Это собственный protocol 17 RadixDB, а не
-PostgreSQL wire protocol. Приложения используют `radixdb-client`; прямое
-использование codec является internal integration boundary.
+Server RadixDB 1.2.19 и TCP clients разделяют один binary contract, которым
+владеет low-level crate `radixdb-protocol`. Это собственный protocol 18 RadixDB,
+а не PostgreSQL wire protocol. Обычно приложения используют `radixdb-client`;
+прямое использование codec является advanced integration boundary.
 
 ## Frame и negotiation
 
@@ -24,7 +24,7 @@ in-flight frames.
 
 Protocol enums используют standard configuration bincode и не являются
 self-describing. Поэтому первое client message должно указывать ровно protocol
-17. Другая версия отклоняется, а не декодируется как близкий layout.
+18. Другая версия отклоняется, а не декодируется как близкий layout.
 
 ## State machine session
 
@@ -72,8 +72,9 @@ command выполнить publication.
 
 Каждый cursor начинается с ordered column metadata. Базовый result path имеет
 row-major форму и переносит полный scalar wire domain: NULL, signed и unsigned
-integers, floating point, DECIMAL, UTF-8 text, bytes, DATE, DATETIME,
-nanosecond TIMESTAMP, JSON, packed `f32` VECTOR и UUID.
+integers, floating point, DECIMAL, UTF-8 text, bytes, DATE, legacy
+millisecond DATETIME, nanosecond TIMESTAMPTZ, календарный nanosecond TIMESTAMP,
+nanosecond TIME, JSON, packed `f32` VECTOR и UUID.
 
 `ColumnBatchV1` является optional negotiated capability для подходящих
 artifact-backed scans. Он переносит typed integer, float, boolean, timestamp,
@@ -96,7 +97,7 @@ offsets и NULL markers. Column metadata повторяет identity, чтобы
 
 Type object ID выводится из package UUID и stable local ID. Он не является SQL
 type name и не меняется при переименовании schema object. Предел payload равен
-16 MiB и может быть снижен type descriptor. Protocol 17 никогда не заменяет
+16 MiB и может быть снижен type descriptor. Protocol 18 никогда не заменяет
 external value на `BYTES`; client без capability получает `UnsupportedType`.
 
 Low-level Rust client повторно экспортирует `WireValue::External`. High-level

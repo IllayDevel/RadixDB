@@ -34,7 +34,7 @@ the final startup check.
 
 ## Release template
 
-The 1.2.4 release bundle supplies this complete template. All sizes are integer
+The 1.2.19 release bundle supplies this complete template. All sizes are integer
 bytes; suffixes such as `MiB` and `GiB` are not accepted values.
 
 ```toml

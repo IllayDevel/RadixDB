@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const cli = process.env.RADIXDB_DOCS_CLI;
 const worktree = process.env.RADIXDB_DOCS_WORKTREE;
 const revision = process.env.RADIXDB_DOCS_REVISION
-  ?? '40b1b3d13e050afa2666a0414b7215d5ac1452c0';
+  ?? '4a9f254f801ba73dc950f080343d7d96990ed59f';
 assert(cli && path.isAbsolute(cli), 'Set RADIXDB_DOCS_CLI to the pinned binary');
 assert(worktree && path.isAbsolute(worktree), 'Set RADIXDB_DOCS_WORKTREE to the pinned worktree');
 
@@ -66,8 +66,8 @@ for (let index = 0; index < en.length; index += 1) {
   const left = en[index];
   const right = ru[index];
   assert.equal(right.status, statusTranslation.get(left.status), left.id);
-  assert.equal(left.version, '1.2.4', left.id);
-  assert.equal(right.version, '1.2.4', left.id);
+  assert.equal(left.version, '1.2.19', left.id);
+  assert.equal(right.version, '1.2.19', left.id);
   assert.equal(left.test, right.test, left.id);
 
   const leftHref = left.chapter.match(/\]\(([^)]+)\)/)?.[1];

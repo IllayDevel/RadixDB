@@ -1,9 +1,9 @@
 ---
 title: SQL Command Reference
-description: Syntax and execution contracts for SQL commands verified in RadixDB 1.2.4.
+description: Syntax and execution contracts for SQL commands verified in RadixDB 1.2.19.
 ---
 
-This reference describes the SQL command surface verified for RadixDB 1.2.4 at
+This reference describes the SQL command surface verified for RadixDB 1.2.19 at
 revision `23bf35df011aae6816d77578be96074b02bc363c`. Each command page gives the
 accepted syntax, result, transaction behavior, errors, privileges and an
 executable example. The [coverage matrix](../../appendices/compatibility/)

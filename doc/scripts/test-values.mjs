@@ -5,7 +5,7 @@ import path from 'node:path';
 
 const cli = process.env.RADIXDB_DOCS_CLI;
 const revision = process.env.RADIXDB_DOCS_REVISION
-  ?? '40b1b3d13e050afa2666a0414b7215d5ac1452c0';
+  ?? '4a9f254f801ba73dc950f080343d7d96990ed59f';
 assert(cli && path.isAbsolute(cli), 'Set RADIXDB_DOCS_CLI to the pinned binary');
 const identity = spawnSync(cli, ['--version'], { encoding: 'utf8', timeout: 15000 });
 assert.equal(identity.status, 0, identity.stderr);
@@ -25,7 +25,17 @@ function blocks(locale, chapter) {
 const expected = {
   types: [
     { commands: [0, 1], values: ['100000', 'ready', true], types: ['INTEGER', 'TEXT', 'BOOLEAN'] },
+    { commands: [0, 1], values: ['AB', 'ready', 'x'], types: ['TEXT', 'TEXT', 'TEXT'] },
     { commands: [0, 1], values: ['12.34'], types: ['TEXT'] },
+    {
+      commands: [],
+      values: [
+        '2026-09-11T03:20:30.123456789+00:00', 'TIMESTAMPTZ',
+        '2026-09-11 10:20:30.123456789', 'TIMESTAMP',
+        '23:59:59.999999999', 'TIME', 'TIMESTAMPTZ',
+      ],
+      types: ['TEXT', 'TEXT', 'TEXT', 'TEXT', 'TEXT', 'TEXT', 'TEXT'],
+    },
     { commands: [], values: [20704, '01940000-0020-7000-8000-000000000001', '00ff7f'], types: ['DATE', 'UUID', 'BYTES'] },
   ],
   expressions: [
@@ -61,8 +71,11 @@ for (const chapter of Object.keys(expected)) {
   }
 }
 const invalid = [
-  ['CREATE TABLE bad (v VARCHAR(2))', 'type modifiers are not supported'],
-  ['CREATE TABLE bad (v CHAR(10))', 'type modifiers are not supported'],
+  ['CREATE TABLE bad (v TEXT(0))', 'greater than zero'],
+  ['CREATE TABLE bad (v VARCHAR(foo))', 'character limit'],
+  ["CREATE TABLE bad (id INTEGER PRIMARY KEY, v TEXT(2)); INSERT INTO bad VALUES (1, 'abc')", 'exceeding declared limit'],
+  ["CREATE TABLE bad (id INTEGER PRIMARY KEY, v TIMESTAMP); INSERT INTO bad VALUES (1, TIMESTAMP '2026-09-11T10:20:30+07:00')", 'civiltimestamp'],
+  ['CREATE TABLE bad (v DOUBLE PRECISION(1))', 'type modifiers are not supported'],
   ['CREATE TABLE bad (v DECIMAL(39,2))', 'precision'],
   ['CREATE TABLE bad (v DECIMAL(4,5))', 'scale'],
   ['CREATE TABLE bad (v VECTOR(0))', 'dimension'],

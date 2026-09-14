@@ -76,11 +76,24 @@ function releases(source) {
     .map(match => `${match[1]}:${match[2]}`);
 }
 assert.deepEqual(releases(read('CHANGELOG.md')), releases(read('CHANGELOG.ru.md')));
-assert.deepEqual(releases(read('CHANGELOG.md')), ['1.1.0:2026-09-08', '1.0.0:2026-09-07']);
+assert.deepEqual(releases(read('CHANGELOG.md')), [
+  '1.2.19:2026-09-14', '1.1.0:2026-09-08', '1.0.0:2026-09-07',
+]);
+
+for (const relative of ['CHANGELOG.md', 'CHANGELOG.ru.md']) {
+  const source = read(relative);
+  for (const dataType of ['`TEXT(n)`', '`DOUBLE PRECISION`', '`TIMESTAMP`', '`TIME`', '`TIMESTAMPTZ`', '`DECIMAL`']) {
+    assert(source.includes(dataType), `${relative} does not list ${dataType} separately`);
+  }
+}
+
+for (const relative of ['README.md', 'README.ru.md']) {
+  assert(read(relative).includes('1.2.19'), `${relative} does not name current release`);
+}
 
 for (const relative of ['README.md', 'README.ru.md', 'CONTRIBUTING.md',
   'CONTRIBUTING.ru.md', 'SECURITY.md', 'SECURITY.ru.md']) {
-  assert(read(relative).includes('1.1.0'), `${relative} does not name current release`);
+  assert(read(relative).includes('1.1.0'), `${relative} does not preserve release history`);
 }
 
 for (const relative of ['README.md', 'README.ru.md', 'SECURITY.md', 'SECURITY.ru.md']) {

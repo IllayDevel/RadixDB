@@ -15,7 +15,7 @@ const docRoot = fileURLToPath(new URL('../', import.meta.url));
 const repositoryRoot = path.resolve(docRoot, '..');
 const worktree = process.env.RADIXDB_DOCS_WORKTREE;
 const revision = process.env.RADIXDB_DOCS_REVISION
-  ?? '40b1b3d13e050afa2666a0414b7215d5ac1452c0';
+  ?? '4a9f254f801ba73dc950f080343d7d96990ed59f';
 assert(worktree && path.isAbsolute(worktree),
   'Set RADIXDB_DOCS_WORKTREE to the absolute frozen worktree path');
 
@@ -87,7 +87,7 @@ for (const marker of [
 
 const protocol = source('crates/radixdb-protocol/src/lib.rs');
 for (const marker of [
-  'pub const PROTOCOL_VERSION: u16 = 17;',
+  'pub const PROTOCOL_VERSION: u16 = 18;',
   'ExternalValueV1',
   'WireValue::External',
 ]) assert(protocol.includes(marker), `protocol owner misses ${marker}`);

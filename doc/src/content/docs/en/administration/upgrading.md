@@ -8,16 +8,16 @@ behavior, configuration schema, physical storage format and logical dump format
 have separate compatibility boundaries. Check each boundary against the target
 release before changing a production service.
 
-This procedure is verified against documentation baseline
-`40b1b3d13e050afa2666a0414b7215d5ac1452c0`. The baseline uses wire protocol
-17 and a strict V6 physical reader. It has no in-place physical migration and
-does not open retired storage generations through compatibility defaults.
+This procedure is verified against the frozen RadixDB 1.2.19 release source.
+The release uses wire protocol 18 and a strict V6 physical reader. It has no
+in-place physical migration and does not open retired storage generations
+through compatibility defaults.
 
 ## Compatibility boundaries
 
 | Boundary | Upgrade rule |
 | --- | --- |
-| Server and client | Build identity and wire protocol must be compatible; protocol 17 rejects incompatible handshakes |
+| Server and client | Build identity and wire protocol must be compatible; protocol 18 rejects incompatible handshakes |
 | SQL and application | Run application queries and invariants against the candidate; syntax acceptance alone is not compatibility proof |
 | Configuration | Validate the complete candidate `server.toml`; unknown and invalid values fail startup, and changes require restart |
 | Native extensions | Preserve every exact package, fingerprint and codec required by each database; packages are outside physical backup |
@@ -38,7 +38,7 @@ it does not update an existing catalog binding. A database pinned to the old
 version then opens in restricted diagnostic mode if the old exact package is no
 longer active.
 
-RadixDB 1.2.4 has no `ALTER EXTENSION UPDATE`, hot reload or automatic codec
+RadixDB 1.2.19 has no `ALTER EXTENSION UPDATE`, hot reload or automatic codec
 migration. Keep the old package available for rollback and perform an explicit
 logical or application migration into separately verified objects when an
 extension changes identity or codec. The compatibility report emitted by
@@ -53,7 +53,7 @@ must not exist.
 
 ```sh
 OLD_BUNDLE=/srv/radixdb-releases/old
-NEW_BUNDLE=/srv/radixdb-releases/1.2.4
+NEW_BUNDLE=/srv/radixdb-releases/1.2.19
 OLD_ROOT=/opt/radixdb/data/databases/app
 NEW_ROOT=/opt/radixdb/data/databases/app-v11
 DUMP=/srv/radixdb-migrations/app-v11.sql
@@ -73,7 +73,7 @@ Before the maintenance window:
 3. Validate the candidate configuration and client protocol in an isolated
    service.
 4. Estimate space for the dump, the new physical root and rollback retention.
-5. Define an application write stop. RadixDB 1.2.4 does not provide replication,
+5. Define an application write stop. RadixDB 1.2.19 does not provide replication,
    online logical catch-up or automatic failover for this transition.
 
 ## Export through the old engine

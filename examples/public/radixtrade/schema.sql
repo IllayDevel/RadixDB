@@ -33,7 +33,7 @@ CREATE TABLE rt_branches (
     name TEXT NOT NULL,
     city TEXT NOT NULL,
     active BOOLEAN NOT NULL DEFAULT true,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     revision INTEGER NOT NULL DEFAULT 1
 );
 
@@ -78,7 +78,7 @@ CREATE TABLE rt_customers (
     phone TEXT,
     city TEXT NOT NULL,
     active BOOLEAN NOT NULL DEFAULT true,
-    __deleted_at TIMESTAMP,
+    __deleted_at TIMESTAMPTZ,
     revision INTEGER NOT NULL DEFAULT 1
 );
 
@@ -265,7 +265,7 @@ CREATE TABLE rt_app_events (
     entity_id INTEGER,
     payload TEXT,
     processed BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX rt_app_events_processed_idx
@@ -273,4 +273,3 @@ CREATE INDEX rt_app_events_processed_idx
 
 CREATE INDEX rt_app_events_entity_idx
     ON rt_app_events (entity_name, entity_id);
-

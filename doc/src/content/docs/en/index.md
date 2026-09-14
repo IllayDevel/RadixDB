@@ -1,9 +1,9 @@
 ---
 title: RadixDB Manual
-description: User manual for RadixDB 1.2.4.
+description: User manual for RadixDB 1.2.19.
 ---
 
-This development manual targets **RadixDB 1.2.4**. The application version, Git
+This manual documents **RadixDB 1.2.19**. The application version, Git
 revision and working-tree state used for each build are shown in the page
 footer. Known limitations are stated where they affect a command, interface or
 procedure.
@@ -20,7 +20,7 @@ The manual follows this sequence:
 2. [Tutorial](./tutorial/getting-started/): first database, queries, relationships and transactions.
 3. [SQL language](./sql/syntax/): types, expressions, queries, indexes and navigable references.
 4. [Administration](./administration/installation/): installation, configuration, storage and recovery.
-5. [Client interfaces](./clients/overview/): embedded Rust, TCP client and ORM.
+5. [Client interfaces](./clients/overview/): embedded Rust, TCP client, ORM and Application SDK.
 6. [Server programming](./programming/pl-sql/): procedural SQL, routines, triggers, jobs and trusted native extensions.
 7. [Reference](./reference/sql/): SQL commands, programs and configuration parameters.
 8. [Internals](./internals/overview/): query execution, storage and protocol.
@@ -35,12 +35,12 @@ The manual follows this sequence:
 
 ## Version and Verification
 
-The documentation target is 1.2.4 development. The application version, Git
-revision and working-tree state are displayed separately so that a documentation
-build does not silently claim a released engine. Procedural SQL, ACL and native
-extension chapters describe the current 1.2.4 boundary, including explicitly
-stated restrictions. Native packages execute in-process and require operator
-trust; begin with [extension operation](./administration/extensions/).
+The documentation target is the RadixDB 1.2.19 release. The application version,
+Git revision and working-tree state are displayed separately so that every build
+can be traced to its exact source. Procedural SQL, ACL and native extension
+chapters describe the accepted 1.2.19 boundary, including explicitly stated
+restrictions. Native packages execute in-process and require operator trust;
+begin with [extension operation](./administration/extensions/).
 
 ## Project
 

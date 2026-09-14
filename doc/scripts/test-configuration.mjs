@@ -107,7 +107,7 @@ cleanWorktree();
 const identity = run(serverBin, ['--version'], { timeout: 15000 });
 assert.equal(identity.status, 0, identity.stderr);
 assert(identity.stdout.includes(`git=${revision} `), identity.stdout);
-assert(identity.stdout.includes('protocol=17 '), identity.stdout);
+assert(identity.stdout.includes('protocol=18 '), identity.stdout);
 assert(identity.stdout.includes('profile=release '), identity.stdout);
 
 assert.deepEqual(codeBlocks('en'), codeBlocks('ru'));

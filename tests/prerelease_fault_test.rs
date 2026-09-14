@@ -197,7 +197,7 @@ fn b6_wall_clock_rollback_jump_and_equal_ticks_preserve_commit_order() {
 
     let db = Database::open("memory://prerelease-b6-clock").unwrap();
     db.execute(
-        "CREATE TABLE clock_rows (id INTEGER PRIMARY KEY, observed TIMESTAMP DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE clock_rows (id INTEGER PRIMARY KEY, observed TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)",
         (),
     )
     .unwrap();

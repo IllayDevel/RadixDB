@@ -33,7 +33,7 @@ filesystem permissions и не резервирует port. Окончатель
 
 ## Release template
 
-В release bundle 1.2.4 входит следующий полный template. Все размеры задаются
+В release bundle 1.2.19 входит следующий полный template. Все размеры задаются
 целым числом байтов; суффиксы `MiB` и `GiB` не принимаются.
 
 ```toml

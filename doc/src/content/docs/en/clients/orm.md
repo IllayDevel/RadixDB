@@ -121,7 +121,7 @@ inside that transaction: record objects do not rewind their local fields.
 
 ## Automation boundaries
 
-The 1.2.4 ORM deliberately does not provide an identity map, lazy loading,
+The 1.2.19 ORM deliberately does not provide an identity map, lazy loading,
 automatic relationship fetch, cascade save/delete, reverse collections,
 automatic schema diff or migration. References are one-column keys. The
 application owns transaction boundaries, batching, retries and reconciliation

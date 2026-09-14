@@ -3,7 +3,7 @@ title: Configuration Reference
 description: Index of server TOML, embedded file DSN and command-line configuration surfaces.
 ---
 
-RadixDB 1.2.4 has three separate configuration surfaces. They are not aliases for
+RadixDB 1.2.19 has three separate configuration surfaces. They are not aliases for
 one another.
 
 | Surface | Owner | Application |

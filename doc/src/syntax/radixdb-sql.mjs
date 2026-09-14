@@ -12,7 +12,7 @@ export const radixDbDataTypes = [
   'VECTOR', 'ARRAY', 'ROWTYPE',
 ];
 
-// Keep this list aligned with the public SQL lexer in RadixDB 1.2.4.
+// Keep this list aligned with the public SQL lexer in RadixDB 1.2.19.
 export const radixDbKeywords = [
   'SELECT', 'FROM', 'WHERE', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET',
   'DELETE', 'CREATE', 'REPLACE', 'TABLE', 'DROP', 'ALTER', 'ADD', 'COLUMN',

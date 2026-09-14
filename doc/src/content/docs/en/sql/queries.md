@@ -237,7 +237,7 @@ especially its ordering and frame.
 
 ## Current Boundaries
 
-The following limits are part of the checked 1.2.4 query surface.
+The following limits are part of the checked 1.2.19 query surface.
 
 The indexed partition fast path represents NULL as a complete partition. Its
 result is identical on hot memory, cold artifacts and crash/reopen paths,

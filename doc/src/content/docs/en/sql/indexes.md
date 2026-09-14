@@ -24,7 +24,7 @@ CREATE TABLE contacts (
     tenant_id INTEGER NOT NULL,
     email TEXT,
     active BOOLEAN NOT NULL DEFAULT true,
-    deleted_at TIMESTAMP,
+    deleted_at TIMESTAMPTZ,
     embedding VECTOR(3)
 );
 INSERT INTO contacts (id, tenant_id, email) VALUES
@@ -69,7 +69,7 @@ ranges. RadixDB still owns MVCC visibility, index pages, scan execution,
 publication and recovery. When the planner-support descriptor requires recheck,
 the original predicate is always evaluated after the candidate scan.
 
-The 1.2.4 SDK supports external B-tree, hash and bitmap classes. External HNSW
+The 1.2.19 SDK supports external B-tree, hash and bitmap classes. External HNSW
 authoring is reserved but rejected. An unavailable exact plugin package puts a
 database using its objects into restricted diagnostic mode rather than reading
 index keys under a different codec. See

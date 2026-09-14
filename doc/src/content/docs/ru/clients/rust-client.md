@@ -1,11 +1,11 @@
 ---
 title: Rust TCP-клиент
-description: Подключение к протоколу RadixDB 17, prepared statements и безопасная работа с typed values.
+description: Подключение к протоколу RadixDB 18, prepared statements и безопасная работа с typed values.
 ---
 
 `radixdb-client` является синхронным Rust-клиентом бинарного протокола RadixDB.
 Он не содержит движок базы и не является PostgreSQL-клиентом. Базовая версия
-документации 1.2.4 согласует protocol 17.
+документации 1.2.19 согласует protocol 18.
 
 ## Подключение и выбор базы
 
@@ -68,7 +68,7 @@ Prepared handle принадлежит создавшему его соедин�
 
 ## Values native extension
 
-Protocol 17 представляет external value через stable type object ID, ненулевой
+Protocol 18 представляет external value через stable type object ID, ненулевой
 codec version и bounded canonical bytes. `radixdb-client` повторно экспортирует
 эту форму как `WireValue::External`:
 
@@ -116,7 +116,7 @@ loop {
 Новая команда при активном курсоре возвращает
 `ClientError::CommandsOutOfSync`. `close_cursor(cursor)` и `cancel(cursor)`
 потребляют handle курсора. `fetch_batch()` может запросить columnar transport;
-protocol 17 вправе вернуть документированный row fallback, если запрос для него
+protocol 18 вправе вернуть документированный row fallback, если запрос для него
 не подходит. Не смешивайте режимы fetch у одного курсора.
 
 ## Транзакции

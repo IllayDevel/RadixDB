@@ -15,8 +15,8 @@ description = "Safe authoring SDK and local test host for RadixDB native plugins
 license = "Apache-2.0"
 
 [dependencies]
-radixdb-plugin-abi = { version = "=1.2.4", path = "../radixdb-plugin-abi" }
-radixdb-plugin-macros = { version = "=1.2.4", path = "../radixdb-plugin-macros" }
+radixdb-plugin-abi = { version = "=1.2.19", path = "../radixdb-plugin-abi" }
+radixdb-plugin-macros = { version = "=1.2.19", path = "../radixdb-plugin-macros" }
 sha2 = "0.10"
 
 [dev-dependencies]

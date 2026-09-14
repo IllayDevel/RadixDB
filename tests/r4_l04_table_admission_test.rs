@@ -13,12 +13,27 @@ fn r4_batch_c_table_admission_contract() -> Result<()> {
         .execute("INSERT INTO keyed VALUES (1, 'duplicate')", ())
         .is_err());
 
+    db.execute(
+        "CREATE TABLE composite_key (a INTEGER, b INTEGER, PRIMARY KEY(a,b))",
+        (),
+    )?;
+    db.execute(
+        "INSERT INTO composite_key VALUES (1, 1), (1, 2), (2, 1)",
+        (),
+    )?;
     assert!(db
-        .execute(
-            "CREATE TABLE composite_bad (a INTEGER, b INTEGER, PRIMARY KEY(a,b))",
-            (),
-        )
+        .execute("INSERT INTO composite_key VALUES (1, 1)", ())
         .is_err());
+    assert!(db
+        .execute("INSERT INTO composite_key VALUES (NULL, 3)", ())
+        .is_err());
+    assert!(db
+        .execute("INSERT INTO composite_key VALUES (3, NULL)", ())
+        .is_err());
+    assert_eq!(
+        db.query_one::<i64, _>("SELECT COUNT(*) FROM composite_key", ())?,
+        3
+    );
     db.execute(
         "CREATE TABLE modifier_bounded (id INTEGER PRIMARY KEY, v VARCHAR(7))",
         (),

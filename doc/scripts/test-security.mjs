@@ -87,7 +87,7 @@ assert.equal(head.stdout.trim(), revision);
 const identity = run(serverBin, ['--version'], { timeout: 15000 });
 assert.equal(identity.status, 0, identity.stderr);
 assert(identity.stdout.includes(`git=${revision} `), identity.stdout);
-assert(identity.stdout.includes('protocol=17 '), identity.stdout);
+assert(identity.stdout.includes('protocol=18 '), identity.stdout);
 assert(identity.stdout.includes('profile=release '), identity.stdout);
 
 const sessionSource = readFileSync(path.join(worktree, 'src/server/session.rs'), 'utf8');

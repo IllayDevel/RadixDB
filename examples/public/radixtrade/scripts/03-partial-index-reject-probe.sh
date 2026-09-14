@@ -11,7 +11,7 @@ echo "== Partial unique expected-error probe =="
 set +e
 run_radixdb_cli -f <(printf '%s\n' \
   "DROP TABLE IF EXISTS rt_expected_error_users;" \
-  "CREATE TABLE rt_expected_error_users (id UUID PRIMARY KEY AUTO_INCREMENT, email TEXT NOT NULL, __deleted_at TIMESTAMP);" \
+  "CREATE TABLE rt_expected_error_users (id UUID PRIMARY KEY AUTO_INCREMENT, email TEXT NOT NULL, __deleted_at TIMESTAMPTZ);" \
   "CREATE UNIQUE INDEX rt_expected_error_users_email_active_uidx ON rt_expected_error_users (email) WHERE __deleted_at IS NULL;" \
   "INSERT INTO rt_expected_error_users (email) VALUES ('duplicate@example.test');" \
   "INSERT INTO rt_expected_error_users (email) VALUES ('duplicate@example.test');") >"${probe_output}" 2>&1

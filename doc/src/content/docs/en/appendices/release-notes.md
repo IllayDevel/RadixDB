@@ -6,12 +6,12 @@ description: User-visible changes, identity and compatibility boundaries of Radi
 This page summarizes user-visible releases. Git tags and `CHANGELOG.md` are the
 release authority; feature chapters describe the detailed contract.
 
-## 1.2.4 - Development
+## 1.2.19 - 2026-09-14
 
-The 1.2.4 manual follows the current 1.2.4 source snapshot and wire protocol 17.
-The coordinated workspace crates and binaries report Cargo package version
-1.2.4. Until the formal release is tagged, use the full build identity to bind
-a binary to its exact source revision and lockfile.
+The 1.2.19 manual follows the released 1.2.19 source snapshot and wire protocol
+18. The coordinated workspace crates and binaries report Cargo package version
+1.2.19. Use the full build identity to bind a binary to its exact source revision
+and lockfile.
 
 ### Server security and access control
 
@@ -56,14 +56,41 @@ authentication, authorization, routes and business rules remain outside the
 database repository. See the [Application SDK](../../clients/application-sdk/)
 chapter for an end-to-end example.
 
+### SQL types and constraints
+
+- `TEXT(n)` limits text length; `VARCHAR(n)` and `CHAR(n)` are accepted as
+  canonical bounded-text spellings.
+- `DOUBLE PRECISION` preserves its SQL and catalog identity while using the
+  f64 representation.
+- `TIMESTAMP` represents civil date and time without an implicit session-zone
+  conversion.
+- `TIME` represents civil time of day independently from an instant.
+- `TIMESTAMPTZ` represents an instant. Connection-local IANA zones or fixed
+  offsets control explicit civil/instant conversions; ambiguous and nonexistent
+  daylight-saving local times are rejected.
+- Derived `DECIMAL` addition, subtraction and multiplication preserve exact
+  arithmetic across different scales, with precision and overflow checks.
+
+`SET TIME ZONE` and `SHOW TIME ZONE` manage connection-local time-zone state.
+Scalar and ordered composite primary keys support non-integer keys and enforce
+uniqueness of the complete key, with `NULL` rejected in every component.
+Post-load constraints accept qualified relation names and reject conflicting
+definitions. Cold uniqueness checks are batched for bulk inserts and commit
+revalidation, including composite keys. Variable-sized row groups are split
+against their byte budget before publication.
+
+Database-level `DESCRIBE` grants control application schema discovery. Generated
+application contracts retain deterministic fingerprints and typed procedure
+arguments/results; table-returning procedures preserve result cardinality.
+
 ### Trusted native extensions
 
-Version 1.2.4 adds a stable C ABI 1.0, a safe Rust authoring SDK and deterministic
+Version 1.2.19 adds a stable C ABI 1.0, a safe Rust authoring SDK and deterministic
 package tooling for operator-trusted in-process extensions. A package admitted
 at startup can expose bounded external scalar types, native scalar and batch
 functions, binary operators, B-tree/hash/bitmap operator classes and bounded
 planner support. SQL binds those exports transactionally to catalog 6.2, while
-protocol 17 preserves external type identity and codec revision on the wire.
+protocol 18 preserves external type identity and codec revision on the wire.
 
 The host retains storage, WAL, MVCC, catalog mutation, index pages, ACL and
 recovery ownership. Packages come only from exact absolute allowlist entries;
@@ -75,6 +102,10 @@ recheck through the public SDK.
 The bundled CLI backup and logical-export workflows do not yet load a plugin
 allowlist and are therefore not a supported recovery path for an
 extension-bound database.
+
+Native package targets include `x86_64-unknown-linux-gnu` and
+`aarch64-unknown-linux-gnu`. The package target and ELF architecture must match
+the server; a package built for the other architecture is rejected.
 
 Start with [installing extensions](../../administration/extensions/), then use
 the [developer guide](../../programming/native-extensions/) and
@@ -94,7 +125,7 @@ cache and compression settings are rejected instead of being silently ignored.
 Nullable indexed window partitions retain the `NULL` group after cold storage
 and reopen.
 
-Protocol 17 is not wire-compatible with protocol 14. Upgrade server and client
+Protocol 18 is not wire-compatible with protocol 14. Upgrade server and client
 as one tested set and use logical export/import when crossing an unsupported
 physical-format boundary.
 
@@ -102,8 +133,8 @@ physical-format boundary.
 
 RadixDB 1.1.0 is identified by annotated tag `v1.1.0` and uses wire protocol
 14. It established the first released procedural and ACL foundation described
-below. The limitations in this section apply to 1.1, not to the 1.2.4 development
-line above.
+below. The limitations in this section apply to 1.1, not to the 1.2.19 release
+above.
 
 ### Procedural database foundation
 

@@ -53,7 +53,7 @@ macro_rules! rejected_attribute {
                 Span::call_site(),
                 concat!(
                     $kind,
-                    " plugin functions are outside the RadixDB 1.2.4 authoring scope"
+                    " plugin functions are outside the RadixDB 1.2.19 authoring scope"
                 ),
             )
             .into_compile_error()
@@ -206,7 +206,7 @@ fn expand_radix_type(input: DeriveInput) -> syn::Result<TokenStream2> {
         ));
     }
     let type_attribute = attribute(&input.attrs, "radix_type")
-        .ok_or_else(|| syn::Error::new(input.span(), "missing #[radix_type(...)]"))?;
+        .ok_or_else(|| syn::Error::new(input.ident.span(), "missing #[radix_type(...)]"))?;
     let options = options_from_attribute(type_attribute)?;
     options.reject_unknown(
         &[
@@ -223,23 +223,23 @@ fn expand_radix_type(input: DeriveInput) -> syn::Result<TokenStream2> {
         ],
         &[],
     )?;
-    let local_id = options.required_string("id", input.span())?;
-    let display_name = options.required_string("name", input.span())?;
-    validate_local_id(&local_id, input.span())?;
-    validate_sql_name(&display_name, input.span())?;
-    let codec_version = options.required_u32("codec", input.span())?;
-    let semantic_revision = options.required_u32("semantic_revision", input.span())?;
+    let local_id = options.required_string("id", input.ident.span())?;
+    let display_name = options.required_string("name", input.ident.span())?;
+    validate_local_id(&local_id, input.ident.span())?;
+    validate_sql_name(&display_name, input.ident.span())?;
+    let codec_version = options.required_u32("codec", input.ident.span())?;
+    let semantic_revision = options.required_u32("semantic_revision", input.ident.span())?;
     if codec_version == 0 || semantic_revision == 0 {
         return Err(syn::Error::new(
-            input.span(),
+            input.ident.span(),
             "codec and semantic_revision must be non-zero",
         ));
     }
-    let storage = options.required_string("storage", input.span())?;
-    let max_bytes = options.required_u32("max_bytes", input.span())?;
+    let storage = options.required_string("storage", input.ident.span())?;
+    let max_bytes = options.required_u32("max_bytes", input.ident.span())?;
     if max_bytes == 0 || max_bytes > 16 * 1024 * 1024 {
         return Err(syn::Error::new(
-            input.span(),
+            input.ident.span(),
             "max_bytes must be in 1..=16777216",
         ));
     }
@@ -248,7 +248,7 @@ fn expand_radix_type(input: DeriveInput) -> syn::Result<TokenStream2> {
         "variable" => quote!(::radixdb_plugin::__private::abi::RADIX_EXTERNAL_STORAGE_VARIABLE),
         _ => {
             return Err(syn::Error::new(
-                input.span(),
+                input.ident.span(),
                 "storage must be \"fixed\" or \"variable\"",
             ));
         }
@@ -259,14 +259,17 @@ fn expand_radix_type(input: DeriveInput) -> syn::Result<TokenStream2> {
     let ordering = options.path("ordering")?;
     if hash.is_some() && equality.is_none() {
         return Err(syn::Error::new(
-            input.span(),
+            input.ident.span(),
             "hash callback requires an explicit equality callback",
         ));
     }
     let manual = options.path("manual")?;
 
     let Data::Struct(data) = &input.data else {
-        return Err(syn::Error::new(input.span(), "RadixType requires a struct"));
+        return Err(syn::Error::new(
+            input.ident.span(),
+            "RadixType requires a struct",
+        ));
     };
     let Fields::Named(fields) = &data.fields else {
         return Err(syn::Error::new(
@@ -308,21 +311,26 @@ fn expand_radix_type(input: DeriveInput) -> syn::Result<TokenStream2> {
             names.push(field_ident.clone());
             let field_attribute = attribute(&field.attrs, "radix_field").ok_or_else(|| {
                 syn::Error::new(
-                    field.span(),
+                    field_ident.span(),
                     "every derived field requires #[radix_field(...)]",
                 )
             })?;
             let field_options = options_from_attribute(field_attribute)?;
             field_options.reject_unknown(&["codec", "max_items", "max_bytes"], &[])?;
-            let codec = field_options.required_string("codec", field.span())?;
-            let generated =
-                generate_field_codec(field_ident, &field.ty, &codec, &field_options, field.span())?;
+            let codec = field_options.required_string("codec", field_ident.span())?;
+            let generated = generate_field_codec(
+                field_ident,
+                &field.ty,
+                &codec,
+                &field_options,
+                field_ident.span(),
+            )?;
             encode.push(generated.encode);
             decode.push(generated.decode);
             edge_extensions.push(generated.edge);
             encoded_width = match (encoded_width, generated.fixed_width) {
                 (Some(total), Some(width)) => Some(total.checked_add(width).ok_or_else(|| {
-                    syn::Error::new(field.span(), "derived fixed width exceeds u32")
+                    syn::Error::new(field_ident.span(), "derived fixed width exceeds u32")
                 })?),
                 _ => None,
             };
@@ -351,7 +359,7 @@ fn expand_radix_type(input: DeriveInput) -> syn::Result<TokenStream2> {
     };
     if storage == "fixed" && inferred_fixed_bytes.is_some_and(|encoded| encoded != max_bytes) {
         return Err(syn::Error::new(
-            input.span(),
+            input.ident.span(),
             format!(
                 "fixed type max_bytes must equal derived encoded width {}",
                 inferred_fixed_bytes.unwrap()
@@ -700,29 +708,29 @@ fn validate_primitive_codec(ty: &Type, codec: &str, span: Span) -> syn::Result<(
 
 fn expand_plugin(args: Options, mut module: ItemMod) -> syn::Result<TokenStream2> {
     args.reject_unknown(&["id", "name", "version"], &[])?;
-    let package_id = args.required_string("id", module.span())?;
-    let package_name = args.required_string("name", module.span())?;
-    let package_version = args.required_string("version", module.span())?;
+    let package_id = args.required_string("id", module.ident.span())?;
+    let package_name = args.required_string("name", module.ident.span())?;
+    let package_version = args.required_string("version", module.ident.span())?;
     let uuid = uuid::Uuid::parse_str(&package_id)
-        .map_err(|_| syn::Error::new(module.span(), "plugin id must be a canonical UUID"))?;
+        .map_err(|_| syn::Error::new(module.ident.span(), "plugin id must be a canonical UUID"))?;
     if uuid.to_string() != package_id {
         return Err(syn::Error::new(
-            module.span(),
+            module.ident.span(),
             "plugin id must use canonical lowercase UUID spelling",
         ));
     }
-    validate_package_name(&package_name, module.span())?;
+    validate_package_name(&package_name, module.ident.span())?;
     let version = semver::Version::parse(&package_version)
-        .map_err(|_| syn::Error::new(module.span(), "plugin version must be SemVer"))?;
+        .map_err(|_| syn::Error::new(module.ident.span(), "plugin version must be SemVer"))?;
     if version.to_string() != package_version || !version.build.is_empty() {
         return Err(syn::Error::new(
-            module.span(),
+            module.ident.span(),
             "plugin version must be canonical SemVer without build metadata",
         ));
     }
     let Some((_, items)) = &mut module.content else {
         return Err(syn::Error::new(
-            module.span(),
+            module.ident.span(),
             "radixdb_plugin requires an inline module",
         ));
     };
@@ -747,39 +755,40 @@ fn expand_plugin(args: Options, mut module: ItemMod) -> syn::Result<TokenStream2
             Item::Fn(function) => {
                 if let Some(attribute) = attribute(&function.attrs, "radixdb_scalar") {
                     let options = options_from_attribute(attribute)?;
-                    let local_id = options.required_string("id", function.span())?;
-                    admit_local_id(&mut local_ids, &local_id, function.span())?;
+                    let local_id = options.required_string("id", function.sig.ident.span())?;
+                    admit_local_id(&mut local_ids, &local_id, function.sig.ident.span())?;
                     scalar_specs.push((function.clone(), local_id, options));
                 }
                 if let Some(attribute) = attribute(&function.attrs, "radixdb_batch") {
                     let options = options_from_attribute(attribute)?;
-                    let scalar = options.required_string("for_scalar", function.span())?;
+                    let scalar =
+                        options.required_string("for_scalar", function.sig.ident.span())?;
                     if batch_specs
                         .insert(scalar.clone(), (function.clone(), options))
                         .is_some()
                     {
                         return Err(syn::Error::new(
-                            function.span(),
+                            function.sig.ident.span(),
                             format!("duplicate batch adapter for `{scalar}`"),
                         ));
                     }
                 }
                 if let Some(attribute) = attribute(&function.attrs, "radixdb_operator") {
                     let options = options_from_attribute(attribute)?;
-                    let local_id = options.required_string("id", function.span())?;
-                    admit_local_id(&mut local_ids, &local_id, function.span())?;
+                    let local_id = options.required_string("id", function.sig.ident.span())?;
+                    admit_local_id(&mut local_ids, &local_id, function.sig.ident.span())?;
                     operator_specs.push((function.clone(), local_id, options));
                 }
                 if let Some(attribute) = attribute(&function.attrs, "radixdb_operator_class") {
                     let options = options_from_attribute(attribute)?;
-                    let local_id = options.required_string("id", function.span())?;
-                    admit_local_id(&mut local_ids, &local_id, function.span())?;
+                    let local_id = options.required_string("id", function.sig.ident.span())?;
+                    admit_local_id(&mut local_ids, &local_id, function.sig.ident.span())?;
                     opclass_specs.push((function.clone(), local_id, options));
                 }
                 if let Some(attribute) = attribute(&function.attrs, "radixdb_planner_support") {
                     let options = options_from_attribute(attribute)?;
-                    let local_id = options.required_string("id", function.span())?;
-                    admit_local_id(&mut local_ids, &local_id, function.span())?;
+                    let local_id = options.required_string("id", function.sig.ident.span())?;
+                    admit_local_id(&mut local_ids, &local_id, function.sig.ident.span())?;
                     planner_specs.push((function.clone(), local_id, options));
                 }
             }
@@ -812,7 +821,7 @@ fn expand_plugin(args: Options, mut module: ItemMod) -> syn::Result<TokenStream2
     }
     let mut overloads = BTreeSet::new();
     for (function, _, options) in &scalar_specs {
-        let name = options.required_string("name", function.span())?;
+        let name = options.required_string("name", function.sig.ident.span())?;
         let arguments = function_arguments(function)?;
         let signature = format!(
             "{}({})",
@@ -825,20 +834,20 @@ fn expand_plugin(args: Options, mut module: ItemMod) -> syn::Result<TokenStream2
         );
         if !overloads.insert(signature.clone()) {
             return Err(syn::Error::new(
-                function.span(),
+                function.sig.ident.span(),
                 format!("duplicate scalar overload `{signature}`"),
             ));
         }
     }
     let mut operator_overloads = BTreeSet::new();
     for (function, _, options) in &operator_specs {
-        let symbol = options.required_string("symbol", function.span())?;
-        let left = parse_type_option(options, "left", function.span())?;
-        let right = parse_type_option(options, "right", function.span())?;
+        let symbol = options.required_string("symbol", function.sig.ident.span())?;
+        let left = parse_type_option(options, "left", function.sig.ident.span())?;
+        let right = parse_type_option(options, "right", function.sig.ident.span())?;
         let signature = format!("{}({},{})", symbol, quote!(#left), quote!(#right));
         if !operator_overloads.insert(signature.clone()) {
             return Err(syn::Error::new(
-                function.span(),
+                function.sig.ident.span(),
                 format!("duplicate operator overload `{signature}`"),
             ));
         }
@@ -856,9 +865,9 @@ fn expand_plugin(args: Options, mut module: ItemMod) -> syn::Result<TokenStream2
     let operator_ids: BTreeMap<(String, String, String), [u8; 16]> = operator_specs
         .iter()
         .map(|(function, local_id, options)| {
-            let symbol = options.required_string("symbol", function.span())?;
-            let left = parse_type_option(options, "left", function.span())?;
-            let right = parse_type_option(options, "right", function.span())?;
+            let symbol = options.required_string("symbol", function.sig.ident.span())?;
+            let left = parse_type_option(options, "left", function.sig.ident.span())?;
+            let right = parse_type_option(options, "right", function.sig.ident.span())?;
             Ok((
                 (
                     symbol,
@@ -907,7 +916,7 @@ fn expand_plugin(args: Options, mut module: ItemMod) -> syn::Result<TokenStream2
     }
     if let Some((name, (function, _))) = batch_specs.into_iter().next() {
         return Err(syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             format!("batch adapter references unknown scalar `{name}`"),
         ));
     }
@@ -1142,13 +1151,13 @@ fn generate_scalar_descriptor(
         ],
         &["immutable", "stable", "volatile", "strict", "parallel_safe"],
     )?;
-    let name = options.required_string("name", function.span())?;
-    validate_sql_name(&name, function.span())?;
-    let semantic_revision = options.required_u32("semantic_revision", function.span())?;
-    let cost = options.required_u32("cost", function.span())?;
+    let name = options.required_string("name", function.sig.ident.span())?;
+    validate_sql_name(&name, function.sig.ident.span())?;
+    let semantic_revision = options.required_u32("semantic_revision", function.sig.ident.span())?;
+    let cost = options.required_u32("cost", function.sig.ident.span())?;
     if semantic_revision == 0 || cost == 0 {
         return Err(syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             "semantic_revision and cost must be non-zero",
         ));
     }
@@ -1158,7 +1167,7 @@ fn generate_scalar_descriptor(
         .collect::<Vec<_>>();
     if volatility_flags.len() != 1 {
         return Err(syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             "scalar requires exactly one of immutable, stable, volatile",
         ));
     }
@@ -1167,11 +1176,11 @@ fn generate_scalar_descriptor(
         "stable" => quote!(::radixdb_plugin::__private::abi::RADIX_VOLATILITY_STABLE),
         _ => quote!(::radixdb_plugin::__private::abi::RADIX_VOLATILITY_VOLATILE),
     };
-    let cancellation = options.required_string("cancellation", function.span())?;
+    let cancellation = options.required_string("cancellation", function.sig.ident.span())?;
     if cancellation != "bounded" {
         return Err(syn::Error::new(
-            function.span(),
-            "RadixDB 1.2.4 scalar cancellation must be \"bounded\"",
+            function.sig.ident.span(),
+            "RadixDB 1.2.19 scalar cancellation must be \"bounded\"",
         ));
     }
     let arguments = function_arguments(function)?;
@@ -1274,10 +1283,10 @@ fn generate_batch_wrapper(
     result: &Type,
 ) -> syn::Result<GeneratedBatch> {
     options.reject_unknown(&["for_scalar", "rows_per_cancel_check"], &[])?;
-    let rows = options.required_u32("rows_per_cancel_check", function.span())?;
+    let rows = options.required_u32("rows_per_cancel_check", function.sig.ident.span())?;
     if rows == 0 {
         return Err(syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             "rows_per_cancel_check must be non-zero",
         ));
     }
@@ -1360,24 +1369,24 @@ fn generate_operator_descriptor(
         ],
         &[],
     )?;
-    let symbol = options.required_string("symbol", function.span())?;
-    let semantic_revision = options.required_u32("semantic_revision", function.span())?;
+    let symbol = options.required_string("symbol", function.sig.ident.span())?;
+    let semantic_revision = options.required_u32("semantic_revision", function.sig.ident.span())?;
     if semantic_revision == 0 {
         return Err(syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             "semantic_revision must be non-zero",
         ));
     }
-    let target = options.required_string("function", function.span())?;
+    let target = options.required_string("function", function.sig.ident.span())?;
     let function_id = function_ids.get(&target).ok_or_else(|| {
         syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             format!("unknown scalar function `{target}`"),
         )
     })?;
-    let left = parse_type_option(options, "left", function.span())?;
-    let right = parse_type_option(options, "right", function.span())?;
-    let result = parse_type_option(options, "result", function.span())?;
+    let left = parse_type_option(options, "left", function.sig.ident.span())?;
+    let right = parse_type_option(options, "right", function.sig.ident.span())?;
+    let result = parse_type_option(options, "result", function.sig.ident.span())?;
     let left_ref = type_ref_tokens(&left, type_map)?;
     let right_ref = type_ref_tokens(&right, type_map)?;
     let result_ref = type_ref_tokens(&result, type_map)?;
@@ -1420,15 +1429,16 @@ fn generate_opclass_descriptor(
         ],
         &[],
     )?;
-    let semantic_revision = options.required_u32("semantic_revision", function.span())?;
-    let key_codec_revision = options.required_u32("key_codec_revision", function.span())?;
+    let semantic_revision = options.required_u32("semantic_revision", function.sig.ident.span())?;
+    let key_codec_revision =
+        options.required_u32("key_codec_revision", function.sig.ident.span())?;
     if semantic_revision == 0 || key_codec_revision == 0 {
         return Err(syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             "semantic_revision and key_codec_revision must be non-zero",
         ));
     }
-    let method_name = options.required_string("access_method", function.span())?;
+    let method_name = options.required_string("access_method", function.sig.ident.span())?;
     let (method, required_strategies): (TokenStream2, &[(u16, &str)]) = match method_name.as_str() {
         "btree" => (
             quote!(::radixdb_plugin::__private::abi::RADIX_ACCESS_METHOD_BTREE),
@@ -1444,19 +1454,19 @@ fn generate_opclass_descriptor(
         ),
         "hnsw" => {
             return Err(syn::Error::new(
-                function.span(),
-                "external HNSW operator classes require planner support outside v1.2.4",
+                function.sig.ident.span(),
+                "external HNSW operator classes require planner support outside v1.2.19",
             ));
         }
         _ => {
             return Err(syn::Error::new(
-                function.span(),
+                function.sig.ident.span(),
                 "operator class access_method must be core-owned btree/hash/bitmap/hnsw",
             ));
         }
     };
-    let input = parse_type_option(options, "input", function.span())?;
-    let key = parse_type_option(options, "key", function.span())?;
+    let input = parse_type_option(options, "input", function.sig.ident.span())?;
+    let key = parse_type_option(options, "key", function.sig.ident.span())?;
     let input_ref = type_ref_tokens(&input, type_map)?;
     let key_ref = type_ref_tokens(&key, type_map)?;
     let function_ident = &function.sig.ident;
@@ -1473,7 +1483,7 @@ fn generate_opclass_descriptor(
             let key = ((*symbol).to_owned(), input_key.clone(), input_key.clone());
             let object_id = operator_ids.get(&key).ok_or_else(|| {
                 syn::Error::new(
-                    function.span(),
+                    function.sig.ident.span(),
                     format!("{method_name} operator class requires `{symbol}` over `{input_key}`"),
                 )
             })?;
@@ -1582,37 +1592,37 @@ fn generate_planner_descriptor(
         ],
         &["exact", "always_recheck"],
     )?;
-    let _name = options.required_string("name", function.span())?;
-    let semantic_revision = options.required_u32("semantic_revision", function.span())?;
-    let max_spans = options.required_u32("max_spans", function.span())?;
-    let max_output_bytes = options.required_u32("max_output_bytes", function.span())?;
+    let _name = options.required_string("name", function.sig.ident.span())?;
+    let semantic_revision = options.required_u32("semantic_revision", function.sig.ident.span())?;
+    let max_spans = options.required_u32("max_spans", function.sig.ident.span())?;
+    let max_output_bytes = options.required_u32("max_output_bytes", function.sig.ident.span())?;
     let policies = ["exact", "always_recheck"]
         .into_iter()
         .filter(|flag| options.flags.contains(*flag))
         .collect::<Vec<_>>();
     if policies.len() != 1 {
         return Err(syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             "planner support requires exactly one of exact or always_recheck",
         ));
     }
     if semantic_revision == 0 || max_spans == 0 || max_spans > 4096 || max_output_bytes == 0 {
         return Err(syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             "semantic_revision and planner bounds must be non-zero and max_spans <= 4096",
         ));
     }
-    let target = options.required_string("for_function", function.span())?;
+    let target = options.required_string("for_function", function.sig.ident.span())?;
     let target_function = function_ids.get(&target).ok_or_else(|| {
         syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             format!("unknown target function `{target}`"),
         )
     })?;
-    let opclass = options.required_string("operator_class", function.span())?;
+    let opclass = options.required_string("operator_class", function.sig.ident.span())?;
     let target_opclass = opclass_ids.get(&opclass).ok_or_else(|| {
         syn::Error::new(
-            function.span(),
+            function.sig.ident.span(),
             format!("unknown operator class `{opclass}`"),
         )
     })?;
@@ -1870,16 +1880,4 @@ fn bytes_tokens<const N: usize>(bytes: &[u8; N]) -> Vec<syn::LitInt> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::object_id;
-
-    #[test]
-    fn sql_rename_cannot_change_object_identity() {
-        let package = [0x5a; 16];
-        let before_sql_rename = object_id(package, "distance");
-        let after_sql_rename = object_id(package, "distance");
-        assert_eq!(before_sql_rename, after_sql_rename);
-        assert_ne!(before_sql_rename, object_id(package, "distance_v2"));
-        assert_ne!(before_sql_rename, object_id([0xa5; 16], "distance"));
-    }
-}
+mod tests;

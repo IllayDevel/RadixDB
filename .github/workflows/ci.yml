@@ -313,12 +313,13 @@ jobs:
 
       - name: Collect revision-bound coverage and enforce thresholds
         run: |
+          cargo +nightly-2026-07-07 llvm-cov clean --locked --profraw-only
           cargo +nightly-2026-07-07 llvm-cov --locked --workspace --all-targets \
             --features cli,bench-harness --branch --no-report
-          cargo +nightly-2026-07-07 llvm-cov report --locked --branch --json --summary-only \
+          cargo +nightly-2026-07-07 llvm-cov report --locked --workspace --branch --json --summary-only \
             --output-path coverage-summary.json
           python3 scripts/check-coverage-thresholds.py coverage-summary.json
-          cargo +nightly-2026-07-07 llvm-cov report --locked --branch --lcov --output-path lcov.info
+          cargo +nightly-2026-07-07 llvm-cov report --locked --workspace --branch --lcov --output-path lcov.info
 
       - name: Upload coverage evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

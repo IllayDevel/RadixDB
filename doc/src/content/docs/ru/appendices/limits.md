@@ -1,6 +1,6 @@
 ---
 title: Ограничения
-description: Структурные пределы, настраиваемые ограничения и измеренный масштаб RadixDB 1.2.4.
+description: Структурные пределы, настраиваемые ограничения и измеренный масштаб RadixDB 1.2.19.
 ---
 
 RadixDB не публикует одно максимальное число строк или один максимальный размер
@@ -11,7 +11,7 @@ RadixDB не публикует одно максимальное число с�
 
 В этом приложении разделены три вида доказательств:
 
-- **Жёсткий предел**: ограничение формата или семантики, проверяемое кодом 1.2.4.
+- **Жёсткий предел**: ограничение формата или семантики, проверяемое кодом 1.2.19.
 - **Настраиваемое ограничение**: управляемый оператором допуск или ресурс.
 - **Измеренный масштаб**: завершённая нагрузка в записанных условиях, а не
   жёсткий предел, обещание ёмкости или SLA задержки.
@@ -22,7 +22,7 @@ RadixDB не публикует одно максимальное число с�
 
 ## Пределы каталога и семантики
 
-| ID | Ограничение | Значение и единица | Условие применения | Источник и SHA |
+| ID | Ограничение | Значение и единица | Условие применения | Источник |
 | --- | --- | ---: | --- | --- |
 | HARD-01 | Файл каталога | 536 870 912 байт (512 MiB) | Больший catalog pack отклоняется до декодирования | `crates/radixdb-catalog/src/codec/primitives.rs` @ `23bf35df` |
 | HARD-02 | Объекты одного каталога | 262 144 объекта | Для одного декодированного поколения каталога | `crates/radixdb-catalog/src/codec/primitives.rs` @ `23bf35df` |
@@ -48,20 +48,20 @@ RadixDB не публикует одно максимальное число с�
 
 ## Пределы native extensions
 
-Эти limits принадлежат plugin ABI 1.0 и startup loader 1.2.4. Они не являются
+Эти limits принадлежат plugin ABI 1.0 и startup loader 1.2.19. Они не являются
 разрешением приблизить один package сразу ко всем максимумам.
 
-| ID | Предел | Значение и единица | Условие enforcement | Source и SHA |
+| ID | Предел | Значение и единица | Условие enforcement | Source |
 | --- | --- | ---: | --- | --- |
-| PLUG-01 | Package manifest | 65 536 байт (64 KiB) | Проверяется до TOML decode | `crates/radixdb-plugin-host/src/manifest.rs` @ `40b1b3d1` |
-| PLUG-02 | Package shared library | 268 435 456 байт (256 MiB) | Пустой или больший `.so` отклоняется | `crates/radixdb-plugin-host/src/manifest.rs` @ `40b1b3d1` |
-| PLUG-03 | Stable local ID | 255 байт | UTF-8, непустой и без NUL | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-04 | Одно external value | 16 777 216 байт (16 MiB) | Type descriptor может задать меньший `max_bytes` | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-05 | Entries одной descriptor table | 65 535 entries | Применяется независимо к каждому descriptor array | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-06 | Arguments native function | 1 024 аргумента | На одну descriptor signature | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-07 | Planner candidate spans | 4 096 spans | Support descriptor может объявить меньший maximum | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-08 | Hash components | 256 components и 65 536 байт | На один semantic hash callback | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-09 | Plugin diagnostic detail | 4 096 байт | Более длинная UTF-8 detail ограничивается до host mapping | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
+| PLUG-01 | Package manifest | 65 536 байт (64 KiB) | Проверяется до TOML decode | `crates/radixdb-plugin-host/src/manifest.rs` |
+| PLUG-02 | Package shared library | 268 435 456 байт (256 MiB) | Пустой или больший `.so` отклоняется | `crates/radixdb-plugin-host/src/manifest.rs` |
+| PLUG-03 | Stable local ID | 255 байт | UTF-8, непустой и без NUL | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-04 | Одно external value | 16 777 216 байт (16 MiB) | Type descriptor может задать меньший `max_bytes` | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-05 | Entries одной descriptor table | 65 535 entries | Применяется независимо к каждому descriptor array | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-06 | Arguments native function | 1 024 аргумента | На одну descriptor signature | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-07 | Planner candidate spans | 4 096 spans | Support descriptor может объявить меньший maximum | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-08 | Hash components | 256 components и 65 536 байт | На один semantic hash callback | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-09 | Plugin diagnostic detail | 4 096 байт | Более длинная UTF-8 detail ограничивается до host mapping | `crates/radixdb-plugin-abi/src/constants.rs` |
 
 Начальный package ABI принимает только x86-64 little-endian ELF для
 `x86_64-unknown-linux-gnu` с glibc не новее 2.36. Это platform boundary, а не
@@ -70,7 +70,7 @@ RadixDB не публикует одно максимальное число с�
 
 ## Пределы формата хранения
 
-| ID | Ограничение | Значение и единица | Условие применения | Источник и SHA |
+| ID | Ограничение | Значение и единица | Условие применения | Источник |
 | --- | --- | ---: | --- | --- |
 | HARD-18 | Запись CONTROL | 4 096 байт | Фиксированный размер записи, не настройка памяти | `crates/radixdb-storage/src/v6/control.rs` @ `23bf35df` |
 | HARD-19 | Таблицы в манифесте базы | 262 144 таблицы | На одно поколение базы | `crates/radixdb-storage/src/v6/manifest/model.rs` @ `23bf35df` |
@@ -109,7 +109,7 @@ RadixDB не публикует одно максимальное число с�
 Это ориентированная на ёмкость выборка из `release/server.toml`, а не второй
 справочник конфигурации. Сервер читает эти параметры при запуске.
 
-| ID | Параметр | Значение release | Допустимая граница или смысл | Источник и SHA |
+| ID | Параметр | Значение release | Допустимая граница или смысл | Источник |
 | --- | --- | ---: | --- | --- |
 | CFG-01 | `max_connections` | 64 подключения | Положительный process admission; default кода при отсутствии равен 151 | `release/server.toml`, `src/server/config.rs` @ `23bf35df` |
 | CFG-02 | `max_inflight_frame_bytes` | 268 435 456 байт (256 MiB) | Положительный общий бюджет frame payloads процесса | `release/server.toml`, `src/server/config.rs` @ `23bf35df` |

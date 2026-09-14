@@ -97,6 +97,7 @@ for (const [slug, expectedCoverage] of pages) {
 assert.deepEqual([...documentedIds].sort(), [...expectedMatrixIds].sort());
 
 const parserSources = [
+  'crates/radixdb-sql/src/statements/alter.rs',
   'crates/radixdb-sql/src/statements/control.rs',
   'crates/radixdb-sql/src/statements/ddl.rs',
   'crates/radixdb-sql/src/statements/dml.rs',

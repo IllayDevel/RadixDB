@@ -4,7 +4,7 @@ description: Command-line reference for the RadixDB protocol server.
 ---
 
 `radixdb-server` owns file databases under one data root and listens for
-protocol 17 clients. It has a deliberately small command surface.
+protocol 18 clients. It has a deliberately small command surface.
 
 ## Synopsis
 

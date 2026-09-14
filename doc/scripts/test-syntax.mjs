@@ -4,7 +4,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const revision = process.env.RADIXDB_DOCS_REVISION
-  ?? '40b1b3d13e050afa2666a0414b7215d5ac1452c0';
+  ?? '4a9f254f801ba73dc950f080343d7d96990ed59f';
 const cli = process.env.RADIXDB_DOCS_CLI;
 assert(cli && path.isAbsolute(cli), 'Set RADIXDB_DOCS_CLI to the pinned CLI binary');
 const identity = spawnSync(cli, ['--version'], { encoding: 'utf8', timeout: 15000 });

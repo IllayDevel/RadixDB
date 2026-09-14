@@ -91,7 +91,7 @@ async function startAndStop(config, signal) {
     assert(host && port && !extra, endpoint.stdout);
     const smoke = run(smokeBin, [`${host}:${port}`], { timeout: 15000 });
     assert.equal(smoke.status, 0, smoke.stderr);
-    assert.match(smoke.stdout, /^ready version=1\.1\.0 protocol=17 state=Ready\s*$/);
+    assert.match(smoke.stdout, /^ready version=1\.2\.19 protocol=18 state=Ready\s*$/);
 
     const exited = once(child, 'exit');
     assert(child.kill(signal), `failed to send ${signal}`);
@@ -133,8 +133,8 @@ const fields = identities.map(identityFields);
 for (const key of ['git', 'profile', 'target', 'lock']) {
   assert(fields.every(entry => entry[key] === fields[0][key]), `identity mismatch: ${key}`);
 }
-assert.equal(fields[0].protocol, '17');
-assert.equal(fields[3].protocol, '17');
+assert.equal(fields[0].protocol, '18');
+assert.equal(fields[3].protocol, '18');
 
 const invalid = run(serverBin, ['--version', '--config', 'server.toml'], { timeout: 15000 });
 assert.notEqual(invalid.status, 0);

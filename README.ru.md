@@ -201,7 +201,7 @@ CTE и подзапросы. Конструкторы DDL описывают т�
 
 ### Trusted native extensions
 
-RadixDB 1.2.4 предоставляет stable C ABI, безопасный Rust SDK и deterministic
+RadixDB 1.2.19 предоставляет stable C ABI, безопасный Rust SDK и deterministic
 package tooling для operator-trusted native extensions. Extension может
 добавлять bounded scalar types, native scalar и batch functions, binary
 operators, B-tree/hash/bitmap operator classes и bounded planner support.
@@ -239,7 +239,7 @@ bindings закрепляют package version, fingerprint и codec identity.
 
 ### PL/SQL: прикладная логика внутри базы
 
-Разрабатываемая RadixDB 1.2.4 включает собственный процедурный SQL-язык. Функции, процедуры и
+RadixDB 1.2.19 включает собственный процедурный SQL-язык. Функции, процедуры и
 триггеры позволяют размещать проверки, многошаговые изменения и бизнес-правила
 рядом с данными, в одной транзакции с контролируемыми операциями.
 
@@ -258,7 +258,7 @@ PostgreSQL PL/pgSQL.
 
 ### ACL: роли и управление доступом
 
-Разрабатываемая RadixDB 1.2.4 включает проверяемые базой principals, roles и membership,
+RadixDB 1.2.19 включает проверяемые базой principals, roles и membership,
 владение объектами, доступ к таблицам и столбцам, а также права `SELECT`,
 `INSERT`, `UPDATE`, `DELETE` и `EXECUTE`. Подпрограммы выполняются с authority
 вызывающего или владельца, а проверки происходят внутри движка. Выдача и отзыв
@@ -301,10 +301,9 @@ CLI открывает локальные базы. Для постоянной 
 - [Резервное копирование и обслуживание](doc/src/content/docs/ru/administration/backup-restore.md).
 - [История выпусков](CHANGELOG.ru.md), [участие в проекте](CONTRIBUTING.ru.md) и [правила общения](CODE_OF_CONDUCT.ru.md).
 
-RadixDB 1.1.0 выпущена 8 сентября 2026 года под аннотированным тегом `v1.1.0`.
-При выборе ревизии и обновлении базы учитывайте историю выпусков и контракт
-совместимости хранения: последующие коммиты ветки не входят в выпуск без нового
-тега.
+RadixDB 1.2.19 выпущена 14 сентября 2026 года. При выборе ревизии и обновлении
+базы учитывайте историю выпусков и контракт совместимости хранения: protocol 18
+не совместим по wire с protocol 14 из версии 1.1.0.
 
 ### Лицензия
 

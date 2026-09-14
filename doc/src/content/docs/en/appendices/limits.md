@@ -1,6 +1,6 @@
 ---
 title: Limits
-description: Structural ceilings, configurable admission limits and measured scale for RadixDB 1.2.4.
+description: Structural ceilings, configurable admission limits and measured scale for RadixDB 1.2.19.
 ---
 
 RadixDB does not publish one maximum database size or row count. Capacity is
@@ -10,7 +10,7 @@ below does not produce a supported deployment size.
 
 This appendix separates three kinds of evidence:
 
-- **Hard limit**: a format or semantic ceiling enforced by the 1.2.4 code.
+- **Hard limit**: a format or semantic ceiling enforced by the 1.2.19 code.
 - **Configurable limit**: an operator-controlled admission or resource setting.
 - **Measured scale**: one completed workload under recorded conditions, not a
   hard limit, capacity promise or latency SLA.
@@ -21,7 +21,7 @@ The complete operator surface is in the [configuration reference](../../referenc
 
 ## Catalog and semantic ceilings
 
-| ID | Limit | Value and unit | Enforcement condition | Source and SHA |
+| ID | Limit | Value and unit | Enforcement condition | Source |
 | --- | --- | ---: | --- | --- |
 | HARD-01 | Catalog file | 536,870,912 bytes (512 MiB) | A larger catalog pack is rejected before decode | `crates/radixdb-catalog/src/codec/primitives.rs` @ `23bf35df` |
 | HARD-02 | Objects in one catalog | 262,144 objects | Applies to one decoded catalog generation | `crates/radixdb-catalog/src/codec/primitives.rs` @ `23bf35df` |
@@ -46,20 +46,20 @@ mean that a schema near every ceiling will fit the process memory budget.
 
 ## Native extension ceilings
 
-These limits belong to plugin ABI 1.0 and the 1.2.4 startup loader. They are not
+These limits belong to plugin ABI 1.0 and the 1.2.19 startup loader. They are not
 permission to approach every maximum in one package.
 
-| ID | Limit | Value and unit | Enforcement condition | Source and SHA |
+| ID | Limit | Value and unit | Enforcement condition | Source |
 | --- | --- | ---: | --- | --- |
-| PLUG-01 | Package manifest | 65,536 bytes (64 KiB) | Checked before TOML decode | `crates/radixdb-plugin-host/src/manifest.rs` @ `40b1b3d1` |
-| PLUG-02 | Package shared library | 268,435,456 bytes (256 MiB) | Empty or larger `.so` is rejected | `crates/radixdb-plugin-host/src/manifest.rs` @ `40b1b3d1` |
-| PLUG-03 | Stable local ID | 255 bytes | UTF-8, nonempty and without NUL | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-04 | One external value | 16,777,216 bytes (16 MiB) | Type descriptor can declare a lower `max_bytes` | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-05 | Entries in one descriptor table | 65,535 entries | Applies independently to each descriptor array | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-06 | Native function arguments | 1,024 arguments | Per descriptor signature | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-07 | Planner candidate spans | 4,096 spans | A support descriptor can declare a lower maximum | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-08 | Hash components | 256 components and 65,536 bytes | Per semantic hash callback | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
-| PLUG-09 | Plugin diagnostic detail | 4,096 bytes | Longer UTF-8 detail is bounded before host mapping | `crates/radixdb-plugin-abi/src/constants.rs` @ `40b1b3d1` |
+| PLUG-01 | Package manifest | 65,536 bytes (64 KiB) | Checked before TOML decode | `crates/radixdb-plugin-host/src/manifest.rs` |
+| PLUG-02 | Package shared library | 268,435,456 bytes (256 MiB) | Empty or larger `.so` is rejected | `crates/radixdb-plugin-host/src/manifest.rs` |
+| PLUG-03 | Stable local ID | 255 bytes | UTF-8, nonempty and without NUL | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-04 | One external value | 16,777,216 bytes (16 MiB) | Type descriptor can declare a lower `max_bytes` | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-05 | Entries in one descriptor table | 65,535 entries | Applies independently to each descriptor array | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-06 | Native function arguments | 1,024 arguments | Per descriptor signature | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-07 | Planner candidate spans | 4,096 spans | A support descriptor can declare a lower maximum | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-08 | Hash components | 256 components and 65,536 bytes | Per semantic hash callback | `crates/radixdb-plugin-abi/src/constants.rs` |
+| PLUG-09 | Plugin diagnostic detail | 4,096 bytes | Longer UTF-8 detail is bounded before host mapping | `crates/radixdb-plugin-abi/src/constants.rs` |
 
 The initial package ABI accepts only x86-64 little-endian ELF for
 `x86_64-unknown-linux-gnu`, with glibc no newer than 2.36. This is a platform
@@ -69,7 +69,7 @@ the complete admission contract.
 
 ## Storage-format ceilings
 
-| ID | Limit | Value and unit | Enforcement condition | Source and SHA |
+| ID | Limit | Value and unit | Enforcement condition | Source |
 | --- | --- | ---: | --- | --- |
 | HARD-18 | CONTROL record | 4,096 bytes | Fixed record size; not a tunable allocation | `crates/radixdb-storage/src/v6/control.rs` @ `23bf35df` |
 | HARD-19 | Tables in one database manifest | 262,144 tables | Per database generation | `crates/radixdb-storage/src/v6/manifest/model.rs` @ `23bf35df` |
@@ -109,7 +109,7 @@ settings.
 This is a capacity-oriented subset of `release/server.toml`, not a second
 configuration reference. A server reads these settings at startup.
 
-| ID | Setting | Release value | Accepted boundary or meaning | Source and SHA |
+| ID | Setting | Release value | Accepted boundary or meaning | Source |
 | --- | --- | ---: | --- | --- |
 | CFG-01 | `max_connections` | 64 connections | Positive process admission; code default is 151 when omitted | `release/server.toml`, `src/server/config.rs` @ `23bf35df` |
 | CFG-02 | `max_inflight_frame_bytes` | 268,435,456 bytes (256 MiB) | Positive process-wide frame payload budget | `release/server.toml`, `src/server/config.rs` @ `23bf35df` |

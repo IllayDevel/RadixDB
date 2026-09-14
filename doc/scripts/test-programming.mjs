@@ -94,7 +94,7 @@ assert.equal(head.stdout.trim(), revision);
 const identity = run(serverBin, ['--version'], { timeout: 15000 });
 assert.equal(identity.status, 0, identity.stderr);
 assert(identity.stdout.includes(`git=${revision} `), identity.stdout);
-assert(identity.stdout.includes('protocol=17 '), identity.stdout);
+assert(identity.stdout.includes('protocol=18 '), identity.stdout);
 assert(identity.stdout.includes('profile=release '), identity.stdout);
 
 const temp = mkdtempSync(path.join(os.tmpdir(), 'radixdb-docs-programming-'));
@@ -205,14 +205,14 @@ for (const [name, contracts] of Object.entries({
   ],
   routines: [
     'CREATE FUNCTION', 'CREATE PROCEDURE', 'CALL', 'RESOURCE POLICY',
-    '10,000,000', '60 s', 'protocol 17', 'DROP FUNCTION',
+    '10,000,000', '60 s', 'protocol 18', 'DROP FUNCTION',
   ],
   triggers: [
     'RETURNS TRIGGER', 'OLD', 'NEW', 'PRIORITY', 'PL_TRIGGER_CYCLE',
     'rollback', 'DROP TRIGGER',
   ],
   jobs: [
-    'CREATE JOB', 'EVERY INTERVAL', 'AT TIMESTAMP',
+    'CREATE JOB', 'EVERY INTERVAL', 'AT TIMESTAMPTZ',
     'radix_system_job_history', 'at-least-once', 'PL_JOB_ATTEMPT_FAILED', 'DROP JOB',
   ],
 })) {
