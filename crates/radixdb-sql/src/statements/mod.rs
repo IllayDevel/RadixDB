@@ -21,6 +21,7 @@ use crate::token::{Token, TokenType};
 use radixdb_core::{ForeignKeyAction, NavigationErrorCode, SmartString};
 use rustc_hash::FxHashMap;
 
+mod alter;
 mod control;
 mod ddl;
 mod dispatch;

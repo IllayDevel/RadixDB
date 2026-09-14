@@ -32,7 +32,7 @@ fn write_package(root: &Path, directory_name: &str, version: &str) -> PathBuf {
     .unwrap();
     let library = library_directory.join("libsample.so");
     let include = Path::new(env!("CARGO_MANIFEST_DIR")).join("../radixdb-plugin-abi/include");
-    let output = Command::new("cc")
+    let output = Command::new(std::env::var_os("RADIXDB_TEST_CC").unwrap_or_else(|| "cc".into()))
         .args(["-std=c11", "-shared", "-fPIC", "-fvisibility=hidden"])
         .arg(format!("-I{}", include.display()))
         .arg(&source)
@@ -55,7 +55,7 @@ version = "{version}"
 library = "lib/libsample.so"
 library_sha256 = "{hash}"
 descriptor_fingerprint = "{}"
-target = "x86_64-unknown-linux-gnu"
+target = "{target}"
 maximum_required_glibc = "2.36"
 build_image = "rust:1.97.0-bookworm"
 panic_strategy = "unwind"
@@ -63,7 +63,8 @@ abi_major = 1
 abi_min_minor = 0
 abi_max_minor = 0
 "#,
-        hex(FINGERPRINT)
+        hex(FINGERPRINT),
+        target = radixdb_plugin_host::SUPPORTED_TARGET
     );
     fs::write(directory.join("radixdb-plugin.toml"), manifest).unwrap();
     directory

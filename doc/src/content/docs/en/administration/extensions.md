@@ -29,8 +29,9 @@ must already be present in the immutable process registry before
 
 ## Platform requirements
 
-The first package platform is `x86_64-unknown-linux-gnu`. An admitted library
-must be an x86-64 little-endian ELF shared object, require no glibc symbol newer
+Supported package platforms are `x86_64-unknown-linux-gnu` and
+`aarch64-unknown-linux-gnu`. An admitted library must be a little-endian ELF64
+shared object matching the server architecture, require no glibc symbol newer
 than 2.36, use plugin ABI 1.0 and carry the official `panic = "unwind"`
 attestation. The official release tool builds packages with Rust 1.97.0 in
 `rust:1.97.0-bookworm`.

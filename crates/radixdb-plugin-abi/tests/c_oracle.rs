@@ -29,7 +29,7 @@ fn c11_fixture_and_rust_exchange_descriptor_and_value_bytes() {
     let executable = temporary.join("abi-oracle");
     let output = temporary.join("oracle.bin");
 
-    let compile = Command::new("cc")
+    let compile = Command::new(std::env::var_os("RADIXDB_TEST_CC").unwrap_or_else(|| "cc".into()))
         .args(["-std=c11", "-Wall", "-Wextra", "-Werror"])
         .arg("-I")
         .arg(manifest.join("include"))
@@ -44,11 +44,14 @@ fn c11_fixture_and_rust_exchange_descriptor_and_value_bytes() {
         String::from_utf8_lossy(&compile.stdout),
         String::from_utf8_lossy(&compile.stderr)
     );
-    assert!(Command::new(&executable)
-        .arg(&output)
-        .status()
-        .unwrap()
-        .success());
+    let mut oracle = if let Some(runner) = std::env::var_os("RADIXDB_TEST_RUNNER") {
+        let mut command = Command::new(runner);
+        command.arg(&executable);
+        command
+    } else {
+        Command::new(&executable)
+    };
+    assert!(oracle.arg(&output).status().unwrap().success());
 
     let bytes = fs::read(&output).unwrap();
     assert_eq!(bytes.len(), size_of::<OracleRecord>());

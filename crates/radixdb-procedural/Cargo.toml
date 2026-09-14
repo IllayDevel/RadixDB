@@ -20,4 +20,5 @@ radixdb-core = { version = "=1.2.4", path = "../radixdb-core" }
 radixdb-sql = { version = "=1.2.4", path = "../radixdb-sql" }
 
 [dev-dependencies]
+toml = "0.8"
 proptest = "1.4"

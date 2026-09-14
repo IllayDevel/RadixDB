@@ -19,4 +19,5 @@ radixdb-core = { version = "=1.2.4", path = "../radixdb-core" }
 rustc-hash = "1.1"
 
 [dev-dependencies]
+toml = "0.8"
 proptest = "1.4"

@@ -436,35 +436,50 @@ fn executor_crate_has_exactly_the_allowed_internal_dependencies() {
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest =
         fs::read_to_string(crate_dir.join("Cargo.toml")).expect("read radixdb-executor manifest");
-    let internal: Vec<_> = manifest_section(&manifest, "[dependencies]")
-        .lines()
-        .filter(|line| line.trim_start().starts_with("radixdb-"))
+    let manifest: toml::Value = manifest.parse().expect("parse manifest");
+    let dependencies = manifest["dependencies"].as_table().expect("dependencies");
+    let internal: Vec<_> = dependencies
+        .keys()
+        .filter(|name| name.starts_with("radixdb"))
+        .map(String::as_str)
         .collect();
 
     assert_eq!(
         internal,
         [
-            "radixdb-catalog = { path = \"../radixdb-catalog\" }",
-            "radixdb-core = { path = \"../radixdb-core\" }",
-            "radixdb-functions = { path = \"../radixdb-functions\" }",
-            "radixdb-procedural = { path = \"../radixdb-procedural\" }",
-            "radixdb-plugin-host = { path = \"../radixdb-plugin-host\" }",
-            "radixdb-sql = { path = \"../radixdb-sql\" }",
-            "radixdb-storage = { path = \"../radixdb-storage\" }",
+            "radixdb-catalog",
+            "radixdb-core",
+            "radixdb-functions",
+            "radixdb-plugin-host",
+            "radixdb-procedural",
+            "radixdb-sql",
+            "radixdb-storage",
         ]
     );
+    for name in internal {
+        assert_eq!(
+            dependencies[name]["path"].as_str(),
+            Some(format!("../{name}").as_str())
+        );
+        assert_eq!(
+            dependencies[name]["version"].as_str(),
+            Some(concat!("=", env!("CARGO_PKG_VERSION")))
+        );
+    }
 }
 
 #[test]
-fn executor_shell_is_a_private_workspace_member() {
+fn executor_shell_is_a_published_workspace_member() {
     assert_eq!(env!("CARGO_PKG_NAME"), "radixdb-executor");
 
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest =
         fs::read_to_string(crate_dir.join("Cargo.toml")).expect("read radixdb-executor manifest");
-    assert!(manifest
-        .lines()
-        .any(|line| line.trim() == "publish = false"));
+    let parsed: toml::Value = manifest.parse().expect("parse manifest");
+    assert_eq!(
+        parsed["package"]["publish"]["workspace"].as_bool(),
+        Some(true)
+    );
 
     let workspace_manifest = crate_dir
         .parent()
@@ -473,6 +488,13 @@ fn executor_shell_is_a_private_workspace_member() {
         .join("Cargo.toml");
     let workspace = fs::read_to_string(workspace_manifest).expect("read workspace manifest");
     assert!(workspace.contains("\"crates/radixdb-executor\""));
+    let parsed: toml::Value = workspace.parse().expect("parse workspace manifest");
+    assert_eq!(
+        parsed["workspace"]["package"]["publish"]
+            .as_array()
+            .expect("registries"),
+        &vec![toml::Value::String("crates-io".into())]
+    );
 }
 
 #[test]

@@ -29,8 +29,9 @@ SQL не принимает путь к библиотеке или URL и не 
 
 ## Требования платформы
 
-Первая пакетная платформа имеет target `x86_64-unknown-linux-gnu`. Допускается
-x86-64 little-endian ELF shared object, не требующий символов glibc новее 2.36,
+Поддерживаются target `x86_64-unknown-linux-gnu` и `aarch64-unknown-linux-gnu`.
+Архитектура библиотеки должна совпадать с архитектурой сервера. Допускается
+ELF64 little-endian shared object, не требующий символов glibc новее 2.36,
 использующий plugin ABI 1.0 и содержащий официальную аттестацию
 `panic = "unwind"`. Официальный release tool собирает пакеты Rust 1.97.0 в
 `rust:1.97.0-bookworm`.

@@ -15,30 +15,24 @@
 use std::fs;
 use std::path::Path;
 
-fn dependency_entries(manifest: &str) -> Vec<&str> {
-    let mut in_dependencies = false;
-    let mut entries = Vec::new();
-    for line in manifest.lines() {
-        let line = line.trim();
-        if line.starts_with('[') {
-            in_dependencies = line == "[dependencies]";
-            continue;
-        }
-        if in_dependencies && !line.is_empty() && !line.starts_with('#') {
-            entries.push(line);
-        }
-    }
-    entries
-}
-
 #[test]
 fn catalog_has_exactly_one_radixdb_dependency() {
     let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let manifest = fs::read_to_string(crate_root.join("Cargo.toml")).expect("read manifest");
+    let parsed: toml::Value = manifest.parse().expect("parse manifest");
+    let dependencies = parsed["dependencies"].as_table().expect("dependencies");
     assert_eq!(
-        dependency_entries(&manifest),
-        vec!["radixdb-core = { path = \"../radixdb-core\" }"],
+        dependencies.keys().map(String::as_str).collect::<Vec<_>>(),
+        vec!["radixdb-core"],
         "catalog may depend only on the canonical core layer"
+    );
+    assert_eq!(
+        dependencies["radixdb-core"]["path"].as_str(),
+        Some("../radixdb-core")
+    );
+    assert_eq!(
+        dependencies["radixdb-core"]["version"].as_str(),
+        Some(concat!("=", env!("CARGO_PKG_VERSION")))
     );
 
     for forbidden in [

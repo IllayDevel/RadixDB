@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 
-#if !defined(__linux__) || !defined(__x86_64__) || UINTPTR_MAX != UINT64_MAX
-#error "RadixDB plugin ABI 1.0 supports only 64-bit x86_64 Linux"
+#if !defined(__linux__) || (!defined(__x86_64__) && !defined(__aarch64__)) || UINTPTR_MAX != UINT64_MAX
+#error "RadixDB plugin ABI 1.0 supports only 64-bit x86_64/aarch64 Linux"
 #endif
 
 #ifdef __cplusplus

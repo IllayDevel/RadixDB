@@ -152,9 +152,10 @@ jobs:
 
     - name: Run with ThreadSanitizer
       run: |
-        echo 'race:std::alloc::System' > /tmp/tsan_suppressions.txt
+        # Use allocator interception; the default native mimalloc is not instrumented.
         RUSTFLAGS="-Zsanitizer=thread" \
         cargo +nightly-2026-07-07 test --locked -Zbuild-std --target x86_64-unknown-linux-gnu \
+          --no-default-features --features parallel \
           --test dirty_read_test \
           --test mvcc_isolation_sql_test \
           --test parallel_execution_tests \
@@ -162,7 +163,7 @@ jobs:
           --test r8_write_pipeline_test
       timeout-minutes: 45
       env:
-        TSAN_OPTIONS: "second_deadlock_stack=1 suppressions=/tmp/tsan_suppressions.txt"
+        TSAN_OPTIONS: "second_deadlock_stack=1"
 
   address-sanitizer:
     name: Address Sanitizer

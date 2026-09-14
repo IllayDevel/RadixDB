@@ -23,12 +23,19 @@
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 #[cfg(not(all(
-    target_arch = "x86_64",
+    any(target_arch = "x86_64", target_arch = "aarch64"),
     target_os = "linux",
     target_env = "gnu",
+    target_endian = "little",
     target_pointer_width = "64"
 )))]
-compile_error!("radixdb-plugin-abi 1.0 supports only x86_64-unknown-linux-gnu");
+compile_error!("radixdb-plugin-abi 1.0 supports only x86_64/aarch64 Linux GNU targets");
+
+/// ELF machine identity for native extensions on this target.
+#[cfg(target_arch = "x86_64")]
+pub const NATIVE_ELF_MACHINE: u16 = 62;
+#[cfg(target_arch = "aarch64")]
+pub const NATIVE_ELF_MACHINE: u16 = 183;
 
 mod constants;
 mod descriptor;

@@ -33,4 +33,5 @@ unicode-normalization = "0.1"
 uuid = { version = "1", features = ["v7", "fast-rng"] }
 
 [dev-dependencies]
+toml = "0.8"
 rustc-hash = "1.1"

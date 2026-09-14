@@ -50,7 +50,8 @@ project Cargo target directory followed by `radixdb-plugin`.
 ### check
 
 Validates the project shape and runs a locked release check for
-`x86_64-unknown-linux-gnu`. The project must contain exactly one `cdylib`, a
+the native `x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu` target.
+The project must contain exactly one `cdylib`, a
 `Cargo.lock`, `panic = "unwind"` for release builds and a normal dependency on
 the public `radixdb-plugin` crate. Other `radixdb-*` crates can appear only as
 development dependencies.
@@ -145,7 +146,7 @@ local admission succeeds.
 ## Required toolchain
 
 Development checks require Rust 1.97.0 with host target
-`x86_64-unknown-linux-gnu`. The initial ABI supports ELF64 little-endian GNU
+`x86_64-unknown-linux-gnu` or `aarch64-unknown-linux-gnu`. The ABI supports ELF64 little-endian GNU
 Linux and glibc no newer than 2.36. Cross-target artifacts are rejected.
 
 ## Exit status

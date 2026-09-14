@@ -34,9 +34,21 @@ fn api_manifest_has_only_the_measured_internal_dependencies() {
             "radixdb-storage",
         ])
     );
-    assert!(manifest
-        .lines()
-        .any(|line| line.trim() == "publish = false"));
+    let parsed: toml::Value = manifest.parse().expect("parse API manifest");
+    assert_eq!(
+        parsed["package"]["publish"]["workspace"].as_bool(),
+        Some(true)
+    );
+    let workspace: toml::Value = fs::read_to_string(root.join("Cargo.toml"))
+        .expect("read workspace")
+        .parse()
+        .expect("parse workspace");
+    assert_eq!(
+        workspace["workspace"]["package"]["publish"]
+            .as_array()
+            .expect("registries"),
+        &vec![toml::Value::String("crates-io".into())]
+    );
 }
 
 #[test]

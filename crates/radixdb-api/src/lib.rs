@@ -114,8 +114,8 @@ pub use public_read::{
     PublicReadRequest, PublicReadResult,
 };
 pub use radixdb_executor::{
-    BoundPublicReadPolicy, PublicReadColumnBinding, PublicReadLimits, PublicReadRelationBinding,
-    PublicReadRelationSpec, QueryOutputColumn,
+    session_time_zone_change, BoundPublicReadPolicy, PublicReadColumnBinding, PublicReadLimits,
+    PublicReadRelationBinding, PublicReadRelationSpec, QueryOutputColumn,
 };
 pub use rows::{FromRow, ResultRow, Rows};
 #[doc(hidden)]

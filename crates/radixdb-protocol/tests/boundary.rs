@@ -10,14 +10,16 @@ fn workspace_root() -> PathBuf {
 }
 
 #[test]
-fn protocol_is_a_neutral_private_workspace_member() {
+fn protocol_is_a_neutral_published_workspace_member() {
     assert_eq!(env!("CARGO_PKG_NAME"), "radixdb-protocol");
 
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest = fs::read_to_string(crate_dir.join("Cargo.toml")).expect("read manifest");
-    assert!(manifest
-        .lines()
-        .any(|line| line.trim() == "publish = false"));
+    let parsed: toml::Value = manifest.parse().expect("parse manifest");
+    assert_eq!(
+        parsed["package"]["publish"]["workspace"].as_bool(),
+        Some(true)
+    );
     assert!(!manifest
         .lines()
         .any(|line| { line.trim_start().starts_with("radixdb-") && line.contains('=') }));
@@ -25,6 +27,13 @@ fn protocol_is_a_neutral_private_workspace_member() {
     let workspace =
         fs::read_to_string(workspace_root().join("Cargo.toml")).expect("read workspace manifest");
     assert!(workspace.contains("\"crates/radixdb-protocol\""));
+    let parsed: toml::Value = workspace.parse().expect("parse workspace manifest");
+    assert_eq!(
+        parsed["workspace"]["package"]["publish"]
+            .as_array()
+            .expect("registries"),
+        &vec![toml::Value::String("crates-io".into())]
+    );
 }
 
 #[test]

@@ -5,7 +5,10 @@ use serde::{Deserialize, Serialize};
 
 pub const PLUGIN_MANIFEST_FILE: &str = "radixdb-plugin.toml";
 pub const MANIFEST_FORMAT: u16 = 1;
+#[cfg(target_arch = "x86_64")]
 pub const SUPPORTED_TARGET: &str = "x86_64-unknown-linux-gnu";
+#[cfg(target_arch = "aarch64")]
+pub const SUPPORTED_TARGET: &str = "aarch64-unknown-linux-gnu";
 pub const OFFICIAL_BUILD_IMAGE: &str = "rust:1.97.0-bookworm";
 pub const MAXIMUM_REQUIRED_GLIBC: &str = "2.36";
 pub(crate) const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
@@ -193,7 +196,8 @@ abi_major = 1
 abi_min_minor = 0
 abi_max_minor = 0
 "#;
-        let manifest: PluginPackageManifest = toml::from_str(source).unwrap();
+        let source = source.replace("x86_64-unknown-linux-gnu", SUPPORTED_TARGET);
+        let manifest: PluginPackageManifest = toml::from_str(&source).unwrap();
         manifest.validate_static_fields().unwrap();
 
         let mut unsafe_path = manifest.clone();

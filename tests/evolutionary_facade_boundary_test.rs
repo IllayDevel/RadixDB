@@ -256,7 +256,7 @@ fn sql_dump_staging_and_publication_have_one_library_owner() {
 }
 
 #[test]
-fn public_docs_expose_facades_and_hide_implementation_crates() {
+fn public_docs_expose_facades_and_document_published_implementation_crates() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let library = fs::read_to_string(root.join("src/lib.rs")).expect("read root library");
     let readme = fs::read_to_string(root.join("README.md")).expect("read public README");
@@ -274,12 +274,12 @@ fn public_docs_expose_facades_and_hide_implementation_crates() {
         "radixdb-executor",
     ] {
         let manifest = fs::read_to_string(root.join("crates").join(package).join("Cargo.toml"))
-            .expect("read private implementation manifest");
-        assert!(
-            manifest
-                .lines()
-                .any(|line| line.trim() == "publish = false"),
-            "{package} is not locked as a private implementation crate"
+            .expect("read implementation manifest");
+        let parsed: toml::Value = manifest.parse().expect("parse implementation manifest");
+        assert_eq!(
+            parsed["package"]["publish"]["workspace"].as_bool(),
+            Some(true),
+            "{package} must inherit coordinated publication policy"
         );
         assert!(
             architecture.contains(&format!("| `{package}` |")),

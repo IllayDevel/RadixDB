@@ -290,9 +290,9 @@ fn validate_elf(path: &Path) -> Result<(), String> {
         || header[4] != 2
         || header[5] != 1
         || u16::from_le_bytes([header[16], header[17]]) != 3
-        || u16::from_le_bytes([header[18], header[19]]) != 62
+        || u16::from_le_bytes([header[18], header[19]]) != radixdb_plugin_abi::NATIVE_ELF_MACHINE
     {
-        return Err("library is not an x86_64 little-endian ELF shared object".into());
+        return Err("library is not a native-target little-endian ELF shared object".into());
     }
     Ok(())
 }
@@ -1164,6 +1164,24 @@ fn format_id(id: ObjectId) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn elf_header_rejects_foreign_architecture() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut header = [0_u8; 20];
+        header[..4].copy_from_slice(b"\x7fELF");
+        header[4] = 2;
+        header[5] = 1;
+        header[16..18].copy_from_slice(&3_u16.to_le_bytes());
+        for machine in [62_u16, 183_u16] {
+            header[18..20].copy_from_slice(&machine.to_le_bytes());
+            std::fs::write(file.path(), header).unwrap();
+            assert_eq!(
+                validate_elf(file.path()).is_ok(),
+                machine == radixdb_plugin_abi::NATIVE_ELF_MACHINE
+            );
+        }
+    }
 
     unsafe extern "C" fn codec(
         _context: *const RadixAbiCallContextV1,

@@ -50,6 +50,8 @@ pub mod query_cache;
 pub mod query_classification;
 pub mod result;
 pub mod semantic_cache;
+mod session_sql;
+pub use session_sql::session_time_zone_change;
 mod show;
 pub mod statistics;
 pub mod subquery;

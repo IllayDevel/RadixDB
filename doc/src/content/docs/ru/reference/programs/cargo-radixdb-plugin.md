@@ -49,7 +49,8 @@ cargo radixdb-plugin package
 ### check
 
 Проверяет форму проекта и запускает locked release check для
-`x86_64-unknown-linux-gnu`. Проект должен содержать ровно один `cdylib`, файл
+текущей архитектуры: `x86_64-unknown-linux-gnu` или `aarch64-unknown-linux-gnu`.
+Проект должен содержать ровно один `cdylib`, файл
 `Cargo.lock`, `panic = "unwind"` для release build и обычную dependency на
 public crate `radixdb-plugin`. Другие crates `radixdb-*` допустимы только как
 development dependencies.
@@ -144,7 +145,7 @@ staging files, синхронизирует их и переименовывае
 ## Требуемый toolchain
 
 Development checks требуют Rust 1.97.0 с host target
-`x86_64-unknown-linux-gnu`. Начальный ABI поддерживает ELF64 little-endian GNU
+`x86_64-unknown-linux-gnu` или `aarch64-unknown-linux-gnu`. ABI поддерживает ELF64 little-endian GNU
 Linux и glibc не новее 2.36. Artifacts для другого target отклоняются.
 
 ## Exit status

@@ -1633,13 +1633,32 @@ fn r2_l05_c_release_stop_wrapper_refuses_invalid_and_foreign_processes() {
 
     let temp = tempfile::tempdir().expect("temp dir");
     let pid_file = temp.path().join("radixdb-server.pid");
+    let server_binary = std::env::current_exe().expect("test executable identity");
+    let stop_command = || {
+        let mut command = Command::new("bash");
+        command
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/release/stop.sh"))
+            .env("RADIXDB_RELEASE_ROOT", temp.path())
+            .env("RADIXDB_SERVER_BIN", &server_binary)
+            .env("RADIXDB_LOCK_FILE", temp.path().join("lifecycle.lock"))
+            .env("RADIXDB_PID_FILE", &pid_file);
+        command
+    };
+    let missing_binary = stop_command()
+        .env("RADIXDB_SERVER_BIN", temp.path().join("missing-server"))
+        .output()
+        .expect("run release stop wrapper without executable");
+    assert_eq!(missing_binary.status.code(), Some(66));
     std::fs::write(&pid_file, "-1").expect("write invalid pid file");
-    let invalid_status = Command::new("bash")
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/release/stop.sh"))
-        .env("RADIXDB_PID_FILE", &pid_file)
-        .status()
+    let invalid_status = stop_command()
+        .output()
         .expect("run release stop wrapper with invalid pid");
-    assert_eq!(invalid_status.code(), Some(65));
+    assert_eq!(
+        invalid_status.status.code(),
+        Some(65),
+        "{}",
+        String::from_utf8_lossy(&invalid_status.stderr)
+    );
 
     let ready_file = temp.path().join("ready");
     let mut child = Command::new("bash")
@@ -1669,12 +1688,15 @@ fn r2_l05_c_release_stop_wrapper_refuses_invalid_and_foreign_processes() {
     std::fs::write(&pid_file, format!("{} {start_time}\n", child.id()))
         .expect("write isolated pid record");
 
-    let wrong_identity_status = Command::new("bash")
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/release/stop.sh"))
-        .env("RADIXDB_PID_FILE", &pid_file)
-        .status()
+    let wrong_identity_status = stop_command()
+        .output()
         .expect("run release stop wrapper against a foreign process");
-    assert_eq!(wrong_identity_status.code(), Some(65));
+    assert_eq!(
+        wrong_identity_status.status.code(),
+        Some(65),
+        "{}",
+        String::from_utf8_lossy(&wrong_identity_status.stderr)
+    );
     assert!(
         child.try_wait().expect("inspect foreign fixture").is_none(),
         "identity mismatch must not signal the foreign process"

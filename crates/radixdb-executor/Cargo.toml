@@ -51,6 +51,7 @@ smallvec = "1.11"
 uuid = { version = "1", features = ["v7"] }
 
 [dev-dependencies]
+toml = "0.8"
 criterion = { version = "0.8", features = ["html_reports"] }
 radixdb-plugin-abi = { version = "=1.2.4", path = "../radixdb-plugin-abi" }
 radixdb-plugin-host = { version = "=1.2.4", path = "../radixdb-plugin-host", features = ["test-hooks"] }

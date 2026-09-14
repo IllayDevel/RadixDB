@@ -27,18 +27,35 @@ fn rust_sources_below(path: &Path, output: &mut Vec<PathBuf>) {
 #[test]
 fn procedural_crate_has_only_the_approved_lower_dependencies() {
     let manifest = fs::read_to_string(crate_dir().join("Cargo.toml")).expect("read manifest");
-    let internal_dependencies: Vec<_> = manifest
-        .lines()
-        .filter(|line| line.trim_start().starts_with("radixdb-"))
+    let manifest: toml::Value = manifest.parse().expect("parse manifest");
+    let dependencies = manifest["dependencies"].as_table().expect("dependencies");
+    for section in ["dev-dependencies", "build-dependencies"] {
+        if let Some(table) = manifest.get(section).and_then(toml::Value::as_table) {
+            assert!(
+                table.keys().all(|name| !name.starts_with("radixdb")),
+                "unexpected internal dependency in {section}"
+            );
+        }
+    }
+    let internal_dependencies: Vec<_> = dependencies
+        .keys()
+        .filter(|name| name.starts_with("radixdb"))
+        .map(String::as_str)
         .collect();
     assert_eq!(
         internal_dependencies,
-        [
-            "radixdb-catalog = { path = \"../radixdb-catalog\" }",
-            "radixdb-core = { path = \"../radixdb-core\" }",
-            "radixdb-sql = { path = \"../radixdb-sql\" }",
-        ]
+        ["radixdb-catalog", "radixdb-core", "radixdb-sql",]
     );
+    for name in internal_dependencies {
+        assert_eq!(
+            dependencies[name]["path"].as_str(),
+            Some(format!("../{name}").as_str())
+        );
+        assert_eq!(
+            dependencies[name]["version"].as_str(),
+            Some(concat!("=", env!("CARGO_PKG_VERSION")))
+        );
+    }
 }
 
 #[test]

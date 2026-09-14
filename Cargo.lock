@@ -3649,6 +3649,7 @@ version = "1.2.4"
 dependencies = [
  "proptest",
  "radixdb-core",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -3682,6 +3683,7 @@ dependencies = [
  "sha2 0.10.9",
  "smallvec",
  "thiserror 2.0.18",
+ "toml 0.8.23",
  "unicode-normalization",
  "uuid",
 ]
@@ -3784,6 +3786,7 @@ dependencies = [
  "serde_json",
  "smallvec",
  "tempfile",
+ "toml 0.8.23",
  "uuid",
 ]
 
@@ -3806,6 +3809,7 @@ dependencies = [
  "sha1",
  "sha2 0.10.9",
  "tokenizers",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -3887,6 +3891,7 @@ dependencies = [
  "radixdb-catalog",
  "radixdb-core",
  "radixdb-sql",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -3896,6 +3901,7 @@ dependencies = [
  "bincode",
  "serde",
  "serde_json",
+ "toml 0.8.23",
 ]
 
 [[package]]
@@ -3925,6 +3931,7 @@ dependencies = [
  "proptest",
  "radixdb-core",
  "rustc-hash 1.1.0",
+ "toml 0.8.23",
 ]
 
 [[package]]

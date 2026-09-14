@@ -6,13 +6,29 @@ fn sql_crate_has_only_the_allowed_internal_dependency() {
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest = fs::read_to_string(crate_dir.join("Cargo.toml")).expect("read SQL manifest");
 
-    let internal_dependencies: Vec<_> = manifest
-        .lines()
-        .filter(|line| line.trim_start().starts_with("radixdb-"))
+    let manifest: toml::Value = manifest.parse().expect("parse SQL manifest");
+    let dependencies = manifest["dependencies"].as_table().expect("dependencies");
+    for section in ["dev-dependencies", "build-dependencies"] {
+        if let Some(table) = manifest.get(section).and_then(toml::Value::as_table) {
+            assert!(
+                table.keys().all(|name| !name.starts_with("radixdb")),
+                "unexpected internal dependency in {section}"
+            );
+        }
+    }
+    let internal_dependencies: Vec<_> = dependencies
+        .keys()
+        .filter(|name| name.starts_with("radixdb"))
+        .map(String::as_str)
         .collect();
+    assert_eq!(internal_dependencies, ["radixdb-core"]);
     assert_eq!(
-        internal_dependencies,
-        ["radixdb-core = { path = \"../radixdb-core\" }"]
+        dependencies["radixdb-core"]["path"].as_str(),
+        Some("../radixdb-core")
+    );
+    assert_eq!(
+        dependencies["radixdb-core"]["version"].as_str(),
+        Some(concat!("=", env!("CARGO_PKG_VERSION")))
     );
 }
 
@@ -117,7 +133,14 @@ fn statement_grammar_is_split_into_bounded_functional_modules() {
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let statements_dir = crate_dir.join("src/statements");
 
-    for name in ["control.rs", "ddl.rs", "dispatch.rs", "dml.rs", "query.rs"] {
+    for name in [
+        "alter.rs",
+        "control.rs",
+        "ddl.rs",
+        "dispatch.rs",
+        "dml.rs",
+        "query.rs",
+    ] {
         let source =
             fs::read_to_string(statements_dir.join(name)).expect("read statement grammar module");
         assert!(

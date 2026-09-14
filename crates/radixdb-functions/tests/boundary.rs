@@ -5,11 +5,30 @@ use std::path::PathBuf;
 fn functions_contract_crate_has_only_the_allowed_internal_dependency() {
     let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let manifest = fs::read_to_string(crate_dir.join("Cargo.toml")).expect("read manifest");
-    let internal: Vec<_> = manifest
-        .lines()
-        .filter(|line| line.trim_start().starts_with("radixdb-"))
+    let manifest: toml::Value = manifest.parse().expect("parse manifest");
+    let dependencies = manifest["dependencies"].as_table().expect("dependencies");
+    for section in ["dev-dependencies", "build-dependencies"] {
+        if let Some(table) = manifest.get(section).and_then(toml::Value::as_table) {
+            assert!(
+                table.keys().all(|name| !name.starts_with("radixdb")),
+                "unexpected internal dependency in {section}"
+            );
+        }
+    }
+    let internal: Vec<_> = dependencies
+        .keys()
+        .filter(|name| name.starts_with("radixdb"))
+        .map(String::as_str)
         .collect();
-    assert_eq!(internal, ["radixdb-core = { path = \"../radixdb-core\" }"]);
+    assert_eq!(internal, ["radixdb-core"]);
+    assert_eq!(
+        dependencies["radixdb-core"]["path"].as_str(),
+        Some("../radixdb-core")
+    );
+    assert_eq!(
+        dependencies["radixdb-core"]["version"].as_str(),
+        Some(concat!("=", env!("CARGO_PKG_VERSION")))
+    );
 }
 
 #[test]

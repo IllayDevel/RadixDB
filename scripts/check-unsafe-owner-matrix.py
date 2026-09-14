@@ -15,7 +15,7 @@ owner_contracts = {
     "asan-function-lib": ("-p radixdb-functions --lib scalar::semantic::",),
     "asan-parser-lib": ("-p radixdb-sql --lib",),
     "asan-index-lib": ("-p radixdb-storage --lib index::",),
-    "asan-hnsw-and-index-lib": ("--test hnsw_index_test", "-p radixdb-storage --lib index::"),
+    "asan-hnsw-and-index-lib": ("-p radixdb-storage --test index_hnsw_graph", "-p radixdb-storage --lib index::"),
     "asan-storage-v6": ("-p radixdb-storage --lib v6::",),
     "asan-plugin-platform": ("-p radixdb-plugin-abi", "-p radixdb-plugin-host"),
     "asan-plugin-tooling": ("-p cargo-radixdb-plugin --all-targets",),

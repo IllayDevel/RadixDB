@@ -32,7 +32,11 @@ fn core_crate_is_an_internal_workspace_member() {
 
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml");
     let text = fs::read_to_string(&manifest).expect("read radixdb-core manifest");
-    assert!(text.lines().any(|line| line.trim() == "publish = false"));
+    let package: toml::Value = text.parse().expect("parse core manifest");
+    assert_eq!(
+        package["package"]["publish"]["workspace"].as_bool(),
+        Some(true)
+    );
 
     let workspace_manifest = manifest
         .parent()
@@ -41,6 +45,13 @@ fn core_crate_is_an_internal_workspace_member() {
         .expect("radixdb-core lives below the workspace root")
         .join("Cargo.toml");
     let workspace = fs::read_to_string(workspace_manifest).expect("read workspace manifest");
+    let parsed: toml::Value = workspace.parse().expect("parse workspace manifest");
+    assert_eq!(
+        parsed["workspace"]["package"]["publish"]
+            .as_array()
+            .expect("registries"),
+        &vec![toml::Value::String("crates-io".into())]
+    );
     assert!(workspace.contains("\"crates/radixdb-core\""));
 }
 

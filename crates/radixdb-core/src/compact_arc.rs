@@ -211,8 +211,11 @@ impl<T: ?Sized + CompactArcDrop> Drop for CompactArc<T> {
         let old_count = unsafe { (*header).count.fetch_sub(1, AtomicOrdering::Release) };
 
         if old_count == 1 {
-            std::sync::atomic::fence(AtomicOrdering::Acquire);
-            // SAFETY: old_count == 1 means we had the last reference. The Acquire fence
+            // An acquire load observes the release sequence of reference decrements.
+            // Unlike an acquire fence, it is also understood by ThreadSanitizer.
+            // SAFETY: the allocation remains alive until drop_and_dealloc below.
+            unsafe { (*header).count.load(AtomicOrdering::Acquire) };
+            // SAFETY: old_count == 1 means we had the last reference. The Acquire load
             // synchronizes with Release in other drops, ensuring we see all their writes.
             // T::drop_and_dealloc is resolved at compile time via monomorphization.
             unsafe {
@@ -1198,6 +1201,30 @@ mod tests {
         }
 
         assert_eq!(DROP_COUNT.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn test_last_reference_drops_before_workers_are_joined() {
+        use std::sync::{Arc, Barrier};
+
+        let barrier = Arc::new(Barrier::new(8));
+        let value = CompactArc::new(vec![42_u64; 128]);
+        let mut workers = Vec::new();
+        for _ in 0..8 {
+            let shared = value.clone();
+            let barrier = barrier.clone();
+            workers.push(std::thread::spawn(move || {
+                barrier.wait();
+                assert_eq!(shared.iter().sum::<u64>(), 42 * 128);
+                drop(shared);
+            }));
+        }
+        // The last worker must synchronize reclamation through the refcount,
+        // not through the parent's join or an additional surviving reference.
+        drop(value);
+        for worker in workers {
+            worker.join().expect("reader thread");
+        }
     }
 
     #[test]
