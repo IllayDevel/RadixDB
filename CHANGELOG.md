@@ -7,6 +7,22 @@ compatibility are governed by their dedicated version gates.
 
 ## Unreleased
 
+## 1.2.25 - 2026-09-14
+
+### Reliability and CI
+
+- Serialized automatic immutable-member retirement with physical restore and
+  compaction ownership, preventing a late quarantine directory from racing a
+  physical-root replacement.
+- Made the TCP cancellation regression drive active parallel aggregate work
+  before disconnect and made concurrent index-rename readers retry the stable
+  fail-closed `SchemaChanged` outcome.
+- Made the file-backed CI inventory sequential and time-bounded so a stalled
+  checkpoint scenario fails with a finite diagnostic instead of occupying a
+  runner indefinitely.
+- SQL, wire protocol, storage format, configuration and public APIs are
+  unchanged from 1.2.21.
+
 ## 1.2.21 - 2026-09-14
 
 ### Release quality and package discovery

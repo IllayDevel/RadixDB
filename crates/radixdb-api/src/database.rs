@@ -2988,3 +2988,7 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "database_poison_tests.rs"]
+mod poison_tests;

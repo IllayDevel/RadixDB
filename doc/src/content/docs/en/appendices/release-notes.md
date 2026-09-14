@@ -6,6 +6,22 @@ description: User-visible changes, identity and compatibility boundaries of Radi
 This page summarizes user-visible releases. Git tags and `CHANGELOG.md` are the
 release authority; feature chapters describe the detailed contract.
 
+## 1.2.25 - 2026-09-14
+
+The 1.2.25 manual follows the released 1.2.25 source snapshot and wire protocol
+18. The coordinated workspace crates and binaries report Cargo package version
+1.2.25. Use the full build identity to bind a binary to its exact source revision
+and lockfile.
+
+This maintenance release serializes automatic immutable-member retirement with
+physical restore and compaction ownership. A late cleanup cycle can no longer
+create a quarantine component while the physical database root is being
+replaced. Cancellation, concurrent schema-change and file-backed checkpoint
+regressions now use deterministic, bounded execution contracts.
+
+SQL, wire protocol, storage format, configuration and public APIs are unchanged
+from 1.2.21.
+
 ## 1.2.21 - 2026-09-14
 
 The 1.2.21 manual follows the released 1.2.21 source snapshot and wire protocol
@@ -147,8 +163,8 @@ physical-format boundary.
 
 RadixDB 1.1.0 is identified by annotated tag `v1.1.0` and uses wire protocol
 14. It established the first released procedural and ACL foundation described
-below. The limitations in this section apply to 1.1, not to the 1.2.21 release
-above.
+below. The limitations in this section apply to 1.1, not to the 1.2.25 or 1.2.21
+releases above.
 
 ### Procedural database foundation
 

@@ -85,7 +85,7 @@ contract или несовместимый table descriptor до attachment trig
 
 ## Границы
 
-Transition tables и deferred triggers в 1.2.21 отсутствуют. Trigger functions не
+Transition tables и deferred triggers в 1.2.25 отсутствуют. Trigger functions не
 могут открывать транзакции, запускать jobs или обращаться к network, filesystem
 и process API. Static dependency cycles отклоняются; dynamic SQL сохраняет
 runtime guards и не обходит capabilities или privileges.

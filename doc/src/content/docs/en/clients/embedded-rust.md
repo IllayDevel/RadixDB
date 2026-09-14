@@ -5,13 +5,13 @@ description: Open RadixDB in a Rust process, bind parameters, read rows and cont
 
 The embedded interface runs the database engine in the application process.
 It does not require `radixdb-server`, but the process must own the database
-directory and its lifecycle. This chapter describes the 1.2.21 public API exposed
+directory and its lifecycle. This chapter describes the 1.2.25 public API exposed
 by the top-level `radixdb` crate and its `radixdb::api` module.
 
 ## Adding the crate
 
 When building from a source checkout, depend on the workspace root. Replace the
-example path with the checked-out 1.2.21 source used by the application:
+example path with the checked-out 1.2.25 source used by the application:
 
 ```toml
 [dependencies]

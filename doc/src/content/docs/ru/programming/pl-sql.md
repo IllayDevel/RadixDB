@@ -3,7 +3,7 @@ title: RadixDB PL
 description: Ограниченные серверные блоки с переменными, SQL, курсорами и исключениями.
 ---
 
-**RadixDB PL** является встроенным процедурным языком RadixDB 1.2.21. В catalog
+**RadixDB PL** является встроенным процедурным языком RadixDB 1.2.25. В catalog
 definitions он записывается как `LANGUAGE RADIX`. Язык использует общий lexer,
 выражения и statements RadixDB SQL, но имеет собственный procedural binder и
 bounded runtime. Это не режим совместимости с Oracle PL/SQL или PostgreSQL
@@ -37,7 +37,7 @@ Scalar types: `INTEGER`, `FLOAT`, `DOUBLE PRECISION`, `TEXT`, `BOOLEAN`,
 `table_name%ROWTYPE` связывает local record с ordered descriptor таблицы.
 
 `ARRAY<type, capacity>` является локальной однородной one-based collection.
-Capacity задаётся при компиляции в диапазоне `1..=65536`. В 1.2.21 доступны
+Capacity задаётся при компиляции в диапазоне `1..=65536`. В 1.2.25 доступны
 `APPEND`, `CLEAR`, indexing и read-only `COUNT`; arrays нельзя использовать как
 столбцы таблицы, arguments или results.
 
@@ -138,7 +138,7 @@ EXECUTE
 USING input_id, total;
 ```
 
-Allowlist 1.2.21 содержит один query, `INSERT`, `UPDATE`, `DELETE` или `CALL`,
+Allowlist 1.2.25 содержит один query, `INSERT`, `UPDATE`, `DELETE` или `CALL`,
 включая разрешённые `WITH` forms. `INTO [STRICT]` принимает одну result row.
 Данные caller передавайте только позиционными параметрами через `USING`. Если
 object name намеренно динамический, преобразуйте его в отдельное typed
@@ -183,4 +183,4 @@ stored body запрещены; lexical `BEGIN` не открывает transact
 
 Исполняемый `doc/examples/programming/server_programming.rs` проверяет
 control flow, dynamic SQL, обработанную UNIQUE error и explicit cursor на
-зафиксированной базе 1.2.21. Далее: [«Функции и процедуры»](../routines/).
+зафиксированной базе 1.2.25. Далее: [«Функции и процедуры»](../routines/).

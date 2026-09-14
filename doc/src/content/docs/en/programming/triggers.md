@@ -85,7 +85,7 @@ A cycle reports `PL_TRIGGER_CYCLE`; depth exhaustion reports
 
 ## Scope limits
 
-Transition tables and deferred triggers are not implemented in 1.2.21. Trigger
+Transition tables and deferred triggers are not implemented in 1.2.25. Trigger
 functions cannot start transactions, schedule jobs or access network,
 filesystem or process APIs. Static dependency cycles are rejected; dynamic SQL
 retains the runtime guards and cannot bypass capabilities or privileges.

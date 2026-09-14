@@ -3,7 +3,7 @@ import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 const root = path.resolve('dist');
-const base = process.env.DOCS_BASE || '/manual/1.2.21/';
+const base = process.env.DOCS_BASE || '/manual/1.2.25/';
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.woff2': 'font/woff2' };
 
 async function notFound(res, servedRoot) {

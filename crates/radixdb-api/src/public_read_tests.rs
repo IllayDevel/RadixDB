@@ -199,6 +199,11 @@ fn cursor_and_resource_limits_fail_closed_without_value_disclosure() {
         )
         .unwrap_err();
     assert_eq!(error.code(), PublicReadErrorCode::InvalidCursor);
+    assert_eq!(error.fingerprint().map(str::len), Some(64));
+    assert_eq!(
+        error.detail(),
+        "cursor does not match the admitted query and catalog identities"
+    );
     assert!(!error.to_string().contains("TOP-SECRET"));
 
     let limits = PublicReadLimits {

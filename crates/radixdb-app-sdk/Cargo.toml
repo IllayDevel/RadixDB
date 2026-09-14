@@ -15,8 +15,8 @@ description = "Domain-neutral application contracts and typed client facade for 
 license = "Apache-2.0"
 
 [dependencies]
-radixdb-client = { version = "=1.2.21", path = "../radixdb-client", features = ["tokio"] }
-radixdb-orm = { version = "=1.2.21", path = "../radixdb-orm" }
+radixdb-client = { version = "=1.2.25", path = "../radixdb-client", features = ["tokio"] }
+radixdb-orm = { version = "=1.2.25", path = "../radixdb-orm" }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"
 tokio = { version = "1", features = ["macros", "sync", "time"] }

@@ -994,7 +994,16 @@ impl MVCCEngine {
                 }
 
                 time_since_artifact_retirement += check_interval;
-                if time_since_artifact_retirement >= artifact_retirement_retry_interval {
+                if time_since_artifact_retirement >= artifact_retirement_retry_interval
+                    && engine
+                        .compaction_running
+                        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                        .is_ok()
+                {
+                    // Snapshot restore owns the same slot while it replaces the
+                    // physical root. Retirement must not create quarantine
+                    // members after restore captured the live component mask.
+                    let _retirement_guard = AtomicBoolGuard(&engine.compaction_running);
                     let retirement = engine
                         .physical_generation
                         .load_full()

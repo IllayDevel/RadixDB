@@ -36,7 +36,7 @@ with COMMIT or ROLLBACK; closing an embedded transaction handle rolls it back.
 ## Errors and limitations
 
 SERIALIZABLE, REPEATABLE READ and READ UNCOMMITTED parse but are explicitly
-rejected by the executor. The 1.2.21 CLI drops an isolation clause and starts its
+rejected by the executor. The 1.2.25 CLI drops an isolation clause and starts its
 default transaction; use embedded or TCP `begin_with_isolation` for SNAPSHOT.
 
 ## Privileges

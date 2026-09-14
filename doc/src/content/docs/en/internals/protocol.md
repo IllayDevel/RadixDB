@@ -3,7 +3,7 @@ title: Wire protocol
 description: Protocol 18 framing, session states, cursors, external values and compatibility.
 ---
 
-RadixDB 1.2.21 server and TCP clients share one binary contract owned by the
+RadixDB 1.2.25 server and TCP clients share one binary contract owned by the
 low-level `radixdb-protocol` crate. This is RadixDB protocol 18, not the
 PostgreSQL wire protocol. Applications normally use `radixdb-client`; direct
 codec use is an advanced integration boundary.

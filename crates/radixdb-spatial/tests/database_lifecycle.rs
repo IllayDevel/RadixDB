@@ -156,7 +156,7 @@ fn seed_database(path: &str) {
         )
         .unwrap();
     // Leave these rows and the encoded index to WAL recovery. This proves the
-    // supported v1.2.21 runtime-index boundary without teaching the immutable
+    // supported v1.2.25 runtime-index boundary without teaching the immutable
     // physical INDEX writer how to call plugins.
     for x in 0..32_i64 {
         for y in 0..32_i64 {

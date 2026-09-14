@@ -504,5 +504,10 @@ mod tests {
             ServerBatchFallback::from_storage(TypedBatchFallbackReason::MixedTypedAndRowSources),
             ServerBatchFallback::QueryShape
         );
+
+        let cancellation = ServerCancellation::default();
+        assert!(!cancellation.is_cancelled());
+        cancellation.cancel();
+        assert!(cancellation.is_cancelled());
     }
 }

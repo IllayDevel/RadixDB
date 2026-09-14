@@ -618,4 +618,31 @@ mod tests {
         let result = pv.into_params();
         assert!(result.is_empty());
     }
+
+    #[test]
+    fn test_decimal_metadata_and_named_param_collections() {
+        let decimal = DecimalValue::try_new(12_345, 5, 2).expect("valid decimal");
+        assert_eq!(decimal.unscaled(), 12_345);
+        assert_eq!(decimal.precision(), 5);
+        assert_eq!(decimal.scale(), 2);
+        assert_eq!(
+            decimal.to_param(),
+            Value::try_decimal(12_345, 5, 2).expect("valid decimal value")
+        );
+
+        let mut named = NamedParams::with_capacity(2);
+        named.insert("amount", decimal);
+        named.insert("currency", "USD");
+        assert_eq!(
+            named.as_map().get("amount"),
+            Some(&Value::try_decimal(12_345, 5, 2).expect("valid decimal value"))
+        );
+
+        let source = HashMap::from([("active".to_string(), Value::Boolean(true))]);
+        let converted = NamedParams::from(source);
+        assert_eq!(
+            converted.into_inner().get("active"),
+            Some(&Value::Boolean(true))
+        );
+    }
 }

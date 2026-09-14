@@ -13,7 +13,7 @@ ALTER INDEX index_name RENAME TO new_index_name
 
 ## Description
 
-Version 1.2.21 supports only RENAME TO. The index method, columns, predicate and
+Version 1.2.25 supports only RENAME TO. The index method, columns, predicate and
 uniqueness remain unchanged.
 
 ## Parameters
@@ -33,7 +33,7 @@ The rename is transactional. ROLLBACK restores the old catalog name.
 ## Errors and limitations
 
 A missing source index or conflicting destination name fails. Rebuilding,
-changing method and changing indexed columns are not ALTER INDEX forms in 1.2.21.
+changing method and changing indexed columns are not ALTER INDEX forms in 1.2.25.
 
 ## Privileges
 

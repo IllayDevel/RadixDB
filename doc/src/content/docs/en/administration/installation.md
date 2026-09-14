@@ -11,7 +11,7 @@ provenance record is not the same installation.
 
 ## Verified platform
 
-The 1.2.21 procedure was executed on Fedora Linux 44, x86-64, with the GNU ABI and
+The 1.2.25 procedure was executed on Fedora Linux 44, x86-64, with the GNU ABI and
 Rust 1.97.0 selected by `rust-toolchain.toml`. The resulting binaries target
 `x86_64-unknown-linux-gnu` and dynamically use glibc, `libm` and `libgcc_s`.
 
@@ -54,11 +54,11 @@ Inspect all four identities before packaging:
 ```
 
 The Git revision, profile, target and Cargo lock digest must agree. The source
-baseline used for this 1.2.21 manual prints package version `1.2.21`;
+baseline used for this 1.2.25 manual prints package version `1.2.25`;
 the full revision and protocol identify the exact checked artifact.
 
 ```text
-radixdb-server 1.2.21 git=<40-hex-revision> protocol=18 profile=release target=x86_64-unknown-linux-gnu lock=<64-hex-sha256>
+radixdb-server 1.2.25 git=<40-hex-revision> protocol=18 profile=release target=x86_64-unknown-linux-gnu lock=<64-hex-sha256>
 ```
 
 Do not deploy an identity ending in `-dirty` unless that uncommitted source state

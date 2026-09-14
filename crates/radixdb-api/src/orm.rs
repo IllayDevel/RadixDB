@@ -1008,9 +1008,10 @@ mod tests {
     #[test]
     fn bound_schema_ddl_builders_execute_and_return_current_descriptor() {
         let db = Database::open_in_memory().unwrap();
-        let created = db
+        let create_table = db
             .schema()
             .create_table("orm_ddl")
+            .if_not_exists(true)
             .column(
                 radixdb_orm::Column::integer("id")
                     .primary_key(true)
@@ -1022,11 +1023,22 @@ mod tests {
                     .not_null(true)
                     .default(true),
             )
-            .column(radixdb_orm::Column::vector("embedding", 3))
-            .execute()
-            .unwrap();
+            .column(radixdb_orm::Column::vector("embedding", 3));
+        assert!(create_table.to_json().unwrap().contains("orm_ddl"));
+        assert!(create_table.to_sql().unwrap().sql.contains("orm_ddl"));
+        let created = create_table.execute().unwrap();
         assert_eq!(created.name, "orm_ddl");
         assert_eq!(created.columns.len(), 4);
+
+        let database_descriptor = db.schema().describe_database().fetch().unwrap();
+        assert!(database_descriptor
+            .tables
+            .iter()
+            .any(|table| table.name == "orm_ddl"));
+        let columns = db.schema().table("orm_ddl").columns().fetch().unwrap();
+        assert_eq!(columns.len(), 4);
+        let constraints = db.schema().table("orm_ddl").constraints().fetch().unwrap();
+        assert!(!constraints.is_empty());
         db.execute(
             "INSERT INTO orm_ddl(id, name, embedding) VALUES (1, 'bound', $1)",
             vec![Value::vector(vec![1.0, 2.0, 3.0])],
@@ -1102,7 +1114,7 @@ mod tests {
             .iter()
             .any(|index| index.name == "idx_orm_ddl_active_renamed"));
 
-        let copied = db
+        let create_as = db
             .schema()
             .create_table_as(
                 "orm_ddl_copy",
@@ -1111,8 +1123,10 @@ mod tests {
                     radixdb_orm::Expr::column("name"),
                 ]),
             )
-            .execute()
-            .unwrap();
+            .if_not_exists(true);
+        assert!(create_as.to_json().unwrap().contains("orm_ddl_copy"));
+        assert!(create_as.to_sql().unwrap().sql.contains("orm_ddl_copy"));
+        let copied = create_as.execute().unwrap();
         assert_eq!(copied.columns.len(), 2);
         assert_eq!(
             db.query_one::<i64, _>("SELECT COUNT(*) FROM orm_ddl_copy", ())
@@ -1129,7 +1143,10 @@ mod tests {
             .if_exists(true)
             .execute()
             .unwrap();
-        db.schema().truncate_table("orm_ddl").execute().unwrap();
+        let truncate = db.schema().truncate_table("orm_ddl");
+        assert!(truncate.to_json().unwrap().contains("orm_ddl"));
+        assert!(truncate.to_sql().unwrap().sql.contains("orm_ddl"));
+        truncate.execute().unwrap();
         db.schema().drop_table("orm_ddl").execute().unwrap();
         assert!(db.schema().table("orm_ddl").describe().fetch().is_err());
     }

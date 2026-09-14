@@ -1,6 +1,6 @@
 # RadixDB Rust plugin example
 
-This standalone `cdylib` is the smallest public example of a RadixDB 1.2.21
+This standalone `cdylib` is the smallest public example of a RadixDB 1.2.25
 native plugin. It defines one fixed external type and one native scalar
 function through the safe `radixdb-plugin` SDK.
 

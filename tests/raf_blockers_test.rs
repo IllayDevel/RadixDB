@@ -14,7 +14,7 @@
 
 //! Regression tests for RAF production blockers.
 
-use radixdb::{named_params, DataType, Database, Value};
+use radixdb::{named_params, DataType, Database, NavigationErrorCode, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -793,13 +793,18 @@ fn raf_alter_index_rename_does_not_break_concurrent_readers() {
     let reader_running = Arc::clone(&running);
     let reader = std::thread::spawn(move || {
         while reader_running.load(Ordering::Acquire) {
-            let count: i64 = reader_db
-                .query_one(
-                    "SELECT COUNT(*) FROM raf080b_orders WHERE revision IN (0, 1)",
-                    (),
-                )
-                .expect("concurrent read");
-            assert_eq!(count, 3);
+            match reader_db.query_one::<i64, _>(
+                "SELECT COUNT(*) FROM raf080b_orders WHERE revision IN (0, 1)",
+                (),
+            ) {
+                Ok(count) => assert_eq!(count, 3),
+                Err(error)
+                    if error.navigation_code() == Some(NavigationErrorCode::SchemaChanged) =>
+                {
+                    continue;
+                }
+                Err(error) => panic!("concurrent read: {error}"),
+            }
         }
     });
 

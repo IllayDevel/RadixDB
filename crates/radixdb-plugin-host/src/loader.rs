@@ -935,7 +935,7 @@ fn validate_loaded_graph(packages: &[LoadedObjects]) -> Result<(), PluginHostErr
             | radixdb_plugin_abi::RADIX_ACCESS_METHOD_BITMAP => &[(1, "=")],
             radixdb_plugin_abi::RADIX_ACCESS_METHOD_HNSW => {
                 return Err(PluginHostError::Registry(format!(
-                    "external HNSW operator class {} requires planner support outside the v1.2.21 boundary",
+                    "external HNSW operator class {} requires planner support outside the v1.2.25 boundary",
                     class.local_id
                 )));
             }

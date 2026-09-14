@@ -3,7 +3,7 @@ title: Installing Extensions
 description: Install trusted native packages, bind them to a database and operate their lifecycle safely.
 ---
 
-RadixDB 1.2.21 loads trusted native extension packages when the server starts.
+RadixDB 1.2.25 loads trusted native extension packages when the server starts.
 The server operator installs a package on the host and explicitly allowlists
 its absolute directory. A database owner then binds selected exports into a
 database with SQL.
@@ -143,7 +143,7 @@ UUID. Database bindings pin an exact version. Do not add a higher version to a
 server that must continue opening databases bound to a lower version: the
 lower artifact becomes shadowed and those databases enter restricted mode.
 
-RadixDB 1.2.21 has no hot reload and no in-place `ALTER EXTENSION UPDATE` command.
+RadixDB 1.2.25 has no hot reload and no in-place `ALTER EXTENSION UPDATE` command.
 Keep every exact package needed by a database and treat a version change as an
 explicit application migration with a separately verified rollback. The
 package tool can compare a new artifact with `--previous-package`, but a
@@ -159,7 +159,7 @@ DROP EXTENSION radixdb_pair RESTRICT;
 COMMIT;
 ```
 
-`CASCADE` is not supported for extension objects in 1.2.21. `RESTRICT` prevents
+`CASCADE` is not supported for extension objects in 1.2.25. `RESTRICT` prevents
 removal while a table, function, operator, index or other catalog object still
 depends on the export.
 

@@ -66,8 +66,8 @@ for (let index = 0; index < en.length; index += 1) {
   const left = en[index];
   const right = ru[index];
   assert.equal(right.status, statusTranslation.get(left.status), left.id);
-  assert.equal(left.version, '1.2.21', left.id);
-  assert.equal(right.version, '1.2.21', left.id);
+  assert.equal(left.version, '1.2.25', left.id);
+  assert.equal(right.version, '1.2.25', left.id);
   assert.equal(left.test, right.test, left.id);
 
   const leftHref = left.chapter.match(/\]\(([^)]+)\)/)?.[1];

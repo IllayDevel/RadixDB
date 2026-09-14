@@ -3,7 +3,7 @@ title: Storage internals
 description: MVCC hot state, V6 immutable artifacts, WAL, generation publication and recovery.
 ---
 
-RadixDB 1.2.21 combines mutable MVCC state for current transactions with immutable
+RadixDB 1.2.25 combines mutable MVCC state for current transactions with immutable
 V6 artifacts for cold committed data. This chapter explains the lifecycle and
 failure boundaries. Exact binary fields, checksums, limits and crash outcomes
 are defined by the versioned codecs, format constants and executable recovery

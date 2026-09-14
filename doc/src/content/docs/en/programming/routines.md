@@ -121,7 +121,7 @@ in the same atomic catalog publication.
 
 Definitions bind static object references to stable catalog IDs. Compiled IR is
 a rebuildable cache keyed by definition and dependency revisions. The accepted
-1.2.21 tests rebuild routines from source after a persistent reopen.
+1.2.25 tests rebuild routines from source after a persistent reopen.
 
 ## Resource budgets
 
@@ -139,7 +139,7 @@ triggers share one budget owner:
 | Deadline | 60 s | 24 h |
 
 The optional `RESOURCE POLICY` clause accepts only the built-in `default` or
-`default_call` name in 1.2.21; there is no DDL for custom policy objects. Resource
+`default_call` name in 1.2.25; there is no DDL for custom policy objects. Resource
 errors roll back rather than truncate the result.
 
 Embedded diagnostics expose stable `PL_*` kinds and bounded details. TCP

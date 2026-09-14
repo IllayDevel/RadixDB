@@ -2,7 +2,7 @@
 
 [Русский](README.ru.md)
 
-This directory contains the validated Astro/Starlight manual for RadixDB 1.2.21.
+This directory contains the validated Astro/Starlight manual for RadixDB 1.2.25.
 English is the primary language and every user-facing chapter has a Russian
 counterpart. Public examples, navigation metadata and validation scripts live
 beside the content.
@@ -26,10 +26,10 @@ npm run test:editorial
 npm run dev
 ```
 
-Open `/manual/1.2.21/ru/` or `/manual/1.2.21/en/` on the printed local server URL.
+Open `/manual/1.2.25/ru/` or `/manual/1.2.25/en/` on the printed local server URL.
 `npm run preview` serves the built site, including its search index.
 `DOCS_BASE` overrides the deployment prefix. The documentation target is the
-1.2.21 release; the application version and source revision are displayed
+1.2.25 release; the application version and source revision are displayed
 separately.
 
 To exercise the publication artifact on a non-root prefix:
@@ -37,7 +37,7 @@ To exercise the publication artifact on a non-root prefix:
 ```sh
 DOCS_SITE=https://docs.invalid \
 DOCS_ROOT_BASE=/preview/ \
-DOCS_BASE=/preview/manual/1.2.21/ \
+DOCS_BASE=/preview/manual/1.2.25/ \
 npm run test:publication
 ```
 

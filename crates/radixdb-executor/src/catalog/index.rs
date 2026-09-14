@@ -373,7 +373,7 @@ fn bind_index_payload(
     let predicate_sql = if let Some(predicate) = &statement.where_clause {
         if operator_class.is_some() {
             return Err(Error::NotSupported(
-                "partial indexes over external operator classes are not supported in v1.2.21"
+                "partial indexes over external operator classes are not supported in v1.2.25"
                     .to_owned(),
             ));
         }

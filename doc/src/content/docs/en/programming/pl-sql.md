@@ -3,7 +3,7 @@ title: RadixDB PL
 description: Write bounded server-side blocks with variables, SQL, cursors and exceptions.
 ---
 
-**RadixDB PL** is the procedural language built into RadixDB 1.2.21. Catalog
+**RadixDB PL** is the procedural language built into RadixDB 1.2.25. Catalog
 definitions spell it `LANGUAGE RADIX`. It shares the RadixDB SQL lexer,
 expressions and statements, but has its own procedural binder and bounded
 runtime. It is not a compatibility mode for Oracle PL/SQL or PostgreSQL
@@ -37,7 +37,7 @@ requires an initializer.
 `table_name%ROWTYPE` binds a local record to the table's ordered descriptor.
 
 `ARRAY<type, capacity>` is a local, homogeneous, one-based collection. Capacity
-is a compile-time value in `1..=65536`. The 1.2.21 operations are `APPEND`,
+is a compile-time value in `1..=65536`. The 1.2.25 operations are `APPEND`,
 `CLEAR`, indexing and read-only `COUNT`; arrays cannot be table columns,
 arguments or results.
 
@@ -139,7 +139,7 @@ EXECUTE
 USING input_id, total;
 ```
 
-The 1.2.21 allowlist is one query, `INSERT`, `UPDATE`, `DELETE` or `CALL`, including
+The 1.2.25 allowlist is one query, `INSERT`, `UPDATE`, `DELETE` or `CALL`, including
 their admitted `WITH` forms. `INTO [STRICT]` receives one result row. Put caller
 data only in positional parameters supplied by `USING`. For a deliberately
 dynamic object name, convert it to the separate typed identifier value:
@@ -183,4 +183,4 @@ are forbidden inside a stored body; lexical `BEGIN` does not open a transaction.
 
 The executable `doc/examples/programming/server_programming.rs` verifies
 control flow, dynamic SQL, a handled UNIQUE error and an explicit cursor against
-the frozen 1.2.21 baseline. Continue with [Functions and Procedures](../routines/).
+the frozen 1.2.25 baseline. Continue with [Functions and Procedures](../routines/).

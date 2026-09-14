@@ -15,9 +15,9 @@ description = "Verified bounded procedural runtime contracts for RadixDB"
 license-file = "../../LICENSE"
 
 [dependencies]
-radixdb-catalog = { version = "=1.2.21", path = "../radixdb-catalog" }
-radixdb-core = { version = "=1.2.21", path = "../radixdb-core" }
-radixdb-sql = { version = "=1.2.21", path = "../radixdb-sql" }
+radixdb-catalog = { version = "=1.2.25", path = "../radixdb-catalog" }
+radixdb-core = { version = "=1.2.25", path = "../radixdb-core" }
+radixdb-sql = { version = "=1.2.25", path = "../radixdb-sql" }
 
 [dev-dependencies]
 toml = "0.8"

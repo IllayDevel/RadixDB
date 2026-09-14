@@ -67,12 +67,12 @@ operator-class strategies, key codec, or planner-support behavior.
 
 Only an exact canonical SemVer without build metadata is accepted. A version
 range, package path, URL, checksum override, `CASCADE`, `FORCE` and
-`IGNORE MISSING` are not part of the 1.2.21 grammar. `IF NOT EXISTS` succeeds only
+`IGNORE MISSING` are not part of the 1.2.25 grammar. `IF NOT EXISTS` succeeds only
 when the existing binding has the same package UUID, version and fingerprint.
 
 The registry selects one active version for each package UUID at startup. A
 database remains pinned to its recorded version and fingerprint. There is no
-`ALTER EXTENSION UPDATE` in 1.2.21.
+`ALTER EXTENSION UPDATE` in 1.2.25.
 
 ## External types
 
@@ -81,7 +81,7 @@ revision, semantic revision, storage shape, payload bound and comparison
 callbacks come from the package. Values keep this identity in catalog 6.2 and
 protocol 18; they are not interchangeable with `BYTES`.
 
-The 1.2.21 Rust SDK does not publish generic SQL text input/output callbacks.
+The 1.2.25 Rust SDK does not publish generic SQL text input/output callbacks.
 Construct external values through native functions or a plugin-aware protocol
 adapter instead of an untyped SQL literal.
 
@@ -90,7 +90,7 @@ adapter instead of an untyped SQL literal.
 Argument and result types, nullability, strictness, volatility,
 parallel-safety, cost, cancellation and batch capability must match the
 descriptor exactly. Native aggregate, window and table-valued functions are
-not accepted in 1.2.21. `LANGUAGE RADIX` routines are a separate facility.
+not accepted in 1.2.25. `LANGUAGE RADIX` routines are a separate facility.
 
 ## Operators and operator classes
 
@@ -105,7 +105,7 @@ operator alphabet is:
 An operator class connects declared operators and a canonical key encoder to a
 core-owned `BTREE`, `HASH`, `BITMAP` or `HNSW` access method. The descriptor
 defines its strategy slots. B-tree classes require `<`, `<=`, `=`, `>=` and
-`>`; hash and bitmap classes require `=`. The Rust 1.2.21 authoring SDK rejects
+`>`; hash and bitmap classes require `=`. The Rust 1.2.25 authoring SDK rejects
 external HNSW classes even though the SQL grammar reserves the method.
 
 Use an external operator class in an index definition as follows:

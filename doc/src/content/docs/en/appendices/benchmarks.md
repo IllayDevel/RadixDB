@@ -1,6 +1,6 @@
 ---
 title: Benchmarks
-description: Reproducible performance and reliability evidence for the RadixDB 1.2.21 documentation line.
+description: Reproducible performance and reliability evidence for the RadixDB 1.2.25 documentation line.
 ---
 
 Benchmark results describe one binary, dataset and machine. They are not a
@@ -96,7 +96,7 @@ resource errors, and completed the measured run in 11,870.421 ms. The cold
 database-selection phase took 523.413 ms. Peak RSS was 565.97 MiB, final RSS
 was 343.04 MiB, and the allocated database size was 1.83 GiB.
 
-This run verifies the recorded source, not the 1.2.21 release. It is retained
+This run verifies the recorded source, not the 1.2.25 release. It is retained
 as historical evidence and is not substituted into the earlier PostgreSQL table:
 that comparison belongs to a different RadixDB binary and measurement date.
 

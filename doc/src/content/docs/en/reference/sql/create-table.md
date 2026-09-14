@@ -52,7 +52,7 @@ forms fail. IF NOT EXISTS is not a migration and does not compare schemas.
 ## Privileges
 
 A non-bootstrap session needs CONNECT and USAGE on the target schema. RadixDB
-1.2.21 has no separate schema CREATE privilege, so USAGE also permits creation.
+1.2.25 has no separate schema CREATE privilege, so USAGE also permits creation.
 The creator becomes owner.
 
 ## Example

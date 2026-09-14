@@ -606,6 +606,7 @@ mod tests {
         assert_eq!(row.get::<i64>(0).unwrap(), 1);
         assert_eq!(row.get::<String>(1).unwrap(), "Alice");
         assert_eq!(row.get::<f64>(2).unwrap(), 10.5);
+        assert_eq!(row.as_row().get(0), Some(&Value::Integer(1)));
     }
 
     #[test]

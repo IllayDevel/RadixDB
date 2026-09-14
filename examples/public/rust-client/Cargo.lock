@@ -430,7 +430,7 @@ checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
 
 [[package]]
 name = "radixdb-client"
-version = "1.2.21"
+version = "1.2.25"
 dependencies = [
  "base64",
  "chrono",
@@ -445,7 +445,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-core"
-version = "1.2.21"
+version = "1.2.25"
 dependencies = [
  "ahash",
  "chrono",
@@ -462,7 +462,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-orm"
-version = "1.2.21"
+version = "1.2.25"
 dependencies = [
  "radixdb-core",
  "serde",
@@ -473,7 +473,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-protocol"
-version = "1.2.21"
+version = "1.2.25"
 dependencies = [
  "bincode",
  "serde",

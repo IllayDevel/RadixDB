@@ -190,6 +190,7 @@ jobs:
   feature-tests:
     name: Optional feature regression tests
     runs-on: ubuntu-latest
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -211,7 +212,9 @@ jobs:
         run: cargo test --locked --test r2_l06_batch_b_terminal_outcome_test --features test-failpoints -- --test-threads=1
 
       - name: File-backed full inventory
-        run: cargo test --locked --workspace --all-targets --features test-filedb --no-fail-fast
+        run: |
+          RUST_TEST_THREADS=1 timeout --signal=TERM --kill-after=30s 45m \
+            cargo test --locked --workspace --all-targets --features test-filedb --no-fail-fast
 
       - name: No-default-features product inventory
         run: |

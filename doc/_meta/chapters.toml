@@ -1,4 +1,4 @@
-target_version = "1.2.21"
+target_version = "1.2.25"
 locales = ["en", "ru"]
 
 [[chapters]]

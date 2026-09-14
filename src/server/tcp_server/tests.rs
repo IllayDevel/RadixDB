@@ -1398,9 +1398,9 @@ fn r6_l01_c_disconnect_releases_cold_and_indexed_join_sessions() {
             "INSERT INTO join_inner SELECT value, value % 100 FROM generate_series(1, 50000)",
             "CREATE INDEX idx_join_inner_key ON join_inner(join_key)",
             "CREATE TABLE hash_outer (id INTEGER PRIMARY KEY, join_key INTEGER)",
-            "INSERT INTO hash_outer SELECT value, value % 100 FROM generate_series(1, 15000)",
+            "INSERT INTO hash_outer SELECT value, value % 100 FROM generate_series(1, 50000)",
             "CREATE TABLE hash_inner (id INTEGER PRIMARY KEY, join_key INTEGER)",
-            "INSERT INTO hash_inner SELECT value, value % 100 FROM generate_series(1, 15000)",
+            "INSERT INTO hash_inner SELECT value, value % 100 FROM generate_series(1, 50000)",
             "PRAGMA CHECKPOINT",
         ] {
             match setup
@@ -1447,8 +1447,13 @@ fn r6_l01_c_disconnect_releases_cold_and_indexed_join_sessions() {
             plan_lines.iter().any(|line| line.contains("Index")),
             "fixture must exercise indexed join path: {plan_lines:#?}"
         );
-        let parallel_join_sql = "SELECT * FROM hash_outer o \
-                 INNER JOIN hash_inner i ON o.join_key = i.join_key";
+        // The aggregate consumes all 25M matching pairs before publishing one
+        // row. This makes the first FETCH own active parallel work, so the
+        // disconnect below cannot race with a merely opened pull cursor.
+        let parallel_join_sql = "SELECT SUM(pair_sum) FROM (\
+                 SELECT o.id + i.id AS pair_sum FROM hash_outer o \
+                 INNER JOIN hash_inner i ON o.join_key = i.join_key LIMIT 25000000\
+                 ) parallel_pairs";
         let parallel_plan_cursor = match setup
             .execute(format!("EXPLAIN {parallel_join_sql}"))
             .expect("explain parallel hash join")
@@ -1524,13 +1529,22 @@ fn r6_l01_c_disconnect_releases_cold_and_indexed_join_sessions() {
                 .select_database("disconnect_storage_modes")
                 .expect("select database");
             if sql == parallel_join_sql {
-                // The parallel JOIN is a pull cursor: disconnect while the
-                // cursor is live so teardown releases its hash table,
-                // bounded probe batch and snapshot.
-                match client.execute(sql).expect("parallel cursor execute") {
-                    ExecuteResult::Cursor(_) => {}
-                    result => panic!("parallel join returned non-cursor result: {result:?}"),
+                // Depending on where the aggregate is opened, EXECUTE or the
+                // first FETCH owns the parallel work. Either phase may cross
+                // the deadline, but the connection must then be poisoned.
+                if let Ok(result) = client.execute(sql) {
+                    let cursor = match result {
+                        ExecuteResult::Cursor(cursor) => cursor,
+                        result => {
+                            panic!("parallel join returned non-cursor result: {result:?}")
+                        }
+                    };
+                    assert!(
+                        client.fetch(&cursor).is_err(),
+                        "parallel aggregate probe must time out while fetching: {sql}"
+                    );
                 }
+                assert!(client.is_poisoned());
             } else if sql == indexed_join_sql {
                 // Depending on where the lazy aggregate is opened, either
                 // EXECUTE or the first FETCH owns the blocking work. Both

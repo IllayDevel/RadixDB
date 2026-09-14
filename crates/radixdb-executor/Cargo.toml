@@ -27,13 +27,13 @@ test-mutations = ["radixdb-storage/test-mutations"]
 test-hooks = ["radixdb-storage/test-hooks"]
 
 [dependencies]
-radixdb-catalog = { version = "=1.2.21", path = "../radixdb-catalog" }
-radixdb-core = { version = "=1.2.21", path = "../radixdb-core" }
-radixdb-functions = { version = "=1.2.21", path = "../radixdb-functions" }
-radixdb-procedural = { version = "=1.2.21", path = "../radixdb-procedural" }
-radixdb-plugin-host = { version = "=1.2.21", path = "../radixdb-plugin-host" }
-radixdb-sql = { version = "=1.2.21", path = "../radixdb-sql" }
-radixdb-storage = { version = "=1.2.21", path = "../radixdb-storage" }
+radixdb-catalog = { version = "=1.2.25", path = "../radixdb-catalog" }
+radixdb-core = { version = "=1.2.25", path = "../radixdb-core" }
+radixdb-functions = { version = "=1.2.25", path = "../radixdb-functions" }
+radixdb-procedural = { version = "=1.2.25", path = "../radixdb-procedural" }
+radixdb-plugin-host = { version = "=1.2.25", path = "../radixdb-plugin-host" }
+radixdb-sql = { version = "=1.2.25", path = "../radixdb-sql" }
+radixdb-storage = { version = "=1.2.25", path = "../radixdb-storage" }
 ahash = "0.8"
 argon2 = { version = "0.5", features = ["std"] }
 chrono = "0.4"
@@ -53,9 +53,9 @@ uuid = { version = "1", features = ["v7"] }
 [dev-dependencies]
 toml = "0.8"
 criterion = { version = "0.8", features = ["html_reports"] }
-radixdb-plugin-abi = { version = "=1.2.21", path = "../radixdb-plugin-abi" }
-radixdb-plugin-host = { version = "=1.2.21", path = "../radixdb-plugin-host", features = ["test-hooks"] }
-radixdb-storage = { version = "=1.2.21", path = "../radixdb-storage", features = ["test-failpoints", "test-hooks"] }
+radixdb-plugin-abi = { version = "=1.2.25", path = "../radixdb-plugin-abi" }
+radixdb-plugin-host = { version = "=1.2.25", path = "../radixdb-plugin-host", features = ["test-hooks"] }
+radixdb-storage = { version = "=1.2.25", path = "../radixdb-storage", features = ["test-failpoints", "test-hooks"] }
 tempfile = "3.9"
 
 [[bench]]
