@@ -552,16 +552,26 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_literal_value_preserves_timestamp_type_hint() {
+    fn test_extract_literal_value_preserves_temporal_type_hints() {
         let expr = Expression::StringLiteral(StringLiteral {
             token: dummy_token("'2026-08-09 00:00:00'", TokenType::String),
             value: "2026-08-09 00:00:00".into(),
             type_hint: Some("TIMESTAMP".into()),
         });
+        let value = extract_literal_value(&expr)
+            .expect("typed TIMESTAMP literal must remain typed in planner helpers");
+        assert_eq!(value.data_type(), DataType::CivilTimestamp);
+        assert_eq!(value.as_string().as_deref(), Some("2026-08-09 00:00:00"));
+
+        let expr = Expression::StringLiteral(StringLiteral {
+            token: dummy_token("'2026-08-09T00:00:00+07:00'", TokenType::String),
+            value: "2026-08-09T00:00:00+07:00".into(),
+            type_hint: Some("TIMESTAMPTZ".into()),
+        });
         let Some(Value::Timestamp(value)) = extract_literal_value(&expr) else {
-            panic!("typed TIMESTAMP literal must remain typed in planner helpers");
+            panic!("typed TIMESTAMPTZ literal must remain typed in planner helpers");
         };
-        assert_eq!(value.to_rfc3339(), "2026-08-09T00:00:00+00:00");
+        assert_eq!(value.to_rfc3339(), "2026-08-08T17:00:00+00:00");
     }
 
     #[test]
@@ -833,9 +843,10 @@ mod tests {
         assert_eq!(string_to_datatype("CHAR(8)"), DataType::Text);
         assert_eq!(string_to_datatype("CLOB"), DataType::Text);
         assert_eq!(string_to_datatype("BOOLEAN"), DataType::Boolean);
-        assert_eq!(string_to_datatype("TIMESTAMP"), DataType::Timestamp);
+        assert_eq!(string_to_datatype("TIMESTAMP"), DataType::CivilTimestamp);
+        assert_eq!(string_to_datatype("TIMESTAMPTZ"), DataType::Timestamp);
         assert_eq!(string_to_datatype("DATE"), DataType::Date);
-        assert_eq!(string_to_datatype("TIME"), DataType::Timestamp);
+        assert_eq!(string_to_datatype("TIME"), DataType::Time);
         assert_eq!(string_to_datatype("JSON"), DataType::Json);
         assert_eq!(string_to_datatype("JSONB"), DataType::Json);
         assert_eq!(string_to_datatype("UUID"), DataType::Uuid);

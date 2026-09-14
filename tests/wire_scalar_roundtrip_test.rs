@@ -537,7 +537,7 @@ fn column_batch_v1_matches_row_fetch_for_float_bool_timestamp_and_nulls_after_re
                             id INTEGER PRIMARY KEY,
                             score FLOAT,
                             active BOOLEAN,
-                            happened_at TIMESTAMP
+                            happened_at TIMESTAMPTZ
                         )",
                     )
                     .expect("create typed matrix table"),
@@ -690,6 +690,136 @@ fn column_batch_v1_matches_row_fetch_for_float_bool_timestamp_and_nulls_after_re
             }
             ColumnCursorBatch::Rows(batch) => panic!(
                 "terminal typed matrix cursor must stay columnar, got {} fallback rows",
+                batch.rows.len()
+            ),
+        }
+    });
+}
+
+#[test]
+fn civil_timestamp_and_time_keep_distinct_wire_identity_after_reopen() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let data_dir = temp.path().join("data");
+    let civil_nanos = 86_400_000_000_007_i64;
+    let time_nanos = 45_296_000_000_008_i64;
+
+    with_one_connection_server(
+        test_config(data_dir.clone()),
+        "wire_civil_temporal",
+        |client| {
+            assert_command(
+                client
+                    .execute(
+                        "CREATE TABLE wire_civil_temporal (
+                            id INTEGER PRIMARY KEY,
+                            civil TIMESTAMP,
+                            wall_clock TIME
+                        )",
+                    )
+                    .expect("create civil temporal table"),
+            );
+
+            let mut values = BTreeMap::new();
+            values.insert(
+                "civil".to_string(),
+                WireValue::CivilTimestampNanos {
+                    nanos_since_civil_epoch: civil_nanos,
+                },
+            );
+            values.insert(
+                "wall_clock".to_string(),
+                WireValue::TimeNanos {
+                    nanos_since_midnight: time_nanos,
+                },
+            );
+            assert_command(
+                client
+                    .execute_with_parameters(
+                        "INSERT INTO wire_civil_temporal (id, civil, wall_clock)
+                         VALUES (1, :civil, :wall_clock)",
+                        values,
+                    )
+                    .expect("insert typed civil temporal row"),
+            );
+            assert_command(
+                client
+                    .execute(
+                        "INSERT INTO wire_civil_temporal (id, civil, wall_clock)
+                         VALUES (2, NULL, NULL)",
+                    )
+                    .expect("insert nullable civil temporal row"),
+            );
+            execute_and_drain(client, "PRAGMA CHECKPOINT");
+        },
+    );
+
+    with_one_connection_server(test_config(data_dir), "wire_civil_temporal", |client| {
+        // Keep the direct artifact projection: ORDER BY would intentionally
+        // materialize a row-oriented sort before the transport boundary.
+        let sql = "SELECT civil, wall_clock FROM wire_civil_temporal";
+        let expected_rows = vec![
+            vec![
+                WireValue::CivilTimestampNanos {
+                    nanos_since_civil_epoch: civil_nanos,
+                },
+                WireValue::TimeNanos {
+                    nanos_since_midnight: time_nanos,
+                },
+            ],
+            vec![WireValue::Null, WireValue::Null],
+        ];
+
+        let ExecuteResult::Cursor(row_cursor) =
+            client.execute(sql).expect("open civil temporal row cursor")
+        else {
+            panic!("SELECT should open a row cursor");
+        };
+        let row_batch = client.fetch(&row_cursor).expect("fetch row cursor");
+        assert!(row_batch.eof);
+        assert_eq!(
+            row_batch
+                .rows
+                .into_iter()
+                .map(|row| row.values)
+                .collect::<Vec<_>>(),
+            expected_rows
+        );
+
+        let ExecuteResult::Cursor(column_cursor) = client
+            .execute(sql)
+            .expect("open civil temporal column cursor")
+        else {
+            panic!("SELECT should open a column cursor");
+        };
+        match client
+            .fetch_batch(&column_cursor, CursorFetchMode::Auto)
+            .expect("fetch civil temporal column batch")
+        {
+            ColumnCursorBatch::Columnar {
+                columns,
+                row_count,
+                eof,
+            } => {
+                assert_eq!(row_count, 2);
+                assert!(!eof);
+                assert_eq!(columns.len(), 2);
+                assert_eq!(
+                    columns[0],
+                    WireColumn::CivilTimestampNanos {
+                        values: vec![civil_nanos, 0],
+                        nulls: vec![false, true],
+                    }
+                );
+                assert_eq!(
+                    columns[1],
+                    WireColumn::TimeNanos {
+                        values: vec![time_nanos, 0],
+                        nulls: vec![false, true],
+                    }
+                );
+            }
+            ColumnCursorBatch::Rows(batch) => panic!(
+                "civil temporal values must stay columnar, got {} fallback rows",
                 batch.rows.len()
             ),
         }

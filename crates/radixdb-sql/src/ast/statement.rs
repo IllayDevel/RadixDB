@@ -52,6 +52,7 @@ pub enum Statement {
     ReleaseSavepoint(ReleaseSavepointStatement),
     /// Boxed to reduce enum size (424 bytes unboxed)
     Set(Box<SetStatement>),
+    ShowVariable(ShowVariableStatement),
     Pragma(PragmaStatement),
     ShowTables(ShowTablesStatement),
     ShowViews(ShowViewsStatement),
@@ -114,6 +115,7 @@ impl fmt::Display for Statement {
             Statement::Savepoint(s) => write!(f, "{}", s),
             Statement::ReleaseSavepoint(s) => write!(f, "{}", s),
             Statement::Set(s) => write!(f, "{}", s),
+            Statement::ShowVariable(s) => write!(f, "{}", s),
             Statement::Pragma(s) => write!(f, "{}", s),
             Statement::ShowTables(s) => write!(f, "{}", s),
             Statement::ShowViews(s) => write!(f, "{}", s),

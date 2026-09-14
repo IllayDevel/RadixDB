@@ -26,7 +26,7 @@ fn test_now_minus_interval_in_where() {
         "CREATE TABLE events (
             id INTEGER PRIMARY KEY AUTO_INCREMENT,
             name TEXT NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
         (),
     )
@@ -123,7 +123,7 @@ fn test_current_date_constant_folding() {
         "CREATE TABLE logs (
             id INTEGER PRIMARY KEY AUTO_INCREMENT,
             msg TEXT NOT NULL,
-            ts TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            ts TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
         (),
     )
@@ -154,7 +154,7 @@ fn test_interval_arithmetic_folding() {
         "CREATE TABLE schedules (
             id INTEGER PRIMARY KEY AUTO_INCREMENT,
             event_name TEXT NOT NULL,
-            scheduled_at TIMESTAMP NOT NULL
+            scheduled_at TIMESTAMPTZ NOT NULL
         )",
         (),
     )

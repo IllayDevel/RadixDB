@@ -201,20 +201,14 @@ fn test_interval_with_timestamp_literal() {
         let row = row.expect("Failed to get row");
         let value: Value = row.get(0).unwrap();
 
-        if let Value::Timestamp(timestamp) = value {
-            // Expected: 2025-01-02 13:00:00 UTC
-            let expected = chrono::DateTime::parse_from_rfc3339("2025-01-02T13:00:00Z")
-                .unwrap()
-                .with_timezone(&chrono::Utc);
-
-            assert_eq!(
-                timestamp, expected,
-                "Expected {}, got {}",
-                expected, timestamp
-            );
-        } else {
-            panic!("Expected Timestamp value, got {:?}", value);
-        }
+        let timestamp = value
+            .as_civil_timestamp()
+            .unwrap_or_else(|| panic!("Expected civil TIMESTAMP value, got {value:?}"));
+        let expected = chrono::NaiveDate::from_ymd_opt(2025, 1, 2)
+            .unwrap()
+            .and_hms_opt(13, 0, 0)
+            .unwrap();
+        assert_eq!(timestamp, expected, "Expected {expected}, got {timestamp}");
         count += 1;
     }
 
@@ -230,7 +224,7 @@ fn test_interval_in_where_clause() {
         "CREATE TABLE events (
             id INTEGER PRIMARY KEY,
             name TEXT,
-            event_time TIMESTAMP
+            event_time TIMESTAMPTZ
         )",
         (),
     )
@@ -240,7 +234,7 @@ fn test_interval_in_where_clause() {
     db.execute("INSERT INTO events VALUES (1, 'Recent Event', NOW())", ())
         .expect("Failed to insert");
     db.execute(
-        "INSERT INTO events VALUES (2, 'Old Event', TIMESTAMP '2020-01-01 00:00:00')",
+        "INSERT INTO events VALUES (2, 'Old Event', TIMESTAMPTZ '2020-01-01 00:00:00Z')",
         (),
     )
     .expect("Failed to insert");
@@ -310,7 +304,7 @@ fn test_interval_month_calendar_aware() {
         .expect("Failed to execute query");
 
     // Jan 31 + 1 month should clamp to Feb 28 (2025 is not a leap year)
-    assert_eq!(ts, "2025-02-28T10:30:00Z");
+    assert_eq!(ts, "2025-02-28 10:30:00");
 }
 
 /// Test calendar-aware month addition on leap year: Jan 31 + 1 month = Feb 29
@@ -326,7 +320,7 @@ fn test_interval_month_leap_year() {
         .expect("Failed to execute query");
 
     // 2024 is a leap year, so Jan 31 + 1 month = Feb 29
-    assert_eq!(ts, "2024-02-29T15:00:00Z");
+    assert_eq!(ts, "2024-02-29 15:00:00");
 }
 
 /// Test calendar-aware year addition preserves month/day
@@ -342,7 +336,7 @@ fn test_interval_year_calendar_aware() {
         .expect("Failed to execute query");
 
     // Feb 29 2024 (leap) + 1 year = Feb 28 2025 (non-leap, day clamped)
-    assert_eq!(ts, "2025-02-28T12:00:00Z");
+    assert_eq!(ts, "2025-02-28 12:00:00");
 }
 
 /// Test subtracting months works correctly
@@ -358,7 +352,7 @@ fn test_interval_subtract_months() {
         .expect("Failed to execute query");
 
     // Mar 31 - 1 month = Feb 28 (2025 is not a leap year)
-    assert_eq!(ts, "2025-02-28T08:00:00Z");
+    assert_eq!(ts, "2025-02-28 08:00:00");
 }
 
 /// Test adding multiple months crosses year boundary correctly
@@ -374,7 +368,7 @@ fn test_interval_months_cross_year() {
         .expect("Failed to execute query");
 
     // Nov 15 + 3 months = Feb 15 next year
-    assert_eq!(ts, "2026-02-15T00:00:00Z");
+    assert_eq!(ts, "2026-02-15 00:00:00");
 }
 
 /// Test that INTERVAL '12 months' equals INTERVAL '1 year'
@@ -397,5 +391,5 @@ fn test_interval_12_months_equals_1_year() {
         .expect("Failed");
 
     assert_eq!(ts_months, ts_year);
-    assert_eq!(ts_months, "2026-06-15T12:00:00Z");
+    assert_eq!(ts_months, "2026-06-15 12:00:00");
 }

@@ -725,6 +725,15 @@ fn test_parse_timestamp() {
     let ts = parse_timestamp("2024-01-15 10:30:00").unwrap();
     assert_eq!(ts.year(), 2024);
 
+    // SQL format with an explicit offset is normalized to UTC.
+    let ts = parse_timestamp("2024-01-15 10:30:00.123456789+07:00").unwrap();
+    assert_eq!(ts.hour(), 3);
+    assert_eq!(ts.nanosecond(), 123_456_789);
+
+    // PostgreSQL-compatible SQL spelling with a trailing UTC marker.
+    let ts = parse_timestamp("2024-01-15 10:30:00Z").unwrap();
+    assert_eq!(ts.hour(), 10);
+
     // Date only
     let ts = parse_timestamp("2024-01-15").unwrap();
     assert_eq!(ts.year(), 2024);
@@ -884,6 +893,50 @@ fn negative_epoch_nanos_round_trip_exactly() {
             Ok(Value::Timestamp(expected))
         );
     }
+}
+
+#[test]
+fn temporal_logical_types_share_i64_storage_without_sharing_identity() {
+    let civil = parse_civil_timestamp("1969-12-31 23:59:59.999999999").unwrap();
+    let civil = Value::civil_timestamp(civil).unwrap();
+    let instant = Value::from_temporal_nanos(DataType::Timestamp, -1).unwrap();
+    let time = Value::from_temporal_nanos(DataType::Time, 1).unwrap();
+
+    assert_eq!(civil.data_type(), DataType::CivilTimestamp);
+    assert_eq!(civil.artifact_temporal_nanos(), Some(-1));
+    assert_eq!(instant.data_type(), DataType::Timestamp);
+    assert_eq!(instant.artifact_temporal_nanos(), Some(-1));
+    assert_eq!(time.data_type(), DataType::Time);
+    assert_eq!(time.artifact_temporal_nanos(), Some(1));
+    assert_ne!(civil, instant);
+    assert!(civil.compare(&instant).is_err());
+}
+
+#[test]
+fn civil_temporal_parsers_reject_offsets_and_time_outside_one_day() {
+    assert!(parse_civil_timestamp("2026-09-11 12:00:00+07:00").is_err());
+    assert!(parse_time("12:00:00+07:00").is_err());
+    assert!(Value::from_temporal_nanos(DataType::Time, -1).is_err());
+    assert!(Value::from_temporal_nanos(DataType::Time, 86_400_000_000_000).is_err());
+}
+
+#[test]
+fn civil_temporal_ordering_uses_signed_nanos_not_little_endian_bytes() {
+    let negative = Value::from_temporal_nanos(DataType::CivilTimestamp, -1).unwrap();
+    let positive = Value::from_temporal_nanos(DataType::CivilTimestamp, 1).unwrap();
+    assert_eq!(negative.compare(&positive), Ok(Ordering::Less));
+    assert_eq!(negative.cmp(&positive), Ordering::Less);
+}
+
+#[test]
+fn civil_timestamp_cast_to_date_uses_its_calendar_date() {
+    let timestamp =
+        Value::civil_timestamp(parse_civil_timestamp("1969-12-31 23:59:59.999999999").unwrap())
+            .unwrap();
+    assert_eq!(
+        timestamp.try_coerce_to_type(DataType::Date),
+        Ok(Value::date(-1))
+    );
 }
 
 #[test]

@@ -5,7 +5,15 @@ use radixdb_core::{DataType, Error, ExternalTypeRef, Result};
 
 use super::host::MutationHost;
 
-type ParsedSchemaColumnType = (DataType, u16, u8, u8, Option<(ExternalTypeRef, String)>);
+type ParsedSchemaColumnType = (
+    DataType,
+    u16,
+    u8,
+    u8,
+    bool,
+    u32,
+    Option<(ExternalTypeRef, String)>,
+);
 
 pub(super) fn parse_schema_column_type<H: MutationHost + ?Sized>(
     host: &H,
@@ -35,6 +43,8 @@ pub(super) fn parse_schema_column_type<H: MutationHost + ?Sized>(
             0,
             0,
             0,
+            false,
+            0,
             Some((type_ref, type_str.trim().to_owned())),
         ));
     }
@@ -56,11 +66,19 @@ pub(super) fn parse_schema_column_type<H: MutationHost + ?Sized>(
     } else {
         (0, 0)
     };
+    let text_max_chars = if data_type == DataType::Text {
+        catalog_type.parameter_1()
+    } else {
+        0
+    };
+    let double_precision = catalog_type.is_double_precision();
     Ok((
         data_type,
         vector_dimensions,
         decimal_precision,
         decimal_scale,
+        double_precision,
+        text_max_chars,
         None,
     ))
 }

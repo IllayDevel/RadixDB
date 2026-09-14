@@ -52,6 +52,7 @@ fn validate_cast_type_name(type_name: &str) -> Result<(), String> {
             | "TINYINT"
             | "FLOAT"
             | "DOUBLE"
+            | "DOUBLE PRECISION"
             | "REAL"
             | "DECIMAL"
             | "NUMERIC"
@@ -63,8 +64,12 @@ fn validate_cast_type_name(type_name: &str) -> Result<(), String> {
             | "BOOLEAN"
             | "BOOL"
             | "TIMESTAMP"
+            | "TIMESTAMPTZ"
+            | "TIMESTAMP WITH TIME ZONE"
+            | "TIMESTAMP WITHOUT TIME ZONE"
             | "DATETIME"
             | "TIME"
+            | "TIME WITHOUT TIME ZONE"
             | "DATE"
             | "JSON"
             | "JSONB"
@@ -463,7 +468,7 @@ impl Parser {
             "DEFAULT" => Some(Expression::Default(DefaultExpression {
                 token: self.cur_token.clone(),
             })),
-            "TIMESTAMP" | "DATE" | "TIME" => {
+            "TIMESTAMP" | "TIMESTAMPTZ" | "DATE" | "TIME" => {
                 // These can be either typed literals (TIMESTAMP 'value') or column names
                 if self.peek_token_is(TokenType::String) {
                     self.parse_typed_literal()

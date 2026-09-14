@@ -365,7 +365,7 @@ fn main() {
                 .alias("bucket"),
                 Expr::column("amount")
                     .mul(TypedValue::Decimal("1.13".to_string()))
-                    .cast(DataTypeDescriptor::Text)
+                    .cast(DataTypeDescriptor::Text { max_chars: None })
                     .alias("gross_text"),
             ]),
         )],

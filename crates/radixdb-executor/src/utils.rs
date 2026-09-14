@@ -546,8 +546,18 @@ pub fn extract_literal_value(expr: &Expression) -> Option<Value> {
         Expression::FloatLiteral(f) => Some(Value::Float(f.value)),
         Expression::StringLiteral(s) => Some(if let Some(type_hint) = &s.type_hint {
             match type_hint.to_uppercase().as_str() {
-                "TIMESTAMP" | "DATETIME" => radixdb_core::value::parse_timestamp(&s.value)
-                    .map(Value::Timestamp)
+                "TIMESTAMPTZ" => {
+                    let Ok(value) = radixdb_core::parse_timestamp_with_explicit_offset(&s.value)
+                    else {
+                        return None;
+                    };
+                    Value::Timestamp(value)
+                }
+                "TIMESTAMP" | "DATETIME" => radixdb_core::value::parse_civil_timestamp(&s.value)
+                    .and_then(Value::civil_timestamp)
+                    .unwrap_or_else(|_| Value::Text(s.value.clone())),
+                "TIME" => radixdb_core::value::parse_time(&s.value)
+                    .map(Value::time)
                     .unwrap_or_else(|_| Value::Text(s.value.clone())),
                 "DATE" => radixdb_core::value::parse_date_days_since_unix_epoch(&s.value)
                     .map(Value::date)

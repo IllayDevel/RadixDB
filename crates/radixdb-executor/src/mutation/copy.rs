@@ -18,7 +18,7 @@
 //! for significantly faster loading compared to individual INSERT statements.
 
 use radixdb_core::{time_compat::Instant, CompactArc, SmartString};
-use radixdb_core::{DataType, Error, Result, Row, Schema, Value};
+use radixdb_core::{DataType, Error, Result, Row, Schema, SessionTimeZone, Value};
 use radixdb_sql::ast::{CopyFormat, CopyStatement};
 use radixdb_storage::traits::{Engine, QueryResult, Table};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -77,7 +77,12 @@ fn account_copy_transaction_row(
 /// Parse a CSV field directly into a Value for the target type.
 /// Avoids the intermediate Value::text() + coerce_to_type() allocation path.
 #[inline]
-fn parse_field(field: &str, target_type: DataType, col_name: &str) -> Result<Value> {
+fn parse_field(
+    field: &str,
+    target_type: DataType,
+    col_name: &str,
+    time_zone: SessionTimeZone,
+) -> Result<Value> {
     match target_type {
         DataType::Integer => field.parse::<i64>().map(Value::Integer).map_err(|_| {
             Error::Type(format!(
@@ -113,11 +118,28 @@ fn parse_field(field: &str, target_type: DataType, col_name: &str) -> Result<Val
                 )))
             }
         }
-        DataType::Timestamp => radixdb_core::parse_timestamp(field)
+        DataType::Timestamp => time_zone
+            .parse_instant(field)
             .map(Value::Timestamp)
             .map_err(|_| {
                 Error::Type(format!(
                     "cannot convert value '{}' to TIMESTAMP for column '{}'",
+                    field, col_name
+                ))
+            }),
+        DataType::CivilTimestamp => radixdb_core::value::parse_civil_timestamp(field)
+            .and_then(Value::civil_timestamp)
+            .map_err(|_| {
+                Error::Type(format!(
+                    "cannot convert value '{}' to TIMESTAMP for column '{}'",
+                    field, col_name
+                ))
+            }),
+        DataType::Time => radixdb_core::value::parse_time(field)
+            .map(Value::time)
+            .map_err(|_| {
+                Error::Type(format!(
+                    "cannot convert value '{}' to TIME for column '{}'",
                     field, col_name
                 ))
             }),
@@ -180,7 +202,7 @@ pub trait CopyExecutorExt: MutationHost {
     fn execute_copy(
         &self,
         stmt: &CopyStatement,
-        _ctx: &ExecutionContext,
+        ctx: &ExecutionContext,
     ) -> Result<Box<dyn QueryResult>> {
         let copy_started = Instant::now();
         let table_name = &stmt.table_name.value_lower;
@@ -248,6 +270,7 @@ pub trait CopyExecutorExt: MutationHost {
             None
         };
 
+        let time_zone = ctx.session_time_zone()?;
         let parse_started = Instant::now();
         let outcome = match stmt.format {
             CopyFormat::Csv => self.copy_from_csv(
@@ -262,6 +285,7 @@ pub trait CopyExecutorExt: MutationHost {
                 schema_column_count,
                 &mut copy_transaction_bytes,
                 copy_max_transaction_bytes,
+                time_zone,
             ),
             CopyFormat::Json => self.copy_from_json(
                 stmt,
@@ -275,6 +299,7 @@ pub trait CopyExecutorExt: MutationHost {
                 schema_column_count,
                 &mut copy_transaction_bytes,
                 copy_max_transaction_bytes,
+                time_zone,
             ),
         };
         let parse_elapsed = parse_started.elapsed();
@@ -343,6 +368,7 @@ pub trait CopyExecutorExt: MutationHost {
         schema_column_count: usize,
         copy_transaction_bytes: &mut usize,
         copy_max_transaction_bytes: usize,
+        time_zone: SessionTimeZone,
     ) -> Result<i64> {
         let file = std::fs::File::open(&stmt.file_path).map_err(|e| {
             Error::InvalidArgument(format!("cannot open file '{}': {}", stmt.file_path, e))
@@ -426,7 +452,7 @@ pub trait CopyExecutorExt: MutationHost {
 
                 let target_type = all_column_types[col_idx];
                 let col_name = schema.columns[col_idx].name.as_str();
-                let value = parse_field(field, target_type, col_name)?;
+                let value = parse_field(field, target_type, col_name, time_zone)?;
                 validate_vector_dims(&value, target_type, all_vector_dims[col_idx])?;
                 row_values[col_idx] = value;
             }
@@ -487,6 +513,7 @@ pub trait CopyExecutorExt: MutationHost {
         schema_column_count: usize,
         copy_transaction_bytes: &mut usize,
         copy_max_transaction_bytes: usize,
+        time_zone: SessionTimeZone,
     ) -> Result<i64> {
         let null_str = stmt.null_string.as_deref();
         let use_columns = !stmt.columns.is_empty();
@@ -547,6 +574,7 @@ pub trait CopyExecutorExt: MutationHost {
                 copy_transaction_bytes,
                 copy_max_transaction_bytes,
                 rows_affected + 1,
+                time_zone,
             )?;
             insert_batch.push(row);
             if fk_schema.is_some() || insert_batch.len() == COPY_INSERT_BATCH_ROWS {
@@ -580,6 +608,7 @@ pub trait CopyExecutorExt: MutationHost {
         copy_transaction_bytes: &mut usize,
         copy_max_transaction_bytes: usize,
         row_number: i64,
+        time_zone: SessionTimeZone,
     ) -> Result<Row> {
         let mut normalized_obj = FxHashMap::default();
         for (key, value) in obj {
@@ -608,7 +637,8 @@ pub trait CopyExecutorExt: MutationHost {
             for (lower_name, col_idx) in col_name_lower_map {
                 let target_type = all_column_types[*col_idx];
                 if let Some(v) = normalized_obj.get(lower_name) {
-                    let value = json_value_to_radixdb(v, target_type, lower_name, null_str)?;
+                    let value =
+                        json_value_to_radixdb(v, target_type, lower_name, null_str, time_zone)?;
                     validate_vector_dims(&value, target_type, all_vector_dims[*col_idx])?;
                     row_values[*col_idx] = value;
                 }
@@ -619,7 +649,8 @@ pub trait CopyExecutorExt: MutationHost {
             for (lower_key, json_val) in normalized_obj {
                 let col_idx = col_name_lower_map[&lower_key];
                 let target_type = all_column_types[col_idx];
-                let value = json_value_to_radixdb(json_val, target_type, &lower_key, null_str)?;
+                let value =
+                    json_value_to_radixdb(json_val, target_type, &lower_key, null_str, time_zone)?;
                 validate_vector_dims(&value, target_type, all_vector_dims[col_idx])?;
                 row_values[col_idx] = value;
             }
@@ -699,6 +730,7 @@ fn json_value_to_radixdb(
     target_type: DataType,
     col_name: &str,
     null_str: Option<&str>,
+    time_zone: SessionTimeZone,
 ) -> Result<Value> {
     let val = match v {
         serde_json::Value::Null => return Ok(Value::null_unknown()),
@@ -720,7 +752,12 @@ fn json_value_to_radixdb(
         serde_json::Value::Object(_) | serde_json::Value::Array(_) => Value::text(v.to_string()),
     };
 
-    val.try_coerce_to_type(target_type).map_err(|error| {
+    let coerced = if let (Value::Text(text), DataType::Timestamp) = (&val, target_type) {
+        time_zone.parse_instant(text).map(Value::Timestamp)
+    } else {
+        val.try_coerce_to_type(target_type)
+    };
+    coerced.map_err(|error| {
         Error::Type(format!(
             "cannot convert value '{}' to {:?} for column '{}': {}",
             val, target_type, col_name, error
@@ -897,5 +934,35 @@ impl<R> JsonArrayStripper<R> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn copy_timestamp_input_uses_the_request_time_zone() {
+        let zone = SessionTimeZone::parse("+07:00").unwrap();
+        let expected = Value::Timestamp(
+            chrono::DateTime::parse_from_rfc3339("2026-09-11T05:30:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        );
+        assert_eq!(
+            parse_field("2026-09-11 12:30:00", DataType::Timestamp, "instant", zone,).unwrap(),
+            expected
+        );
+        assert_eq!(
+            json_value_to_radixdb(
+                &serde_json::Value::String("2026-09-11 12:30:00".to_owned()),
+                DataType::Timestamp,
+                "instant",
+                None,
+                zone,
+            )
+            .unwrap(),
+            expected
+        );
     }
 }

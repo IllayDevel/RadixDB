@@ -647,7 +647,7 @@ fn r8_l01_batch_b_expression_default_reopen_uses_clock_transition() {
 
         // Add column with an expression default
         db.execute(
-            "ALTER TABLE logs ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+            "ALTER TABLE logs ADD COLUMN created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP",
             (),
         )
         .unwrap();

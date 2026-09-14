@@ -8,8 +8,8 @@ use std::collections::BTreeSet;
 
 use radixdb_catalog::{
     CatalogGeneration, CatalogObject, CatalogPayload, ObjectId, ObjectKind, PRIVILEGE_CONNECT,
-    PRIVILEGE_CREATE, PRIVILEGE_DELETE, PRIVILEGE_EXECUTE, PRIVILEGE_INSERT, PRIVILEGE_SELECT,
-    PRIVILEGE_UPDATE,
+    PRIVILEGE_CREATE, PRIVILEGE_DELETE, PRIVILEGE_DESCRIBE, PRIVILEGE_EXECUTE, PRIVILEGE_INSERT,
+    PRIVILEGE_SELECT, PRIVILEGE_UPDATE,
 };
 use radixdb_core::{Error, Result};
 use radixdb_sql::{
@@ -349,7 +349,13 @@ pub(crate) fn authorize_statement(
             DescribeTarget::Table(table) => {
                 authorize_relation_metadata(catalog, effective, table.value())
             }
-            DescribeTarget::Database => require_bootstrap(effective, statement),
+            DescribeTarget::Database => require_object_privilege(
+                catalog,
+                effective,
+                ObjectId::BOOTSTRAP_NAMESPACE,
+                PRIVILEGE_DESCRIBE,
+                "DESCRIBE",
+            ),
         },
         Statement::ShowTables(_)
         | Statement::ShowViews(_)
@@ -364,7 +370,8 @@ pub(crate) fn authorize_statement(
         | Statement::Rollback(_)
         | Statement::Savepoint(_)
         | Statement::ReleaseSavepoint(_)
-        | Statement::Set(_) => Ok(()),
+        | Statement::Set(_)
+        | Statement::ShowVariable(_) => Ok(()),
     }
 }
 
@@ -772,6 +779,38 @@ mod tests {
             .encoded()
             .windows(b"catalog-secret".len())
             .any(|window| window == b"catalog-secret"));
+    }
+
+    #[test]
+    fn database_descriptor_requires_explicit_describe_privilege() {
+        let executor = executor();
+        executor.execute("CREATE PRINCIPAL broker").unwrap();
+        executor
+            .execute("GRANT CONNECT ON DATABASE test TO broker")
+            .unwrap();
+        let broker = context(principal(&executor, "broker"));
+        assert!(matches!(
+            executor.execute_with_context("DESCRIBE DATABASE FORMAT JSON", &broker),
+            Err(Error::AuthorizationDenied(_))
+        ));
+
+        executor
+            .execute("GRANT DESCRIBE ON DATABASE test TO broker")
+            .unwrap();
+        let mut descriptor = executor
+            .execute_with_context("DESCRIBE DATABASE FORMAT JSON", &broker)
+            .unwrap();
+        assert!(descriptor.next());
+        assert!(matches!(descriptor.row().get(0), Some(Value::Text(_))));
+        descriptor.close().unwrap();
+
+        executor
+            .execute("REVOKE DESCRIBE ON DATABASE test FROM broker")
+            .unwrap();
+        assert!(matches!(
+            executor.execute_with_context("DESCRIBE DATABASE FORMAT JSON", &broker),
+            Err(Error::AuthorizationDenied(_))
+        ));
     }
 
     #[test]

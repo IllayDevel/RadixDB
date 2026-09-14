@@ -6,12 +6,12 @@ description: User-visible changes, identity and compatibility boundaries of Radi
 This page summarizes user-visible releases. Git tags and `CHANGELOG.md` are the
 release authority; feature chapters describe the detailed contract.
 
-## 1.2 - Development
+## 1.2.4 - Development
 
-The 1.2 manual follows the current 1.2 source line and wire protocol 17. Until
-release metadata is finalized, binaries built from this line still report the
-Cargo package version 1.1.0; use the full build identity to distinguish them
-from the 1.1 release.
+The 1.2.4 manual follows the current 1.2.4 source snapshot and wire protocol 17.
+The coordinated workspace crates and binaries report Cargo package version
+1.2.4. Until the formal release is tagged, use the full build identity to bind
+a binary to its exact source revision and lockfile.
 
 ### Server security and access control
 
@@ -45,9 +45,20 @@ execution, retry with bounded exponential backoff, misfire coalescing, bounded
 history and clean shutdown. Attempt failures use a stable diagnostic class so
 applications do not need to parse error prose.
 
+### Application SDK
+
+The domain-neutral `radixdb-app-sdk` adds a trusted application-service layer
+over the asynchronous client and ORM. It provides bounded request and session
+identity, deadlines, cooperative cancellation, typed result limits, stable
+retry and outcome classification, schema fingerprints, generated table and
+procedure contracts, and versioned application-event declarations. Product
+authentication, authorization, routes and business rules remain outside the
+database repository. See the [Application SDK](../../clients/application-sdk/)
+chapter for an end-to-end example.
+
 ### Trusted native extensions
 
-Version 1.2 adds a stable C ABI 1.0, a safe Rust authoring SDK and deterministic
+Version 1.2.4 adds a stable C ABI 1.0, a safe Rust authoring SDK and deterministic
 package tooling for operator-trusted in-process extensions. A package admitted
 at startup can expose bounded external scalar types, native scalar and batch
 functions, binary operators, B-tree/hash/bitmap operator classes and bounded
@@ -91,7 +102,7 @@ physical-format boundary.
 
 RadixDB 1.1.0 is identified by annotated tag `v1.1.0` and uses wire protocol
 14. It established the first released procedural and ACL foundation described
-below. The limitations in this section apply to 1.1, not to the 1.2 development
+below. The limitations in this section apply to 1.1, not to the 1.2.4 development
 line above.
 
 ### Procedural database foundation

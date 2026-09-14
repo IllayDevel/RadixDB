@@ -853,6 +853,178 @@ pub fn scan_ordered_index_from_source(
     )
 }
 
+/// Resolve several equality keys against one single-column UNIQUE ordered
+/// accelerator while decoding every touched INDEX page at most once.
+///
+/// `Ok(None)` means the accelerator shape is not eligible for this narrow
+/// batch path. The caller retains its ordinary point-lookup fallback.
+pub fn lookup_unique_ordered_index_values_from_source(
+    source: &(impl ArtifactSource + ?Sized),
+    layout: &IndexArtifactLayout,
+    data: &DataArtifactLayout,
+    logical_index_id: ObjectId,
+    values: &[Value],
+    max_candidates: Option<usize>,
+) -> FormatResult<Option<Vec<u64>>> {
+    lookup_unique_ordered_index_keys_impl(
+        source,
+        layout,
+        data,
+        logical_index_id,
+        values.iter().map(std::slice::from_ref),
+        max_candidates,
+    )
+}
+
+/// Resolve several complete equality keys against one UNIQUE ordered
+/// accelerator while decoding every touched INDEX page at most once.
+///
+/// This is the composite-key counterpart of
+/// [`lookup_unique_ordered_index_values_from_source`]. `Ok(None)` means the
+/// accelerator shape is not eligible and the caller must retain its ordinary
+/// exact-check fallback.
+pub fn lookup_unique_ordered_index_keys_from_source(
+    source: &(impl ArtifactSource + ?Sized),
+    layout: &IndexArtifactLayout,
+    data: &DataArtifactLayout,
+    logical_index_id: ObjectId,
+    keys: &[Vec<Value>],
+    max_candidates: Option<usize>,
+) -> FormatResult<Option<Vec<u64>>> {
+    lookup_unique_ordered_index_keys_impl(
+        source,
+        layout,
+        data,
+        logical_index_id,
+        keys.iter().map(Vec::as_slice),
+        max_candidates,
+    )
+}
+
+fn lookup_unique_ordered_index_keys_impl<'a>(
+    source: &(impl ArtifactSource + ?Sized),
+    layout: &IndexArtifactLayout,
+    data: &DataArtifactLayout,
+    logical_index_id: ObjectId,
+    key_values: impl IntoIterator<Item = &'a [Value]>,
+    max_candidates: Option<usize>,
+) -> FormatResult<Option<Vec<u64>>> {
+    let key_values = key_values.into_iter().collect::<Vec<_>>();
+    if key_values.is_empty() {
+        return Ok(Some(Vec::new()));
+    }
+    let (accelerator_ordinal, accelerator) = layout
+        .accelerators()
+        .iter()
+        .enumerate()
+        .find(|(_, accelerator)| accelerator.logical_index_id() == logical_index_id)
+        .ok_or_else(|| invalid("logical ordered accelerator is absent from index pack"))?;
+    if accelerator.kind() != IndexAcceleratorKind::Ordered || !accelerator.unique() {
+        return Ok(None);
+    }
+    if key_values.iter().any(|values| {
+        values.len() != accelerator.key_columns().len() || values.iter().any(Value::is_null)
+    }) {
+        // UNIQUE indexes deliberately permit multiple NULL keys; their
+        // postings may span pages and are not eligible for this unique-key path.
+        return Ok(None);
+    }
+    validate_ordered_types(accelerator.key_columns())?;
+
+    let section_index = accelerator
+        .first_section_index()
+        .checked_add(1)
+        .ok_or_else(|| invalid("ordered section index overflows"))?
+        as usize;
+    let section = layout
+        .sections()
+        .get(section_index)
+        .copied()
+        .ok_or_else(|| invalid("ordered page section is absent"))?;
+    if section.accelerator_ordinal() != accelerator_ordinal as u32
+        || section.kind() != IndexSectionKind::OrderedPages
+        || section.page_count() == 0
+    {
+        return Err(invalid("ordered page section ownership is invalid"));
+    }
+
+    let mut keys = key_values
+        .iter()
+        .map(|values| OrderedIndexKey::from_values(data, accelerator.key_columns(), values))
+        .collect::<FormatResult<Vec<_>>>()?;
+    keys.sort_unstable_by(|left, right| {
+        compare_ordered_keys_trusted(left, right, accelerator.key_columns())
+    });
+    keys.dedup_by(|left, right| left == right);
+
+    let first_page = section.first_page_index() as usize;
+    let page_count = section.page_count() as usize;
+    let mut pages: Vec<Option<OrderedIndexPage>> = vec![None; page_count];
+    let mut output = Vec::new();
+
+    for key in &keys {
+        let mut low = 0_usize;
+        let mut high = page_count;
+        while low < high {
+            let middle = low + (high - low) / 2;
+            if pages[middle].is_none() {
+                pages[middle] = Some(decode_selected_page(
+                    source,
+                    layout,
+                    data,
+                    accelerator,
+                    first_page + middle,
+                )?);
+            }
+            let page = pages[middle]
+                .as_ref()
+                .expect("ordered batch lookup page was just populated");
+            let last = page
+                .entries()
+                .last()
+                .ok_or_else(|| invalid("decoded ordered page is empty"))?;
+            if compare_ordered_keys(last.key(), key, accelerator.key_columns())? == Ordering::Less {
+                low = middle + 1;
+            } else {
+                high = middle;
+            }
+        }
+        if low == page_count {
+            continue;
+        }
+        if pages[low].is_none() {
+            pages[low] = Some(decode_selected_page(
+                source,
+                layout,
+                data,
+                accelerator,
+                first_page + low,
+            )?);
+        }
+        let page = pages[low]
+            .as_ref()
+            .expect("ordered batch lookup page was just populated");
+        let found = page.entries().binary_search_by(|entry| {
+            compare_ordered_keys_trusted(entry.key(), key, accelerator.key_columns())
+        });
+        let Ok(position) = found else {
+            continue;
+        };
+        let entry = &page.entries()[position];
+        if entry.has_previous_fragment() || entry.has_next_fragment() {
+            return Err(invalid("unique ordered key has a continued posting"));
+        }
+        output.extend_from_slice(entry.row_ordinals());
+        if max_candidates.is_some_and(|limit| output.len() > limit) {
+            return Ok(None);
+        }
+    }
+
+    output.sort_unstable();
+    output.dedup();
+    Ok(Some(output))
+}
+
 /// Scan a SQL range whose non-NULL bounds cannot match a NULL key component.
 ///
 /// The persisted B-tree still orders NULL according to its descriptor.  The

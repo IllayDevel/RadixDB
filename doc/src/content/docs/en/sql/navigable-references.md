@@ -228,7 +228,7 @@ WHERE e.id = 100;
 The SELECT returns Finance and Legal. There is no reverse collection navigation,
 implicit graph save, inferred ownership or implicit cascade.
 
-Persisted view definitions containing navigation are not supported in 1.2:
+Persisted view definitions containing navigation are not supported in 1.2.4:
 
 ```sql
 CREATE VIEW employee_departments AS
@@ -247,7 +247,7 @@ physical type, in the same database. The target must be a primary key or a
 target may still participate in an ordinary FK, but navigation through it is
 rejected because uniqueness of NULL cannot prove one target row.
 
-RadixDB 1.2 does not accept composite foreign-key DDL. Cross-database paths and
+RadixDB 1.2.4 does not accept composite foreign-key DDL. Cross-database paths and
 reverse one-to-many traversal are also unavailable. One path is limited to 8
 reference steps; one statement is limited to 256 bound paths and a compiled
 graph is limited to 512 distinct edges. Exceeding a limit fails with

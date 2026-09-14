@@ -357,10 +357,10 @@ impl Parser {
             if !self.expect_keyword("REFERENCES") {
                 return None;
             }
-            if !self.expect_peek(TokenType::Identifier) {
+            if !self.expect_peek_identifier_like() {
                 return None;
             }
-            let ref_table = Identifier::new(self.cur_token.clone(), self.cur_token.literal.clone());
+            let ref_table = self.parse_relation_identifier_current()?;
             let ref_column = if self.peek_token_is_punctuator("(") {
                 self.next_token();
                 if !self.expect_peek(TokenType::Identifier) {
@@ -568,11 +568,10 @@ impl Parser {
                 }
                 "REFERENCES" => {
                     self.next_token(); // consume REFERENCES
-                    if !self.expect_peek(TokenType::Identifier) {
+                    if !self.expect_peek_identifier_like() {
                         return None;
                     }
-                    let ref_table =
-                        Identifier::new(self.cur_token.clone(), self.cur_token.literal.clone());
+                    let ref_table = self.parse_relation_identifier_current()?;
                     let ref_column = if self.peek_token_is_punctuator("(") {
                         self.next_token();
                         if !self.expect_peek(TokenType::Identifier) {
@@ -633,6 +632,44 @@ impl Parser {
 
         self.next_token();
         let mut base_type = self.cur_token.literal.to_uppercase();
+
+        if base_type == "DOUBLE"
+            && matches!(
+                self.peek_token.token_type,
+                TokenType::Keyword | TokenType::Identifier
+            )
+            && self.peek_token.literal.eq_ignore_ascii_case("PRECISION")
+        {
+            self.next_token();
+            base_type.push_str(" PRECISION");
+        }
+
+        if matches!(base_type.as_str(), "TIMESTAMP" | "TIME")
+            && (self.peek_token.literal.eq_ignore_ascii_case("WITH")
+                || self.peek_token.literal.eq_ignore_ascii_case("WITHOUT"))
+        {
+            self.next_token();
+            let qualifier = self.cur_token.literal.to_uppercase();
+            if !self.peek_token.literal.eq_ignore_ascii_case("TIME") {
+                self.add_error(format!(
+                    "expected TIME after {base_type} {qualifier}, got {}",
+                    Self::format_token_for_error(&self.peek_token)
+                ));
+                return None;
+            }
+            self.next_token();
+            if !self.peek_token.literal.eq_ignore_ascii_case("ZONE") {
+                self.add_error(format!(
+                    "expected ZONE after {base_type} {qualifier} TIME, got {}",
+                    Self::format_token_for_error(&self.peek_token)
+                ));
+                return None;
+            }
+            self.next_token();
+            base_type.push(' ');
+            base_type.push_str(&qualifier);
+            base_type.push_str(" TIME ZONE");
+        }
 
         while self.peek_token_is_punctuator(".") {
             self.next_token();
@@ -1224,14 +1261,8 @@ impl Parser {
                 .parse_table_owner_after_name(token, qualified_name)
                 .map(|statement| Statement::AlterOwner(Box::new(statement)));
         }
-        if qualified_name.components.len() != 1 {
-            self.add_error(
-                "qualified table names are currently supported only by ALTER TABLE ... OWNER"
-                    .to_string(),
-            );
-            return None;
-        }
-        let table_name = qualified_name.components[0].clone();
+        let is_qualified = qualified_name.components.len() != 1;
+        let table_name = Self::relation_identifier_from_object_name(&qualified_name);
 
         // Parse operation
         if !self.peek_token_is(TokenType::Keyword) {
@@ -1442,6 +1473,10 @@ impl Parser {
                 return None;
             }
         };
+
+        if self.reject_unsupported_qualified_alter(is_qualified, operation) {
+            return None;
+        }
 
         Some(Statement::AlterTable(Box::new(AlterTableStatement {
             token,

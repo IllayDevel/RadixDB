@@ -14,7 +14,7 @@ const env = {
   ...process.env,
   DOCS_SITE: 'https://docs.invalid',
   DOCS_ROOT_BASE: '/preview/',
-  DOCS_BASE: '/preview/manual/1.2/',
+  DOCS_BASE: '/preview/manual/1.2.4/',
   DOCS_OUT_DIR: dist,
 };
 
@@ -40,18 +40,18 @@ try {
   const packaged = packageSite({ env, artifactDir: artifact, distDir: dist });
   const publication = parse(readFileSync(path.join(root, '_meta/publication.toml'), 'utf8'));
   assert.deepEqual(packaged.manifest, {
-    version: '1.2',
+    version: '1.2.4',
     channel: publication.channel,
     site: 'https://docs.invalid',
     root_base: '/preview/',
-    docs_base: '/preview/manual/1.2/',
+    docs_base: '/preview/manual/1.2.4/',
     redirect_sources: 51,
     redirect_routes: 102,
     redirect_files: 97,
     evidence_files: 21,
   });
 
-  const canonicalRoot = path.join(artifact, 'manual/1.2');
+  const canonicalRoot = path.join(artifact, 'manual/1.2.4');
   for (const file of [
     'en/index.html',
     'ru/index.html',
@@ -68,26 +68,26 @@ try {
     assert(readFileSync(path.join(canonicalRoot, file)).length > 0, `Missing publication file: ${file}`);
   }
   const sitemap = readFileSync(path.join(canonicalRoot, 'sitemap-0.xml'), 'utf8');
-  assert(sitemap.includes('https://docs.invalid/preview/manual/1.2/en/'));
-  assert(sitemap.includes('https://docs.invalid/preview/manual/1.2/ru/'));
+  assert(sitemap.includes('https://docs.invalid/preview/manual/1.2.4/en/'));
+  assert(sitemap.includes('https://docs.invalid/preview/manual/1.2.4/ru/'));
 
   const registry = parse(readFileSync(path.join(root, '_meta/legacy-redirects.toml'), 'utf8'));
   for (const redirect of registry.redirects) for (const route of redirect.routes) {
     const html = readFileSync(path.join(artifact, routeOutput(route)), 'utf8');
-    const target = `/preview/manual/1.2/${redirect.target}`;
+    const target = `/preview/manual/1.2.4/${redirect.target}`;
     assert(html.includes(target), `${route} does not redirect to ${target}`);
     assert(html.includes('location.search + location.hash'), `${route} does not preserve URL suffixes`);
   }
 
   const page = readFileSync(path.join(canonicalRoot, 'en/index.html'), 'utf8');
-  const asset = page.match(/(?:href|src)="(\/preview\/manual\/1\.2\/_astro\/[^"]+)"/)?.[1];
+  const asset = page.match(/(?:href|src)="(\/preview\/manual\/1\.2\.4\/_astro\/[^"]+)"/)?.[1];
   assert(asset, 'Canonical page does not use the publication prefix for assets');
   assert(readFileSync(path.join(artifact, asset.slice('/preview/'.length))).length > 0,
     `Missing prefixed asset: ${asset}`);
 
   const documentationPages = filesBelow(canonicalRoot).filter(file =>
     file.endsWith('.html') && (file === '404.html' || file.startsWith('en/') || file.startsWith('ru/')));
-  assert.equal(documentationPages.length, 145);
+  assert.equal(documentationPages.length, 147);
   for (const file of documentationPages) {
     const html = readFileSync(path.join(canonicalRoot, file), 'utf8');
     assert.equal(html.split('mc.yandex.ru/metrika/tag.js?id=112445210').length - 1, 1,

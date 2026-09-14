@@ -709,7 +709,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-radixdb-plugin"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "clap",
  "libloading",
@@ -785,6 +785,16 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "windows-link",
+]
+
+[[package]]
+name = "chrono-tz"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6139a8597ed92cf816dfb33f5dd6cf0bb93a6adc938f11039f371bc5bcd26c3"
+dependencies = [
+ "chrono",
+ "phf 0.12.1",
 ]
 
 [[package]]
@@ -3242,12 +3252,30 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "phf"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "913273894cec178f401a31ec4b656318d95473527be05c0752cc41cdc32be8b7"
+dependencies = [
+ "phf_shared 0.12.1",
+]
+
+[[package]]
+name = "phf"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
 dependencies = [
- "phf_shared",
+ "phf_shared 0.13.1",
  "serde",
+]
+
+[[package]]
+name = "phf_shared"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06005508882fb681fd97892ecff4b7fd0fee13ef1aa569f8695dae7ab9099981"
+dependencies = [
+ "siphasher",
 ]
 
 [[package]]
@@ -3584,8 +3612,83 @@ dependencies = [
 ]
 
 [[package]]
+name = "radixdb-api"
+version = "1.2.4"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "radixdb-catalog",
+ "radixdb-core",
+ "radixdb-executor",
+ "radixdb-orm",
+ "radixdb-storage",
+ "rustc-hash 1.1.0",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "smallvec",
+ "tempfile",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
+name = "radixdb-app-sdk"
+version = "1.2.4"
+dependencies = [
+ "radixdb-client",
+ "radixdb-orm",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "radixdb-catalog"
+version = "1.2.4"
+dependencies = [
+ "proptest",
+ "radixdb-core",
+]
+
+[[package]]
+name = "radixdb-client"
+version = "1.2.4"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "radixdb-orm",
+ "radixdb-protocol",
+ "rustls",
+ "rustls-pemfile",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-rustls",
+ "uuid",
+]
+
+[[package]]
+name = "radixdb-core"
+version = "1.2.4"
+dependencies = [
+ "ahash 0.8.12",
+ "chrono",
+ "chrono-tz",
+ "crc32fast",
+ "rustc-hash 1.1.0",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "smallvec",
+ "thiserror 2.0.18",
+ "unicode-normalization",
+ "uuid",
+]
+
+[[package]]
 name = "radixdb-database"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "ahash 0.8.12",
  "anyhow",
@@ -3654,71 +3757,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "radixdb-api"
-version = "1.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "radixdb-catalog",
- "radixdb-core",
- "radixdb-executor",
- "radixdb-orm",
- "radixdb-storage",
- "rustc-hash 1.1.0",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "smallvec",
- "tempfile",
- "thiserror 2.0.18",
- "uuid",
-]
-
-[[package]]
-name = "radixdb-catalog"
-version = "1.1.0"
-dependencies = [
- "proptest",
- "radixdb-core",
-]
-
-[[package]]
-name = "radixdb-client"
-version = "1.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "radixdb-orm",
- "radixdb-protocol",
- "rustls",
- "rustls-pemfile",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tokio-rustls",
- "uuid",
-]
-
-[[package]]
-name = "radixdb-core"
-version = "1.1.0"
-dependencies = [
- "ahash 0.8.12",
- "chrono",
- "crc32fast",
- "rustc-hash 1.1.0",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "smallvec",
- "thiserror 2.0.18",
- "unicode-normalization",
- "uuid",
-]
-
-[[package]]
 name = "radixdb-executor"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "ahash 0.8.12",
  "argon2",
@@ -3749,7 +3789,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-functions"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "ahash 0.8.12",
  "candle-core",
@@ -3770,7 +3810,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-join-workload"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "chrono",
  "clap",
@@ -3787,7 +3827,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-orm"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "jsonschema",
  "radixdb-core",
@@ -3799,7 +3839,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "radixdb-plugin-abi",
  "radixdb-plugin-macros",
@@ -3809,11 +3849,11 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin-abi"
-version = "1.1.0"
+version = "1.2.4"
 
 [[package]]
 name = "radixdb-plugin-host"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "libc",
  "libloading",
@@ -3829,7 +3869,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin-macros"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3841,7 +3881,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-procedural"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "proptest",
  "radixdb-catalog",
@@ -3851,7 +3891,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-protocol"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "bincode",
  "serde",
@@ -3860,14 +3900,14 @@ dependencies = [
 
 [[package]]
 name = "radixdb-soak"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "base64 0.22.1",
  "clap",
  "libc",
  "postgres",
- "radixdb-database",
  "radixdb-client",
+ "radixdb-database",
  "rand 0.9.2",
  "serde",
  "serde_json",
@@ -3880,7 +3920,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-sql"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "proptest",
  "radixdb-core",
@@ -3889,7 +3929,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-storage"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "ahash 0.8.12",
  "arc-swap",
@@ -5168,7 +5208,7 @@ dependencies = [
  "log",
  "parking_lot",
  "percent-encoding",
- "phf",
+ "phf 0.13.1",
  "pin-project-lite",
  "postgres-protocol",
  "postgres-types",

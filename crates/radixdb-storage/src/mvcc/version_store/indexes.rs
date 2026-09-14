@@ -965,6 +965,14 @@ impl VersionStore {
             &meta.data_types,
         )?;
 
+        // Primary-key support indexes are catalog identities, not independent
+        // runtime indexes. The authoritative single- or multi-column owner was
+        // already rebuilt from the table schema before catalog indexes are
+        // installed.
+        if meta.index_type == IndexType::PrimaryKey {
+            return Ok(());
+        }
+
         // Recovery is idempotent only for the exact same authority. A name
         // collision with different columns/type/constraint metadata is an
         // artifact error, never permission to keep whichever object won first.

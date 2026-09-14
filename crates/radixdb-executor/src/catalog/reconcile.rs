@@ -523,6 +523,8 @@ fn catalog_type(column: &radixdb_core::SchemaColumn) -> Result<CatalogDataType> 
             CatalogDataType::decimal(column.decimal_precision, column.decimal_scale)
         }
         DataType::Vector => CatalogDataType::vector(column.vector_dimensions),
+        DataType::Float if column.double_precision => CatalogDataType::double_precision(),
+        DataType::Text => CatalogDataType::text(column.text_max_chars),
         data_type => CatalogDataType::scalar(data_type),
     }
     .map_err(catalog_argument)

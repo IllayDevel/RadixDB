@@ -96,7 +96,7 @@ assert(identity.stdout.includes('protocol=17 '), identity.stdout);
 assert(identity.stdout.includes('profile=release '), identity.stdout);
 
 let pairedCodeBlocks = 0;
-for (const name of ['embedded-rust', 'rust-client', 'orm']) {
+for (const name of ['embedded-rust', 'rust-client', 'orm', 'application-sdk']) {
   const en = page('en', name);
   const ru = page('ru', name);
   const enBlocks = codeBlocks(en);
@@ -116,6 +116,11 @@ for (const [name, contracts] of Object.entries({
   orm: [
     'DynamicRecord', 'Reference<T>', 'SchemaChanged',
     'DESCRIBE DATABASE FORMAT JSON', 'identity map', 'connection.begin()',
+  ],
+  'application-sdk': [
+    'ApplicationClient', 'ApplicationSession', 'AsyncConnectionTransport',
+    'DATABASE_SCHEMA_FINGERPRINT', 'CancellationSignal',
+    'RequiresOutcomeResolution', 'ResultLimitExceeded', 'ApplicationEvent',
   ],
 })) {
   const source = page('en', name);

@@ -8,7 +8,7 @@ the listener accepting the expected protocol, is a particular database ready,
 and is the storage engine approaching a resource or maintenance limit. One
 green signal does not imply the others.
 
-RadixDB 1.2 does not expose an HTTP health or Prometheus endpoint. The verified
+RadixDB 1.2.4 does not expose an HTTP health or Prometheus endpoint. The verified
 interfaces are the service manager and journal, the binary protocol status
 methods, SQL `PRAGMA RUNTIME_STATS`, and operating-system resource counters.
 

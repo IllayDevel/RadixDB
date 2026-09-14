@@ -157,7 +157,7 @@ fn job_attempt_rejects_disabled_job_without_leaking_a_transaction() {
         .unwrap();
     executor
         .execute(
-            "CREATE JOB disabled_job SCHEDULE AT TIMESTAMP '2026-09-08T00:00:00Z' \
+            "CREATE JOB disabled_job SCHEDULE AT TIMESTAMPTZ '2026-09-08T00:00:00Z' \
              RUN AS radix_system CALL idle_job() DISABLE;",
         )
         .unwrap();
@@ -568,7 +568,7 @@ fn function_builtin_volatility_is_checked_at_admission() {
 
     executor
         .execute(
-            "CREATE FUNCTION admitted_time() RETURNS TIMESTAMP \
+            "CREATE FUNCTION admitted_time() RETURNS TIMESTAMPTZ \
              LANGUAGE RADIX STABLE SECURITY INVOKER AS BEGIN \
              RETURN CURRENT_TIMESTAMP; END;",
         )

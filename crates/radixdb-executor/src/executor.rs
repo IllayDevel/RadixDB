@@ -1239,6 +1239,48 @@ mod tests {
     }
 
     #[test]
+    fn multi_row_uuid_primary_key_insert_is_atomic() {
+        let executor = create_test_executor();
+        executor
+            .execute("CREATE TABLE uuid_rows (id UUID PRIMARY KEY, payload TEXT)")
+            .unwrap();
+
+        let inserted = executor
+            .execute(
+                "INSERT INTO uuid_rows VALUES \
+                 ('00000000-0000-0000-0000-000000000001', 'one'), \
+                 ('00000000-0000-0000-0000-000000000002', 'two')",
+            )
+            .unwrap();
+        assert_eq!(inserted.rows_affected(), 2);
+
+        let duplicate = match executor.execute(
+            "INSERT INTO uuid_rows VALUES \
+                 ('00000000-0000-0000-0000-000000000003', 'three'), \
+                 ('00000000-0000-0000-0000-000000000003', 'duplicate')",
+        ) {
+            Ok(_) => panic!("duplicate UUID primary key must be rejected"),
+            Err(error) => error,
+        };
+        assert!(duplicate.is_pk_or_unique_violation());
+
+        let committed_conflict = match executor.execute(
+            "INSERT INTO uuid_rows VALUES \
+                 ('00000000-0000-0000-0000-000000000004', 'four'), \
+                 ('00000000-0000-0000-0000-000000000001', 'duplicate')",
+        ) {
+            Ok(_) => panic!("committed UUID primary key conflict must be rejected"),
+            Err(error) => error,
+        };
+        assert!(committed_conflict.is_pk_or_unique_violation());
+
+        let mut count = executor.execute("SELECT COUNT(*) FROM uuid_rows").unwrap();
+        assert!(count.next());
+        assert_eq!(count.row().get(0), Some(&Value::Integer(2)));
+        assert!(!count.next());
+    }
+
+    #[test]
     fn test_parameterized_query() {
         let executor = create_test_executor();
 

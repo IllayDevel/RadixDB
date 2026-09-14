@@ -279,6 +279,35 @@ impl TransactionVersionStore {
         self.put_internal(row_id, data, is_delete, true)
     }
 
+    /// Stage a statement-local INSERT batch after the table has validated every
+    /// row and resolved its physical row ID.
+    ///
+    /// UNIQUE ownership is reserved once for the complete statement view. This
+    /// preserves duplicate detection and concurrent-key serialization while
+    /// avoiding one index enumeration, claim-map construction and claim lock
+    /// acquisition per row.
+    pub(crate) fn put_batch_for_insert(&mut self, rows: Vec<(i64, Row)>) -> Result<(), Error> {
+        self.ensure_active()?;
+        if rows.is_empty() {
+            return Ok(());
+        }
+
+        let statement_boundary = get_fast_timestamp();
+        let proposed: Vec<_> = rows
+            .iter()
+            .map(|(row_id, row)| (*row_id, Some(row.clone())))
+            .collect();
+        self.reserve_unique_keys_for_rows(&proposed)?;
+
+        for (row_id, row) in rows {
+            if let Err(error) = self.put_internal(row_id, row, false, false) {
+                self.rollback_to_timestamp(statement_boundary);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
     fn put_internal(
         &mut self,
         row_id: i64,

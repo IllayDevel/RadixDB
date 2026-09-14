@@ -20,6 +20,7 @@ pub enum EditorKind {
     Text,
     Boolean,
     Timestamp,
+    Time,
     Date,
     Json,
     Uuid,
@@ -166,10 +167,11 @@ impl TableFormDescriptor {
 fn editor_for(data_type: &DataTypeDescriptor) -> EditorKind {
     match data_type {
         DataTypeDescriptor::Integer => EditorKind::Integer,
-        DataTypeDescriptor::Float => EditorKind::Float,
-        DataTypeDescriptor::Text => EditorKind::Text,
+        DataTypeDescriptor::Float | DataTypeDescriptor::DoublePrecision => EditorKind::Float,
+        DataTypeDescriptor::Text { .. } => EditorKind::Text,
         DataTypeDescriptor::Boolean => EditorKind::Boolean,
-        DataTypeDescriptor::Timestamp => EditorKind::Timestamp,
+        DataTypeDescriptor::Timestamp | DataTypeDescriptor::CivilTimestamp => EditorKind::Timestamp,
+        DataTypeDescriptor::Time => EditorKind::Time,
         DataTypeDescriptor::Date => EditorKind::Date,
         DataTypeDescriptor::Json => EditorKind::Json,
         DataTypeDescriptor::Uuid => EditorKind::Uuid,

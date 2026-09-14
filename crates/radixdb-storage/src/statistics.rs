@@ -130,7 +130,7 @@ CREATE TABLE IF NOT EXISTS _sys_table_stats (
     row_count INTEGER NOT NULL DEFAULT 0,
     page_count INTEGER NOT NULL DEFAULT 0,
     avg_row_size INTEGER NOT NULL DEFAULT 0,
-    last_analyzed TIMESTAMP
+    last_analyzed TIMESTAMPTZ
 )
 "#;
 

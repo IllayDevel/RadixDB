@@ -1033,9 +1033,22 @@ impl SqlRenderer {
             }
             DataTypeDescriptor::Integer => self.sql.push_str("INTEGER"),
             DataTypeDescriptor::Float => self.sql.push_str("FLOAT"),
-            DataTypeDescriptor::Text => self.sql.push_str("TEXT"),
+            DataTypeDescriptor::DoublePrecision => self.sql.push_str("DOUBLE PRECISION"),
+            DataTypeDescriptor::Text { max_chars } => match max_chars {
+                Some(max_chars) if *max_chars > 0 => {
+                    self.sql.push_str(&format!("TEXT({max_chars})"));
+                }
+                Some(_) => {
+                    return Err(RenderError::InvalidOperation(
+                        "TEXT character limit must be greater than zero".to_owned(),
+                    ))
+                }
+                None => self.sql.push_str("TEXT"),
+            },
             DataTypeDescriptor::Boolean => self.sql.push_str("BOOLEAN"),
-            DataTypeDescriptor::Timestamp => self.sql.push_str("TIMESTAMP"),
+            DataTypeDescriptor::Timestamp => self.sql.push_str("TIMESTAMPTZ"),
+            DataTypeDescriptor::CivilTimestamp => self.sql.push_str("TIMESTAMP"),
+            DataTypeDescriptor::Time => self.sql.push_str("TIME"),
             DataTypeDescriptor::Date => self.sql.push_str("DATE"),
             DataTypeDescriptor::Json => self.sql.push_str("JSON"),
             DataTypeDescriptor::Uuid => self.sql.push_str("UUID"),

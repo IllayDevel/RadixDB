@@ -5,6 +5,7 @@ const DATA_TYPE_DESCRIPTOR_VERSION: u16 = 1;
 const EXTERNAL_DATA_TYPE_MARKER: u16 = 0xffff;
 const EXTERNAL_DATA_TYPE_DESCRIPTOR_VERSION: u16 = 2;
 pub const MAX_VECTOR_DIMENSIONS: u32 = u16::MAX as u32;
+const DOUBLE_PRECISION_PARAMETER: u32 = 1;
 
 /// Validated logical form of the fixed 32-byte V6 DataTypeDescriptor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -46,6 +47,31 @@ impl CatalogDataType {
             DATA_TYPE_DESCRIPTOR_VERSION,
             0,
             u32::from(dimensions),
+            0,
+            [0; 16],
+        )
+    }
+
+    /// SQL `DOUBLE PRECISION` over the existing IEEE-754 f64 value and codec.
+    pub fn double_precision() -> CatalogResult<Self> {
+        Self::from_fields(
+            DataType::Float,
+            DATA_TYPE_DESCRIPTOR_VERSION,
+            0,
+            DOUBLE_PRECISION_PARAMETER,
+            0,
+            [0; 16],
+        )
+    }
+
+    /// The built-in variable-length UTF-8 type with an optional logical
+    /// character limit. A zero limit denotes unbounded `TEXT`.
+    pub fn text(max_chars: u32) -> CatalogResult<Self> {
+        Self::from_fields(
+            DataType::Text,
+            DATA_TYPE_DESCRIPTOR_VERSION,
+            0,
+            max_chars,
             0,
             [0; 16],
         )
@@ -109,7 +135,12 @@ impl CatalogDataType {
                     detail: "vector dimensions are outside 1..=65535",
                 });
             }
-            DataType::Decimal | DataType::Vector => {}
+            DataType::Float if parameter_1 > DOUBLE_PRECISION_PARAMETER || parameter_2 != 0 => {
+                return Err(CatalogError::InvalidDataTypeDescriptor {
+                    detail: "float parameters must encode FLOAT or DOUBLE PRECISION",
+                });
+            }
+            DataType::Decimal | DataType::Vector | DataType::Text | DataType::Float => {}
             _ if parameter_1 != 0 || parameter_2 != 0 => {
                 return Err(CatalogError::InvalidDataTypeDescriptor {
                     detail: "scalar type parameters must be zero",
@@ -120,6 +151,11 @@ impl CatalogDataType {
         if logical_type == DataType::Vector && parameter_2 != 0 {
             return Err(CatalogError::InvalidDataTypeDescriptor {
                 detail: "vector parameter_2 must be zero",
+            });
+        }
+        if logical_type == DataType::Text && parameter_2 != 0 {
+            return Err(CatalogError::InvalidDataTypeDescriptor {
+                detail: "text parameter_2 must be zero",
             });
         }
 
@@ -154,6 +190,12 @@ impl CatalogDataType {
 
     pub const fn parameter_2(self) -> u32 {
         self.parameter_2
+    }
+
+    pub const fn is_double_precision(self) -> bool {
+        matches!(self.logical_type, DataType::Float)
+            && self.parameter_1 == DOUBLE_PRECISION_PARAMETER
+            && self.parameter_2 == 0
     }
 
     pub const fn flags(self) -> u32 {
@@ -200,7 +242,12 @@ mod tests {
         assert!(CatalogDataType::decimal(0, 1).is_err());
         assert!(CatalogDataType::decimal(2, 3).is_err());
         assert!(CatalogDataType::vector(u16::MAX).is_ok());
-        assert!(CatalogDataType::from_fields(DataType::Text, 1, 0, 1, 0, [0; 16]).is_err());
+        assert!(CatalogDataType::double_precision().is_ok());
+        assert!(CatalogDataType::from_fields(DataType::Float, 1, 0, 2, 0, [0; 16]).is_err());
+        assert!(CatalogDataType::from_fields(DataType::Float, 1, 0, 1, 1, [0; 16]).is_err());
+        assert!(CatalogDataType::text(0).is_ok());
+        assert!(CatalogDataType::text(255).is_ok());
+        assert!(CatalogDataType::from_fields(DataType::Text, 1, 0, 1, 1, [0; 16]).is_err());
         assert!(CatalogDataType::from_fields(DataType::Text, 2, 0, 0, 0, [0; 16]).is_err());
         assert!(CatalogDataType::from_fields(DataType::Text, 1, 1, 0, 0, [0; 16]).is_err());
         assert!(CatalogDataType::from_fields(DataType::Text, 1, 0, 0, 0, [1; 16]).is_err());

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use radixdb_catalog::{CatalogGeneration, CatalogPayload, ObjectId};
-use radixdb_core::{Error, Result, Schema, SchemaColumn};
+use radixdb_core::{DataType, Error, Result, Schema, SchemaColumn};
 use rustc_hash::FxHashMap;
 
 use crate::config::PersistenceConfig;
@@ -375,6 +375,12 @@ fn artifact_physical_schema(
             physical.nullable(),
             false,
         );
+        if physical.data_type().is_double_precision() {
+            column = column.with_double_precision(true);
+        }
+        if physical.data_type().logical_type() == DataType::Text {
+            column = column.with_text_max_chars(physical.data_type().parameter_1());
+        }
         if let Some(type_ref) = physical.data_type().external_type_ref() {
             let type_object = catalog
                 .object(

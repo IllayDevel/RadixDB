@@ -2,7 +2,7 @@
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{NaiveDate, NaiveDateTime};
 use radixdb::{named_params, Database};
 
 fn explain(db: &Database, sql: &str) -> String {
@@ -20,8 +20,11 @@ fn query_ids(db: &Database, sql: &str) -> Vec<i64> {
         .collect()
 }
 
-fn timestamp(day: u32, hour: u32) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2026, 8, day, hour, 0, 0).unwrap()
+fn timestamp(day: u32, hour: u32) -> NaiveDateTime {
+    NaiveDate::from_ymd_opt(2026, 8, day)
+        .unwrap()
+        .and_hms_opt(hour, 0, 0)
+        .unwrap()
 }
 
 #[test]

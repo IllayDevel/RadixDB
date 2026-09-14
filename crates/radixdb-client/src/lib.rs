@@ -8,9 +8,9 @@ pub mod protocol;
 mod request_id;
 
 pub use orm::{
-    AlterTableRequest, CreateTableRequest, DdlRequest, DescribeDatabaseRequest,
-    DescribeTableRequest, ListTablesRequest, OrmClientError, SchemaClient, TableColumnsRequest,
-    TableConstraintsRequest, TableIndexesRequest, TableSchemaClient,
+    typed_value_to_wire, wire_value_to_typed, AlterTableRequest, CreateTableRequest, DdlRequest,
+    DescribeDatabaseRequest, DescribeTableRequest, ListTablesRequest, OrmClientError, SchemaClient,
+    TableColumnsRequest, TableConstraintsRequest, TableIndexesRequest, TableSchemaClient,
 };
 #[cfg(feature = "tokio")]
 pub use orm::{

@@ -196,6 +196,8 @@ fn physical_key_supported(access_method: AccessMethod, data_type: DataType) -> b
             | DataType::Boolean
             | DataType::Text
             | DataType::Timestamp
+            | DataType::CivilTimestamp
+            | DataType::Time
             | DataType::Uuid
             | DataType::Decimal
             | DataType::Bytes

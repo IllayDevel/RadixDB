@@ -13,7 +13,7 @@ use super::model::{
     DataArtifactBuildRequest, SourceRow, WrittenArtifactPair, WrittenDataArtifact,
 };
 use super::prepare::prepare_accelerators;
-use super::resources::{value_payload_bytes, PublicationBuildBudget};
+use super::resources::{PublicationBuildBudget, RowGroupPlanner};
 use super::runs::IndexRunBuilder;
 
 /// Consume one authoritative row stream and fan every row directly into the
@@ -218,6 +218,12 @@ where
         .iter()
         .map(|_| Vec::with_capacity(group_capacity))
         .collect::<Vec<Vec<Value>>>();
+    let mut group_planner = RowGroupPlanner::new(
+        limits,
+        data_header.row_count(),
+        u32::try_from(columns.len())
+            .map_err(|_| invalid_data("fanout column count does not fit u32"))?,
+    )?;
     let bloom_column_count = policies
         .iter()
         .filter(|policy| policy.bloom().is_some())
@@ -232,7 +238,6 @@ where
     let mut source_row_count = 0_u64;
     let mut previous_row_id = None;
     let mut group_ordinal = 0_u32;
-    let mut group_payload_bytes = 0_u64;
     record_diagnostic(DiagnosticEvent::SourceStreamPass, 1);
 
     for row in rows {
@@ -251,16 +256,18 @@ where
         if previous_row_id.is_some_and(|previous| previous >= row.row_id()) {
             return Err(invalid_data("source row IDs are not strictly increasing"));
         }
-        let row_payload_bytes = value_payload_bytes(row.values())?;
-        let next_payload_bytes = group_payload_bytes
-            .checked_add(row_payload_bytes)
-            .ok_or_else(|| invalid_data("row-group variable resident bytes overflow"))?;
-        if next_payload_bytes > budget.variable_group_bytes() {
-            return Err(FormatError::DataArtifactLimitExceeded {
-                field: "row-group variable resident bytes",
-                actual: next_payload_bytes,
-                limit: budget.variable_group_bytes(),
-            });
+        if group_planner.admit(row.values())? {
+            write_encoded_row_group(
+                &mut data_writer,
+                &row_encoding,
+                group_ordinal,
+                &group_row_ids,
+                &group_values,
+            )?;
+            clear_group(&mut group_row_ids, &mut group_values);
+            group_ordinal = group_ordinal
+                .checked_add(1)
+                .ok_or_else(|| invalid_data("row-group ordinal overflows"))?;
         }
         observe_row(row.values(), source_row_count)?;
         let (row_id, values) = row.into_parts();
@@ -270,22 +277,6 @@ where
         }
         previous_row_id = Some(row_id);
         source_row_count += 1;
-        group_payload_bytes = next_payload_bytes;
-
-        if group_row_ids.len() == group_capacity {
-            write_encoded_row_group(
-                &mut data_writer,
-                &row_encoding,
-                group_ordinal,
-                &group_row_ids,
-                &group_values,
-            )?;
-            clear_group(&mut group_row_ids, &mut group_values);
-            group_payload_bytes = 0;
-            group_ordinal = group_ordinal
-                .checked_add(1)
-                .ok_or_else(|| invalid_data("row-group ordinal overflows"))?;
-        }
     }
     if !group_row_ids.is_empty() {
         write_encoded_row_group(
@@ -301,6 +292,8 @@ where
             .ok_or_else(|| invalid_data("row-group ordinal overflows"))?;
     }
     if source_row_count != data_header.row_count()
+        || group_planner.row_count() != source_row_count
+        || group_planner.group_count()? != group_ordinal
         || u64::from(group_ordinal) != u64::from(data_header.row_group_count())
     {
         return Err(invalid_data(

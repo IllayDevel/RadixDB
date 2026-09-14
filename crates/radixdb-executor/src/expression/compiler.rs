@@ -46,11 +46,13 @@ pub fn string_to_datatype(type_str: &str) -> DataType {
     let base_type = upper.split('(').next().unwrap_or(&upper).trim();
     match base_type {
         "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" => DataType::Integer,
-        "FLOAT" | "DOUBLE" | "REAL" => DataType::Float,
+        "FLOAT" | "DOUBLE" | "DOUBLE PRECISION" | "REAL" => DataType::Float,
         "DECIMAL" | "NUMERIC" => DataType::Decimal,
         "TEXT" | "VARCHAR" | "CHAR" | "STRING" | "CLOB" => DataType::Text,
         "BOOLEAN" | "BOOL" => DataType::Boolean,
-        "TIMESTAMP" | "DATETIME" | "TIME" => DataType::Timestamp,
+        "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => DataType::Timestamp,
+        "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" | "DATETIME" => DataType::CivilTimestamp,
+        "TIME" | "TIME WITHOUT TIME ZONE" => DataType::Time,
         "DATE" => DataType::Date,
         "JSON" | "JSONB" => DataType::Json,
         "UUID" => DataType::Uuid,
@@ -515,11 +517,28 @@ impl<'a> ExprCompiler<'a> {
                 // Handle type hints (DATE, TIMESTAMP, etc.)
                 let value = if let Some(ref hint) = lit.type_hint {
                     match hint.to_uppercase().as_str() {
+                        "TIMESTAMPTZ" => {
+                            if let Ok(value) =
+                                radixdb_core::parse_timestamp_with_explicit_offset(&lit.value)
+                            {
+                                Value::Timestamp(value)
+                            } else if radixdb_core::value::parse_civil_timestamp(&lit.value).is_ok()
+                            {
+                                builder.emit(Op::LoadConst(Value::Text(lit.value.clone())));
+                                builder.emit(Op::Cast(DataType::Timestamp));
+                                return Ok(());
+                            } else {
+                                Value::Text(lit.value.clone())
+                            }
+                        }
                         "TIMESTAMP" | "DATETIME" => {
-                            radixdb_core::value::parse_timestamp(&lit.value)
-                                .map(Value::Timestamp)
+                            radixdb_core::value::parse_civil_timestamp(&lit.value)
+                                .and_then(Value::civil_timestamp)
                                 .unwrap_or_else(|_| Value::Text(lit.value.clone()))
                         }
+                        "TIME" => radixdb_core::value::parse_time(&lit.value)
+                            .map(Value::time)
+                            .unwrap_or_else(|_| Value::Text(lit.value.clone())),
                         "DATE" => radixdb_core::value::parse_date_days_since_unix_epoch(&lit.value)
                             .map(Value::date)
                             .unwrap_or_else(|| Value::Text(lit.value.clone())),
@@ -1770,7 +1789,10 @@ fn is_foldable_expr(expr: &Expression, registry: &radixdb_functions::FunctionReg
 
         // CAST: foldable if inner expression is column-free
         Expression::Cast(cast) => {
-            !cast.type_name.contains('.') && is_column_free(&cast.expr, registry)
+            let target_type = string_to_datatype(&cast.type_name);
+            !cast.type_name.contains('.')
+                && !matches!(target_type, DataType::Timestamp | DataType::Text)
+                && is_column_free(&cast.expr, registry)
         }
 
         // Everything else: not foldable

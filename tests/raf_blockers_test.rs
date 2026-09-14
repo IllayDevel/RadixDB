@@ -62,7 +62,7 @@ fn raf_partial_unique_soft_delete_contract() {
         "CREATE TABLE raf_contract_unique_records (
             id UUID PRIMARY KEY,
             email TEXT NOT NULL,
-            __raf_deleted_at TIMESTAMP
+            __raf_deleted_at TIMESTAMPTZ
         )",
         (),
     )

@@ -74,12 +74,12 @@ fn create_table_accepts_supported_type_aliases_end_to_end() {
             ("memo".to_string(), "TEXT".to_string()),
             ("amount".to_string(), "DECIMAL".to_string()),
             ("score".to_string(), "DECIMAL".to_string()),
-            ("ratio".to_string(), "FLOAT".to_string()),
+            ("ratio".to_string(), "DOUBLE PRECISION".to_string()),
             ("sample".to_string(), "FLOAT".to_string()),
             ("flag".to_string(), "BOOLEAN".to_string()),
             ("created_on".to_string(), "DATE".to_string()),
             ("created_at".to_string(), "TIMESTAMP".to_string()),
-            ("clock".to_string(), "TIMESTAMP".to_string()),
+            ("clock".to_string(), "TIME".to_string()),
             ("uuid_pk".to_string(), "UUID".to_string()),
             ("payload".to_string(), "JSON".to_string()),
             ("embedding".to_string(), "VECTOR(3)".to_string()),
@@ -96,7 +96,6 @@ fn malformed_type_arguments_fail_end_to_end() {
 
     for sql in [
         "CREATE TABLE bad_vector (embedding VECTOR(name))",
-        "CREATE TABLE unsupported_varchar_modifier (name VARCHAR(255))",
         "CREATE TABLE bad_decimal_zero_precision (amount DECIMAL(0,0))",
         "CREATE TABLE bad_decimal_scale (amount DECIMAL(2,3))",
         "CREATE TABLE bad_decimal_precision (amount DECIMAL(39,2))",

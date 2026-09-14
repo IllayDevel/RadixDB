@@ -79,12 +79,16 @@ pub(super) fn context_value_type(name: &str) -> Option<(CatalogDataType, bool)> 
 
 pub(super) fn catalog_type_spelling(data_type: CatalogDataType) -> String {
     match data_type.logical_type() {
+        DataType::Float if data_type.is_double_precision() => "DOUBLE PRECISION".to_owned(),
         DataType::Decimal if data_type.parameter_1() > 0 => format!(
             "DECIMAL({},{})",
             data_type.parameter_1(),
             data_type.parameter_2()
         ),
         DataType::Vector => format!("VECTOR({})", data_type.parameter_1()),
+        DataType::Text if data_type.parameter_1() > 0 => {
+            format!("TEXT({})", data_type.parameter_1())
+        }
         logical => logical.to_string(),
     }
 }

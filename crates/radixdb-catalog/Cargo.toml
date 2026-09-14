@@ -15,7 +15,7 @@ description = "Generational logical catalog owner for RadixDB"
 license-file = "../../LICENSE"
 
 [dependencies]
-radixdb-core = { version = "=1.1.0", path = "../radixdb-core" }
+radixdb-core = { version = "=1.2.4", path = "../radixdb-core" }
 
 [dev-dependencies]
 proptest = "1.4"

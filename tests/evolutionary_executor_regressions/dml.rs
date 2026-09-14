@@ -169,7 +169,7 @@ mod tests {
             .execute("CREATE TABLE events (id INTEGER PRIMARY KEY, created_at TIMESTAMP)")
             .unwrap();
 
-        // Insert text string into timestamp column - should parse to timestamp
+        // Insert text into a civil TIMESTAMP column.
         executor
             .execute("INSERT INTO events (id, created_at) VALUES (1, '2024-01-15 10:30:00')")
             .unwrap();
@@ -177,10 +177,11 @@ mod tests {
         let mut result = executor.execute("SELECT created_at FROM events").unwrap();
         assert!(result.next());
         let row = result.row();
-        // Value should be Timestamp, not Text
+        // Value should retain the civil TIMESTAMP identity, not Text or an
+        // absolute UTC instant.
         match row.get(0) {
-            Some(Value::Timestamp(_)) => {} // Success
-            other => panic!("Expected Timestamp, got {:?}", other),
+            Some(value) if value.as_civil_timestamp().is_some() => {}
+            other => panic!("Expected civil TIMESTAMP, got {other:?}"),
         }
     }
 

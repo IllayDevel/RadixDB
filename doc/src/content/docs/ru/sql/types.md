@@ -36,7 +36,7 @@ optional semantics equality, hash и ordering. SQL name является schema 
 
 External values передаются через protocol 17 вместе с type object ID и codec
 revision. Они не заменяются на `BYTES`, а generic ORM не декодирует их без
-plugin-aware adapter. В Rust SDK 1.2 также нет generic SQL literal input/output
+plugin-aware adapter. В Rust SDK 1.2.4 также нет generic SQL literal input/output
 callback, поэтому value обычно создается native function или typed client
 adapter. См. [«Команды native extensions»](../../reference/sql/extensions/) и
 [«Разработку native extensions»](../../programming/native-extensions/).

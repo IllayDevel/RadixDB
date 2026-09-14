@@ -19,11 +19,13 @@ fn r4_batch_c_table_admission_contract() -> Result<()> {
             (),
         )
         .is_err());
+    db.execute(
+        "CREATE TABLE modifier_bounded (id INTEGER PRIMARY KEY, v VARCHAR(7))",
+        (),
+    )?;
+    db.execute("INSERT INTO modifier_bounded VALUES (1, '1234567')", ())?;
     assert!(db
-        .execute(
-            "CREATE TABLE modifier_bad (id INTEGER PRIMARY KEY, v VARCHAR(7))",
-            ()
-        )
+        .execute("INSERT INTO modifier_bounded VALUES (2, '12345678')", ())
         .is_err());
     assert!(db
         .execute(

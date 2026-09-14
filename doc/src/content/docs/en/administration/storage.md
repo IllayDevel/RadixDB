@@ -1,15 +1,15 @@
 ---
 title: Storage Architecture
-description: Hot MVCC rows, immutable V6 data artifacts, row groups, compression, checkpoints and compaction in RadixDB 1.2.
+description: Hot MVCC rows, immutable V6 data artifacts, row groups, compression, checkpoints and compaction in RadixDB 1.2.4.
 ---
 
-RadixDB 1.2 uses a hybrid storage model. Recent changes live in mutable MVCC
+RadixDB 1.2.4 uses a hybrid storage model. Recent changes live in mutable MVCC
 state; checkpoints seal committed rows into immutable, checksummed data and
 index artifacts. Queries combine both parts under one transaction snapshot.
 The split is an implementation detail: applications still read and modify SQL
 tables rather than choosing a row or column store.
 
-This chapter describes the V6 implementation used by the RadixDB 1.2 source
+This chapter describes the V6 implementation used by the RadixDB 1.2.4 source
 baseline `23bf35df011aae6816d77578be96074b02bc363c`. It does not describe the
 retired 0.5.x storage format.
 
@@ -92,7 +92,7 @@ The format also permits uncompressed blocks. Decompression validates the
 declared logical length and refuses invalid ratios or bounds before allocating
 the result; the checksum covers stored bytes.
 
-The 1.2 server TOML does not expose a compression switch. Embedded file DSNs do
+The 1.2.4 server TOML does not expose a compression switch. Embedded file DSNs do
 accept `volume_compression`. The former `compression_threshold` placeholder was
 removed because seal and compaction never implemented its advertised behavior;
 supplying it now fails closed as an unknown option. Compression therefore has

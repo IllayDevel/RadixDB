@@ -6,7 +6,12 @@ use radixdb_core::{DataType, Error, Result};
 pub fn parse_data_type(type_name: &str) -> Result<DataType> {
     let upper = type_name.trim().to_uppercase();
     let base_type = upper.split('(').next().unwrap_or(&upper);
-    if upper.contains('(') && !matches!(base_type, "DECIMAL" | "NUMERIC" | "VECTOR") {
+    if upper.contains('(')
+        && !matches!(
+            base_type,
+            "DECIMAL" | "NUMERIC" | "VECTOR" | "TEXT" | "VARCHAR" | "CHAR"
+        )
+    {
         return Err(Error::NotSupported(format!(
             "type modifiers are not supported for {base_type}; declare the base type without parameters"
         )));
@@ -14,11 +19,13 @@ pub fn parse_data_type(type_name: &str) -> Result<DataType> {
 
     match base_type {
         "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" => Ok(DataType::Integer),
-        "FLOAT" | "DOUBLE" | "REAL" => Ok(DataType::Float),
+        "FLOAT" | "DOUBLE" | "DOUBLE PRECISION" | "REAL" => Ok(DataType::Float),
         "DECIMAL" | "NUMERIC" => Ok(DataType::Decimal),
         "TEXT" | "VARCHAR" | "CHAR" | "STRING" | "CLOB" => Ok(DataType::Text),
         "BOOLEAN" | "BOOL" => Ok(DataType::Boolean),
-        "TIMESTAMP" | "DATETIME" | "TIME" => Ok(DataType::Timestamp),
+        "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => Ok(DataType::Timestamp),
+        "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" | "DATETIME" => Ok(DataType::CivilTimestamp),
+        "TIME" | "TIME WITHOUT TIME ZONE" => Ok(DataType::Time),
         "DATE" => Ok(DataType::Date),
         "JSON" | "JSONB" => Ok(DataType::Json),
         "UUID" => Ok(DataType::Uuid),
@@ -36,12 +43,17 @@ mod tests {
     fn binds_supported_aliases_and_rejects_unsupported_modifiers() {
         assert_eq!(parse_data_type("INT").unwrap(), DataType::Integer);
         assert_eq!(parse_data_type("double").unwrap(), DataType::Float);
+        assert_eq!(
+            parse_data_type("double precision").unwrap(),
+            DataType::Float
+        );
         assert_eq!(parse_data_type("JSONB").unwrap(), DataType::Json);
         assert_eq!(parse_data_type("BLOB").unwrap(), DataType::Bytes);
         assert_eq!(parse_data_type("DECIMAL(10,2)").unwrap(), DataType::Decimal);
         assert_eq!(parse_data_type("NUMERIC(12)").unwrap(), DataType::Decimal);
         assert_eq!(parse_data_type("VECTOR(32)").unwrap(), DataType::Vector);
-        assert!(parse_data_type("VARCHAR(255)").is_err());
+        assert_eq!(parse_data_type("VARCHAR(255)").unwrap(), DataType::Text);
+        assert_eq!(parse_data_type("TEXT(7)").unwrap(), DataType::Text);
         assert!(parse_data_type("unknown").is_err());
     }
 }

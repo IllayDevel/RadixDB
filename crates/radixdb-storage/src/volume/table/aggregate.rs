@@ -96,7 +96,10 @@ impl SegmentedTable {
             .get(group_idx)
             .ok_or(ArtifactColumnarGroupFallback::GroupKey)?
             .data_type;
-        if !matches!(group_data_type, DataType::Integer | DataType::Timestamp) {
+        if !matches!(
+            group_data_type,
+            DataType::Integer | DataType::Timestamp | DataType::CivilTimestamp | DataType::Time
+        ) {
             return Err(ArtifactColumnarGroupFallback::GroupKey);
         }
 
@@ -141,7 +144,11 @@ impl SegmentedTable {
                 AggregateOp::Sum | AggregateOp::Avg | AggregateOp::Min | AggregateOp::Max
             ) && !matches!(
                 data_type,
-                DataType::Integer | DataType::Timestamp | DataType::Float
+                DataType::Integer
+                    | DataType::Timestamp
+                    | DataType::CivilTimestamp
+                    | DataType::Time
+                    | DataType::Float
             ) {
                 return Err(ArtifactColumnarGroupFallback::Aggregate);
             }
@@ -190,11 +197,17 @@ impl SegmentedTable {
         let Some(group_column) = columns.get(plan.group_projection_pos).copied() else {
             return false;
         };
+        if group_column.data_type() != plan.group_data_type {
+            return false;
+        }
         let (group_values, group_nulls) = match (plan.group_data_type, group_column) {
-            (DataType::Integer, ColumnData::Int64 { values, nulls })
-            | (DataType::Timestamp, ColumnData::TimestampNanos { values, nulls }) => {
+            (DataType::Integer, ColumnData::Int64 { values, nulls }) => {
                 (values.as_slice(), nulls.as_slice())
             }
+            (
+                DataType::Timestamp | DataType::CivilTimestamp | DataType::Time,
+                ColumnData::TimestampNanos { values, nulls, .. },
+            ) => (values.as_slice(), nulls.as_slice()),
             _ => return false,
         };
 
@@ -225,10 +238,41 @@ impl SegmentedTable {
                         let Some(column) = column else {
                             return false;
                         };
+                        if column.data_type() != aggregate.data_type {
+                            return false;
+                        }
                         match (aggregate.data_type, column) {
-                            (DataType::Integer, ColumnData::Int64 { values, nulls })
-                            | (DataType::Timestamp, ColumnData::TimestampNanos { values, nulls }) =>
-                            {
+                            (DataType::Integer, ColumnData::Int64 { values, nulls }) => {
+                                if nulls[row_idx] {
+                                    continue;
+                                }
+                                let value = values[row_idx];
+                                match aggregate.operation {
+                                    AggregateOp::Sum | AggregateOp::Avg => {
+                                        accum.int_sum += value as i128;
+                                        accum.count += 1;
+                                    }
+                                    AggregateOp::Min => {
+                                        accum.min_i64 = Some(
+                                            accum
+                                                .min_i64
+                                                .map_or(value, |current| current.min(value)),
+                                        );
+                                    }
+                                    AggregateOp::Max => {
+                                        accum.max_i64 = Some(
+                                            accum
+                                                .max_i64
+                                                .map_or(value, |current| current.max(value)),
+                                        );
+                                    }
+                                    _ => unreachable!("numeric aggregate operation was filtered"),
+                                }
+                            }
+                            (
+                                DataType::Timestamp | DataType::CivilTimestamp | DataType::Time,
+                                ColumnData::TimestampNanos { values, nulls, .. },
+                            ) => {
                                 if nulls[row_idx] {
                                     continue;
                                 }
@@ -321,13 +365,14 @@ impl SegmentedTable {
                         }
                     }
                     AggregateOp::Min => match (accum.min_i64, accum.min_f64, aggregate.data_type) {
-                        (Some(value), None, DataType::Timestamp) => {
-                            chrono::DateTime::from_timestamp(
-                                value.div_euclid(1_000_000_000),
-                                value.rem_euclid(1_000_000_000) as u32,
-                            )
-                            .map(Value::Timestamp)
-                            .unwrap_or(Value::Null(DataType::Timestamp))
+                        (Some(value), None, data_type)
+                            if matches!(
+                                data_type,
+                                DataType::Timestamp | DataType::CivilTimestamp | DataType::Time
+                            ) =>
+                        {
+                            Value::from_temporal_nanos(data_type, value)
+                                .unwrap_or(Value::Null(data_type))
                         }
                         (Some(value), None, _) => Value::Integer(value),
                         (None, Some(value), _) => Value::Float(value),
@@ -341,13 +386,14 @@ impl SegmentedTable {
                         (Some(_), Some(float), _) => Value::Float(float),
                     },
                     AggregateOp::Max => match (accum.max_i64, accum.max_f64, aggregate.data_type) {
-                        (Some(value), None, DataType::Timestamp) => {
-                            chrono::DateTime::from_timestamp(
-                                value.div_euclid(1_000_000_000),
-                                value.rem_euclid(1_000_000_000) as u32,
-                            )
-                            .map(Value::Timestamp)
-                            .unwrap_or(Value::Null(DataType::Timestamp))
+                        (Some(value), None, data_type)
+                            if matches!(
+                                data_type,
+                                DataType::Timestamp | DataType::CivilTimestamp | DataType::Time
+                            ) =>
+                        {
+                            Value::from_temporal_nanos(data_type, value)
+                                .unwrap_or(Value::Null(data_type))
                         }
                         (Some(value), None, _) => Value::Integer(value),
                         (None, Some(value), _) => Value::Float(value),
@@ -387,11 +433,18 @@ impl SegmentedTable {
     ) -> Option<i64> {
         match (data_type, value) {
             (DataType::Integer, Value::Integer(value)) => Some(*value),
-            (DataType::Timestamp, Value::Timestamp(value)) => value.timestamp_nanos_opt(),
+            (DataType::Timestamp | DataType::CivilTimestamp | DataType::Time, temporal)
+                if temporal.data_type() == data_type =>
+            {
+                temporal.artifact_temporal_nanos()
+            }
             // Some internal paths normalize timestamp predicates to i64 nanos.
             // Accept that representation if a future metadata writer exposes it
             // directly, but keep all other shapes on the hash-map path.
-            (DataType::Timestamp, Value::Integer(value)) => Some(*value),
+            (
+                DataType::Timestamp | DataType::CivilTimestamp | DataType::Time,
+                Value::Integer(value),
+            ) => Some(*value),
             _ => None,
         }
     }
@@ -482,12 +535,13 @@ impl SegmentedTable {
             .into_iter()
             .map(|(group_key, accums)| {
                 let group_value = match (group_key, plan.group_data_type) {
-                    (Some(value), DataType::Timestamp) => chrono::DateTime::from_timestamp(
-                        value.div_euclid(1_000_000_000),
-                        value.rem_euclid(1_000_000_000) as u32,
-                    )
-                    .map(Value::Timestamp)
-                    .unwrap_or(Value::Null(DataType::Timestamp)),
+                    (
+                        Some(value),
+                        data_type @ (DataType::Timestamp
+                        | DataType::CivilTimestamp
+                        | DataType::Time),
+                    ) => Value::from_temporal_nanos(data_type, value)
+                        .unwrap_or(Value::Null(data_type)),
                     (Some(value), _) => Value::Integer(value),
                     (None, data_type) => Value::Null(data_type),
                 };

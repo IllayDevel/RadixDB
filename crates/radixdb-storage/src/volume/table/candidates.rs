@@ -338,7 +338,10 @@ impl SegmentedTable {
 
                 if !matches!(
                     schema_column.data_type,
-                    DataType::Integer | DataType::Timestamp
+                    DataType::Integer
+                        | DataType::Timestamp
+                        | DataType::CivilTimestamp
+                        | DataType::Time
                 ) {
                     break;
                 }
@@ -362,6 +365,10 @@ impl SegmentedTable {
                         DataType::Timestamp => {
                             matches!(value, Value::Timestamp(_) | Value::Integer(_))
                         }
+                        DataType::CivilTimestamp | DataType::Time => {
+                            value.data_type() == schema_column.data_type
+                                || matches!(value, Value::Integer(_))
+                        }
                         _ => false,
                     };
                     if !bound_has_exact_physical_domain {
@@ -370,15 +377,16 @@ impl SegmentedTable {
                     }
 
                     let typed_bound = value.coerce_to_type(schema_column.data_type);
-                    let bound = match &typed_bound {
-                        Value::Integer(value) => *value,
-                        Value::Timestamp(value) => {
-                            value.timestamp_nanos_opt().unwrap_or_else(|| {
-                                value
-                                    .timestamp()
-                                    .wrapping_mul(1_000_000_000)
-                                    .wrapping_add(value.timestamp_subsec_nanos() as i64)
-                            })
+                    let bound = match schema_column.data_type {
+                        DataType::Integer => match &typed_bound {
+                            Value::Integer(value) => *value,
+                            _ => continue,
+                        },
+                        DataType::Timestamp | DataType::CivilTimestamp | DataType::Time => {
+                            let Some(value) = typed_bound.artifact_temporal_nanos() else {
+                                continue;
+                            };
+                            value
                         }
                         _ => continue,
                     };

@@ -29,6 +29,7 @@ use smallvec::SmallVec;
 use super::execution_context::ExecuteContext;
 use super::ops::{CompiledPattern, Op};
 use super::program::Program;
+use super::temporal;
 use radixdb_core::SmartString;
 use radixdb_core::{DataType, Error, Result, Value, NULL_VALUE};
 
@@ -56,13 +57,6 @@ enum ArithmeticOp {
 /// The VM is reusable - call execute() with different contexts.
 /// Capacity for reusable args buffer (most functions have <= 4 args)
 const ARGS_BUFFER_CAPACITY: usize = 8;
-
-/// Parsed interval value: either a fixed-length duration or a calendar-relative month count.
-/// Months/years require calendar-aware arithmetic (leap years, variable month lengths).
-enum IntervalValue {
-    Duration(chrono::Duration),
-    Months(i64),
-}
 
 pub struct ExprVM {
     /// Evaluation stack (reused between executions)
@@ -563,10 +557,20 @@ impl ExprVM {
                     // Handle timestamp + interval or timestamp + integer (days)
                     let result = match (&a, &b) {
                         (Value::Timestamp(t), Value::Integer(days)) => {
-                            Self::timestamp_add_days(*t, *days)?
+                            temporal::timestamp_add_days(*t, *days)?
                         }
                         (Value::Integer(days), Value::Timestamp(t)) => {
-                            Self::timestamp_add_days(*t, *days)?
+                            temporal::timestamp_add_days(*t, *days)?
+                        }
+                        (Value::Extension(_), Value::Integer(days))
+                            if a.as_civil_timestamp().is_some() =>
+                        {
+                            temporal::civil_timestamp_add_days(&a, *days)?
+                        }
+                        (Value::Integer(days), Value::Extension(_))
+                            if b.as_civil_timestamp().is_some() =>
+                        {
+                            temporal::civil_timestamp_add_days(&b, *days)?
                         }
                         (Value::Extension(_), Value::Integer(days))
                             if a.as_date_days().is_some() =>
@@ -580,7 +584,12 @@ impl ExprVM {
                         }
                         (Value::Timestamp(_), Value::Text(_)) => {
                             // Parse interval string - pass references directly to avoid clone
-                            self.timestamp_add_interval(&a, &b, true)?
+                            temporal::timestamp_add_interval(&a, &b, true)?
+                        }
+                        (Value::Extension(_), Value::Text(_))
+                            if a.as_civil_timestamp().is_some() =>
+                        {
+                            temporal::timestamp_add_interval(&a, &b, true)?
                         }
                         _ => Self::arithmetic_op(&a, &b, ArithmeticOp::Add, |x, y| x + y)?,
                     };
@@ -597,15 +606,27 @@ impl ExprVM {
                             // Return interval text
                             let duration = t1.signed_duration_since(*t2);
                             Value::Text(SmartString::from_string(
-                                self.format_duration_as_interval(duration),
+                                temporal::format_duration_as_interval(duration),
                             ))
                         }
-                        (Value::Timestamp(t), Value::Integer(days)) => Self::timestamp_add_days(
-                            *t,
-                            days.checked_neg().ok_or_else(|| {
-                                Error::Type("timestamp interval overflow".to_string())
-                            })?,
-                        )?,
+                        (Value::Timestamp(t), Value::Integer(days)) => {
+                            temporal::timestamp_add_days(
+                                *t,
+                                days.checked_neg().ok_or_else(|| {
+                                    Error::Type("timestamp interval overflow".to_string())
+                                })?,
+                            )?
+                        }
+                        (Value::Extension(_), Value::Integer(days))
+                            if a.as_civil_timestamp().is_some() =>
+                        {
+                            temporal::civil_timestamp_add_days(
+                                &a,
+                                days.checked_neg().ok_or_else(|| {
+                                    Error::Type("timestamp interval overflow".to_string())
+                                })?,
+                            )?
+                        }
                         (Value::Extension(_), Value::Integer(days))
                             if a.as_date_days().is_some() =>
                         {
@@ -626,7 +647,12 @@ impl ExprVM {
                         }
                         (Value::Timestamp(_), Value::Text(_)) => {
                             // Parse interval string - pass references directly to avoid clone
-                            self.timestamp_add_interval(&a, &b, false)?
+                            temporal::timestamp_add_interval(&a, &b, false)?
+                        }
+                        (Value::Extension(_), Value::Text(_))
+                            if a.as_civil_timestamp().is_some() =>
+                        {
+                            temporal::timestamp_add_interval(&a, &b, false)?
                         }
                         _ => Self::arithmetic_op(&a, &b, ArithmeticOp::Sub, |x, y| x - y)?,
                     };
@@ -1057,7 +1083,7 @@ impl ExprVM {
                 Op::TimestampAddInterval => {
                     let interval = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let ts = self.stack.pop().unwrap_or_else(Value::null_unknown);
-                    let result = self.timestamp_add_interval(&ts, &interval, true)?;
+                    let result = temporal::timestamp_add_interval(&ts, &interval, true)?;
                     self.stack.push(result);
                     pc += 1;
                 }
@@ -1065,7 +1091,7 @@ impl ExprVM {
                 Op::TimestampSubInterval => {
                     let interval = self.stack.pop().unwrap_or_else(Value::null_unknown);
                     let ts = self.stack.pop().unwrap_or_else(Value::null_unknown);
-                    let result = self.timestamp_add_interval(&ts, &interval, false)?;
+                    let result = temporal::timestamp_add_interval(&ts, &interval, false)?;
                     self.stack.push(result);
                     pc += 1;
                 }
@@ -1077,7 +1103,22 @@ impl ExprVM {
                         (Value::Timestamp(t1), Value::Timestamp(t2)) => {
                             let duration = t1.signed_duration_since(*t2);
                             Value::Text(SmartString::from_string(
-                                self.format_duration_as_interval(duration),
+                                temporal::format_duration_as_interval(duration),
+                            ))
+                        }
+                        (Value::Extension(_), Value::Extension(_))
+                            if ts1.as_civil_timestamp().is_some()
+                                && ts2.as_civil_timestamp().is_some() =>
+                        {
+                            let duration = ts1
+                                .as_civil_timestamp()
+                                .expect("civil timestamp was checked")
+                                .signed_duration_since(
+                                    ts2.as_civil_timestamp()
+                                        .expect("civil timestamp was checked"),
+                                );
+                            Value::Text(SmartString::from_string(
+                                temporal::format_duration_as_interval(duration),
                             ))
                         }
                         _ if ts1.is_null() || ts2.is_null() => Value::Null(DataType::Text),
@@ -1093,6 +1134,11 @@ impl ExprVM {
                     let result = match (&ts, &days) {
                         (Value::Timestamp(t), Value::Integer(d)) => {
                             Value::Timestamp(*t + chrono::Duration::days(*d))
+                        }
+                        (Value::Extension(_), Value::Integer(d))
+                            if ts.as_civil_timestamp().is_some() =>
+                        {
+                            temporal::civil_timestamp_add_days(&ts, *d)?
                         }
                         (Value::Extension(_), Value::Integer(d)) if ts.as_date_days().is_some() => {
                             Self::date_add_days(ts.as_date_days().expect("date was checked"), *d)?
@@ -1110,6 +1156,16 @@ impl ExprVM {
                     let result = match (&ts, &days) {
                         (Value::Timestamp(t), Value::Integer(d)) => {
                             Value::Timestamp(*t - chrono::Duration::days(*d))
+                        }
+                        (Value::Extension(_), Value::Integer(d))
+                            if ts.as_civil_timestamp().is_some() =>
+                        {
+                            temporal::civil_timestamp_add_days(
+                                &ts,
+                                d.checked_neg().ok_or_else(|| {
+                                    Error::Type("timestamp interval overflow".to_string())
+                                })?,
+                            )?
                         }
                         (Value::Extension(_), Value::Integer(d)) if ts.as_date_days().is_some() => {
                             Self::date_add_days(
@@ -1436,6 +1492,10 @@ impl ExprVM {
                             )
                         })?;
                         invoker.external_output(&v, *target_type)?
+                    } else if let (Value::Text(value), DataType::Timestamp) = (&v, target_type) {
+                        Value::Timestamp(ctx.session_time_zone()?.parse_instant(value)?)
+                    } else if let (Value::Timestamp(value), DataType::Text) = (&v, target_type) {
+                        Value::text(ctx.session_time_zone()?.format_instant(*value))
                     } else {
                         v.try_coerce_to_type(*target_type)?
                     };
@@ -2924,6 +2984,9 @@ impl ExprVM {
     where
         FF: Fn(f64, f64) -> f64,
     {
+        if let Some(result) = Self::decimal_arithmetic_op(a, b, int_op)? {
+            return Ok(result);
+        }
         match (a, b) {
             (Value::Integer(x), Value::Integer(y)) => {
                 // Use checked operations to detect overflow and return an error
@@ -2958,6 +3021,94 @@ impl ExprVM {
             _ if a.is_null() || b.is_null() => Ok(Value::Null(DataType::Float)),
             _ => Ok(Value::Null(DataType::Null)),
         }
+    }
+
+    /// Evaluate exact base-10 arithmetic whenever either operand is DECIMAL.
+    ///
+    /// DECIMAL is stored as a tagged extension value, so the generic numeric
+    /// branches above cannot see it. Keeping this conversion here preserves
+    /// one arithmetic implementation for interpreted SELECT expressions,
+    /// DML assignments, and stored-routine expression callbacks.
+    fn decimal_arithmetic_op(
+        a: &Value,
+        b: &Value,
+        operation: ArithmeticOp,
+    ) -> Result<Option<Value>> {
+        if a.as_decimal_parts().is_none() && b.as_decimal_parts().is_none() {
+            return Ok(None);
+        }
+        if a.is_null() || b.is_null() {
+            return Ok(Some(Value::Null(DataType::Decimal)));
+        }
+
+        let left = Self::decimal_operand(a)?;
+        let right = Self::decimal_operand(b)?;
+        let (unscaled, scale) = match operation {
+            ArithmeticOp::Add | ArithmeticOp::Sub => {
+                let scale = left.2.max(right.2);
+                let left_unscaled = Self::align_decimal(left.0, left.2, scale)?;
+                let right_unscaled = Self::align_decimal(right.0, right.2, scale)?;
+                let unscaled = match operation {
+                    ArithmeticOp::Add => left_unscaled.checked_add(right_unscaled),
+                    ArithmeticOp::Sub => left_unscaled.checked_sub(right_unscaled),
+                    _ => unreachable!("guarded decimal operation"),
+                }
+                .ok_or_else(|| Error::Type("DECIMAL arithmetic overflow".to_string()))?;
+                (unscaled, scale)
+            }
+            ArithmeticOp::Mul => {
+                let scale = left
+                    .2
+                    .checked_add(right.2)
+                    .ok_or_else(|| Error::Type("DECIMAL scale overflow".to_string()))?;
+                let unscaled = left
+                    .0
+                    .checked_mul(right.0)
+                    .ok_or_else(|| Error::Type("DECIMAL arithmetic overflow".to_string()))?;
+                (unscaled, scale)
+            }
+            ArithmeticOp::Div | ArithmeticOp::Mod => return Ok(None),
+        };
+        let precision = Self::decimal_result_precision(unscaled, scale)?;
+        Ok(Some(Value::try_decimal(unscaled, precision, scale)?))
+    }
+
+    fn decimal_operand(value: &Value) -> Result<(i128, u8, u8)> {
+        if let Some(parts) = value.as_decimal_parts() {
+            return Ok(parts);
+        }
+        value
+            .coerce_to_type(DataType::Decimal)
+            .as_decimal_parts()
+            .ok_or_else(|| Error::Type("DECIMAL arithmetic requires numeric operands".to_string()))
+    }
+
+    fn align_decimal(unscaled: i128, source_scale: u8, target_scale: u8) -> Result<i128> {
+        let exponent = u32::from(target_scale - source_scale);
+        let factor = 10_i128
+            .checked_pow(exponent)
+            .ok_or_else(|| Error::Type("DECIMAL scale overflow".to_string()))?;
+        unscaled
+            .checked_mul(factor)
+            .ok_or_else(|| Error::Type("DECIMAL arithmetic overflow".to_string()))
+    }
+
+    fn decimal_result_precision(unscaled: i128, scale: u8) -> Result<u8> {
+        let mut magnitude = unscaled.unsigned_abs();
+        let mut digits = 1_u8;
+        while magnitude >= 10 {
+            magnitude /= 10;
+            digits = digits
+                .checked_add(1)
+                .ok_or_else(|| Error::Type("DECIMAL precision overflow".to_string()))?;
+        }
+        let precision = digits.max(scale).max(1);
+        if precision > 38 {
+            return Err(Error::Type(
+                "DECIMAL arithmetic exceeds precision 38".to_string(),
+            ));
+        }
+        Ok(precision)
     }
 
     #[inline]
@@ -3061,205 +3212,6 @@ impl ExprVM {
             } else {
                 DataType::Json
             }),
-        }
-    }
-
-    /// Add or subtract interval from timestamp
-    fn timestamp_add_days(timestamp: chrono::DateTime<chrono::Utc>, days: i64) -> Result<Value> {
-        let duration = chrono::Duration::try_days(days)
-            .ok_or_else(|| Error::Type("timestamp day interval overflow".to_string()))?;
-        timestamp
-            .checked_add_signed(duration)
-            .map(Value::Timestamp)
-            .ok_or_else(|| Error::Type("timestamp result is out of range".to_string()))
-    }
-
-    fn timestamp_add_interval(&self, ts: &Value, interval: &Value, add: bool) -> Result<Value> {
-        let timestamp = match ts {
-            Value::Timestamp(t) => *t,
-            Value::Null(_) => return Ok(Value::Null(DataType::Timestamp)),
-            _ => return Ok(Value::Null(DataType::Timestamp)),
-        };
-
-        let interval_str = match interval {
-            Value::Text(s) => s.as_ref(),
-            Value::Null(_) => return Ok(Value::Null(DataType::Timestamp)),
-            _ => return Ok(Value::Null(DataType::Timestamp)),
-        };
-
-        // Parse interval string
-        // Formats: "1 day", "2 hours", "30 minutes", "1 year", "1 month", etc.
-        match self.parse_interval(interval_str)? {
-            IntervalValue::Duration(duration) => {
-                let duration = if add {
-                    duration
-                } else {
-                    duration
-                        .checked_mul(-1)
-                        .ok_or_else(|| Error::Type("fixed interval overflow".to_string()))?
-                };
-                timestamp
-                    .checked_add_signed(duration)
-                    .map(Value::Timestamp)
-                    .ok_or_else(|| Error::Type("timestamp result is out of range".to_string()))
-            }
-            IntervalValue::Months(months) => {
-                let months = if add {
-                    months
-                } else {
-                    months
-                        .checked_neg()
-                        .ok_or_else(|| Error::Type("calendar interval overflow".to_string()))?
-                };
-                Self::calendar_add_months(timestamp, months)
-                    .map(Value::Timestamp)
-                    .ok_or_else(|| Error::Type("timestamp result is out of range".to_string()))
-            }
-        }
-    }
-
-    /// Calendar-aware month addition preserving time-of-day and nanoseconds.
-    fn calendar_add_months(
-        ts: chrono::DateTime<chrono::Utc>,
-        months: i64,
-    ) -> Option<chrono::DateTime<chrono::Utc>> {
-        use chrono::{Datelike, NaiveDate, Timelike};
-
-        let total_months = (ts.year() as i64)
-            .checked_mul(12)?
-            .checked_add(i64::from(ts.month()) - 1)?
-            .checked_add(months)?;
-        let new_year_i64 = total_months.div_euclid(12);
-        let new_month = (total_months.rem_euclid(12) + 1) as u32;
-
-        let new_year = i32::try_from(new_year_i64).ok()?;
-        if !(1..=9999).contains(&new_year) {
-            return None;
-        }
-
-        // Clamp day to valid range for the new month
-        let max_day = match new_month {
-            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-            4 | 6 | 9 | 11 => 30,
-            2 => {
-                if (new_year % 4 == 0 && new_year % 100 != 0) || (new_year % 400 == 0) {
-                    29
-                } else {
-                    28
-                }
-            }
-            _ => 30,
-        };
-        let day = ts.day().min(max_day);
-
-        // Rebuild date preserving original time including nanoseconds
-        let date = NaiveDate::from_ymd_opt(new_year, new_month, day)?;
-        let time = ts.time();
-        let naive = date.and_hms_nano_opt(
-            time.hour(),
-            time.minute(),
-            time.second(),
-            ts.timestamp_subsec_nanos(),
-        )?;
-        Some(chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(
-            naive,
-            chrono::Utc,
-        ))
-    }
-
-    /// Parsed interval: either a fixed duration or a calendar-relative month count.
-    fn parse_interval(&self, s: &str) -> Result<IntervalValue> {
-        let s = s.trim();
-        let parts: Vec<&str> = s.split_whitespace().collect();
-
-        if parts.len() < 2 {
-            // Try parsing as just a number (days)
-            if let Ok(n) = s.parse::<i64>() {
-                return chrono::Duration::try_days(n)
-                    .map(IntervalValue::Duration)
-                    .ok_or_else(|| Error::Type("interval is out of range".to_string()));
-            }
-            return Err(Error::Type(format!("invalid interval: {s}")));
-        }
-
-        let value: i64 = parts[0]
-            .parse()
-            .map_err(|_| Error::Type(format!("invalid interval: {s}")))?;
-        let unit = parts[1];
-
-        // Case-insensitive unit matching without allocation
-        // Handle both singular and plural forms
-        if unit.eq_ignore_ascii_case("year") || unit.eq_ignore_ascii_case("years") {
-            value
-                .checked_mul(12)
-                .map(IntervalValue::Months)
-                .ok_or_else(|| Error::Type("calendar interval overflow".to_string()))
-        } else if unit.eq_ignore_ascii_case("month") || unit.eq_ignore_ascii_case("months") {
-            Ok(IntervalValue::Months(value))
-        } else if unit.eq_ignore_ascii_case("week") || unit.eq_ignore_ascii_case("weeks") {
-            chrono::Duration::try_weeks(value)
-                .map(IntervalValue::Duration)
-                .ok_or_else(|| Error::Type("interval is out of range".to_string()))
-        } else if unit.eq_ignore_ascii_case("day") || unit.eq_ignore_ascii_case("days") {
-            chrono::Duration::try_days(value)
-                .map(IntervalValue::Duration)
-                .ok_or_else(|| Error::Type("interval is out of range".to_string()))
-        } else if unit.eq_ignore_ascii_case("hour") || unit.eq_ignore_ascii_case("hours") {
-            chrono::Duration::try_hours(value)
-                .map(IntervalValue::Duration)
-                .ok_or_else(|| Error::Type("interval is out of range".to_string()))
-        } else if unit.eq_ignore_ascii_case("minute")
-            || unit.eq_ignore_ascii_case("minutes")
-            || unit.eq_ignore_ascii_case("min")
-        {
-            chrono::Duration::try_minutes(value)
-                .map(IntervalValue::Duration)
-                .ok_or_else(|| Error::Type("interval is out of range".to_string()))
-        } else if unit.eq_ignore_ascii_case("second")
-            || unit.eq_ignore_ascii_case("seconds")
-            || unit.eq_ignore_ascii_case("sec")
-        {
-            chrono::Duration::try_seconds(value)
-                .map(IntervalValue::Duration)
-                .ok_or_else(|| Error::Type("interval is out of range".to_string()))
-        } else if unit.eq_ignore_ascii_case("millisecond")
-            || unit.eq_ignore_ascii_case("milliseconds")
-            || unit.eq_ignore_ascii_case("ms")
-        {
-            Ok(IntervalValue::Duration(chrono::Duration::milliseconds(
-                value,
-            )))
-        } else if unit.eq_ignore_ascii_case("microsecond")
-            || unit.eq_ignore_ascii_case("microseconds")
-            || unit.eq_ignore_ascii_case("us")
-        {
-            Ok(IntervalValue::Duration(chrono::Duration::microseconds(
-                value,
-            )))
-        } else {
-            Err(Error::Type(format!("invalid interval unit: {unit}")))
-        }
-    }
-
-    /// Format chrono Duration as interval string
-    fn format_duration_as_interval(&self, duration: chrono::TimeDelta) -> String {
-        let total_seconds = duration.num_seconds();
-        let abs_seconds = total_seconds.abs();
-
-        let days = abs_seconds / 86400;
-        let hours = (abs_seconds % 86400) / 3600;
-        let minutes = (abs_seconds % 3600) / 60;
-        let seconds = abs_seconds % 60;
-
-        let sign = if total_seconds < 0 { "-" } else { "" };
-
-        if days > 0 {
-            format!(
-                "{}{} days {:02}:{:02}:{:02}",
-                sign, days, hours, minutes, seconds
-            )
-        } else {
-            format!("{}{:02}:{:02}:{:02}", sign, hours, minutes, seconds)
         }
     }
 }

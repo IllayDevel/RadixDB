@@ -165,7 +165,7 @@ impl Parser {
         let token = self.cur_token.clone();
 
         self.next_token();
-        if !self.cur_token_is(TokenType::Identifier) {
+        if !self.cur_token_is(TokenType::Identifier) && !self.cur_token_is(TokenType::Keyword) {
             self.add_error(format!(
                 "expected variable name at {}",
                 self.cur_token.position
@@ -173,12 +173,25 @@ impl Parser {
             return None;
         }
 
-        let name = Identifier::new(self.cur_token.clone(), self.cur_token.literal.clone());
+        let name_token = self.cur_token.clone();
+        let time_zone = self.cur_token.literal.eq_ignore_ascii_case("TIME")
+            && self.peek_token.literal.eq_ignore_ascii_case("ZONE");
+
+        let name = if time_zone {
+            self.next_token();
+            Identifier::new(name_token, "TIME ZONE")
+        } else {
+            Identifier::new(name_token, self.cur_token.literal.clone())
+        };
 
         self.next_token();
-        // Expect '=' or 'TO'
+        // PostgreSQL spells this `SET TIME ZONE '<zone>'`; the ordinary SET
+        // grammar continues to require '=' or 'TO'. Accepting an optional
+        // delimiter for TIME ZONE keeps both forms deterministic.
         let is_equals = self.cur_token_is(TokenType::Operator) && self.cur_token.literal == "=";
-        if !is_equals && !self.cur_token_is_keyword("TO") {
+        if is_equals || self.cur_token_is_keyword("TO") {
+            self.next_token();
+        } else if !time_zone {
             self.add_error(format!(
                 "expected '=' or 'TO' after variable name at {}",
                 self.cur_token.position
@@ -186,7 +199,6 @@ impl Parser {
             return None;
         }
 
-        self.next_token();
         let value = self.parse_expression(Precedence::Lowest)?;
 
         Some(SetStatement { token, name, value })
@@ -225,7 +237,31 @@ impl Parser {
     pub(super) fn parse_show_statement(&mut self) -> Option<Statement> {
         let token = self.cur_token.clone();
 
-        if self.peek_token_is_keyword("TABLES") {
+        if self.peek_token.literal.eq_ignore_ascii_case("TIMEZONE")
+            || self.peek_token.literal.eq_ignore_ascii_case("TIME_ZONE")
+        {
+            self.next_token();
+            let name = Identifier::new(self.cur_token.clone(), "TIME ZONE");
+            Some(Statement::ShowVariable(ShowVariableStatement {
+                token,
+                name,
+            }))
+        } else if self.peek_token_is_keyword("TIME") {
+            self.next_token();
+            if !self.peek_token.literal.eq_ignore_ascii_case("ZONE") {
+                self.add_error(format!(
+                    "expected ZONE after SHOW TIME at {}",
+                    self.cur_token.position
+                ));
+                return None;
+            }
+            self.next_token();
+            let name = Identifier::new(self.cur_token.clone(), "TIME ZONE");
+            Some(Statement::ShowVariable(ShowVariableStatement {
+                token,
+                name,
+            }))
+        } else if self.peek_token_is_keyword("TABLES") {
             self.next_token();
             Some(Statement::ShowTables(ShowTablesStatement { token }))
         } else if self.peek_token_is_keyword("VIEWS") {

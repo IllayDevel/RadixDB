@@ -195,7 +195,7 @@ graph. Automatic schema migration is a separate concern. See
 
 ### Trusted native extensions
 
-RadixDB 1.2 provides a stable C ABI, a safe Rust SDK and deterministic package
+RadixDB 1.2.4 provides a stable C ABI, a safe Rust SDK and deterministic package
 tooling for operator-trusted native extensions. An extension can add bounded
 scalar types, native scalar and batch functions, binary operators,
 B-tree/hash/bitmap operator classes and bounded planner support. The
@@ -233,7 +233,7 @@ native to RadixDB; drop-in PostgreSQL compatibility is not a design goal.
 
 ### PL/SQL: application logic in the database
 
-The RadixDB 1.2 development line includes its own procedural SQL language. Functions, procedures
+The RadixDB 1.2.4 development line includes its own procedural SQL language. Functions, procedures
 and triggers keep validation, multi-step updates and business rules close to
 their data, within the same transaction as the changes they govern.
 
@@ -252,7 +252,7 @@ PL/pgSQL compatibility layer.
 
 ### ACL: roles and access control
 
-The RadixDB 1.2 development line includes database-enforced principals, roles and membership,
+The RadixDB 1.2.4 development line includes database-enforced principals, roles and membership,
 object ownership, table and column access, and privileges such as `SELECT`,
 `INSERT`, `UPDATE`, `DELETE` and `EXECUTE`. Routines can execute with invoker
 or definer authority, with checks performed inside the engine. Grants and

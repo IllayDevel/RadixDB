@@ -20,6 +20,7 @@ pub mod schema_descriptor;
 pub mod smart_string;
 pub mod string_map;
 pub mod time_compat;
+pub mod timezone;
 pub mod types;
 pub mod unicode;
 pub mod value;
@@ -50,11 +51,14 @@ pub use schema::{
 pub use schema_descriptor::{
     canonical_fingerprint, ColumnDescriptor, ConstraintDefinition, ConstraintDescriptor,
     DataTypeDescriptor, DatabaseDescriptor, DescriptorEnvelope, DescriptorError, DescriptorKind,
-    ForeignKeyActionDescriptor, IndexDescriptor, ResultColumnDescriptor, TableDescriptor,
-    ViewDescriptor, SCHEMA_DESCRIPTOR_VERSION,
+    ForeignKeyActionDescriptor, IndexDescriptor, ProcedureDescriptor, ResultColumnDescriptor,
+    RoutineArgumentDescriptor, RoutineArgumentModeDescriptor, RoutineResourcePolicyDescriptor,
+    RoutineResultColumnDescriptor, RoutineResultDescriptor, RoutineSecurityDescriptor,
+    RoutineVolatilityDescriptor, TableDescriptor, ViewDescriptor, SCHEMA_DESCRIPTOR_VERSION,
 };
 pub use smart_string::SmartString;
 pub use string_map::{StringMap, StringSet};
+pub use timezone::{parse_timestamp_with_explicit_offset, SessionTimeZone};
 pub use types::{
     DataType, ExternalTypeRef, ForeignKeyAction, IndexEntry, IndexType, IsolationLevel,
     LogicalTypeRef, Operator,

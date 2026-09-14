@@ -50,7 +50,7 @@ fn setup_candlestick_db(name: &str) -> Database {
             id INTEGER PRIMARY KEY,
             exchange TEXT,
             symbol TEXT,
-            time TIMESTAMP,
+            time TIMESTAMPTZ,
             open FLOAT,
             high FLOAT,
             low FLOAT,
@@ -223,7 +223,7 @@ fn test_alias_shadow_simple_group_by() {
     // Simplest possible reproduction: alias a column then GROUP BY it
     let db = Database::open("memory://alias_shadow_simple").unwrap();
     db.execute(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY, time TIMESTAMP, category TEXT, value INTEGER)",
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, time TIMESTAMPTZ, category TEXT, value INTEGER)",
         (),
     )
     .unwrap();
@@ -276,7 +276,7 @@ fn test_alias_shadow_group_by_uses_alias_identifier() {
     // When GROUP BY uses the alias name directly (not the expression)
     let db = Database::open("memory://alias_shadow_gb_alias").unwrap();
     db.execute(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY, time TIMESTAMP, value INTEGER)",
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, time TIMESTAMPTZ, value INTEGER)",
         (),
     )
     .unwrap();
@@ -327,7 +327,7 @@ fn test_alias_no_shadow_expression_group_by() {
     // GROUP BY uses the full expression (not an identifier), so alias map shouldn't matter
     let db = Database::open("memory://alias_no_shadow_expr_gb").unwrap();
     db.execute(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY, time TIMESTAMP, value INTEGER)",
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, time TIMESTAMPTZ, value INTEGER)",
         (),
     )
     .unwrap();

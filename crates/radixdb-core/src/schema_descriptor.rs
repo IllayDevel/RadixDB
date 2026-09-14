@@ -79,6 +79,13 @@ pub struct DatabaseDescriptor {
     pub fingerprint: String,
     pub tables: Vec<TableDescriptor>,
     pub views: Vec<ViewDescriptor>,
+    /// Durable SQL procedures visible to the descriptor caller.
+    ///
+    /// The field is additive to `radixdb.schema.v1`: old descriptors omit it
+    /// and retain their original fingerprint, while current producers include
+    /// it whenever at least one procedure exists.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub procedures: Vec<ProcedureDescriptor>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub extensions: BTreeMap<String, serde_json::Value>,
 }
@@ -116,9 +123,18 @@ pub enum DataTypeDescriptor {
     Null,
     Integer,
     Float,
-    Text,
+    DoublePrecision,
+    Text {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_chars: Option<u32>,
+    },
     Boolean,
+    /// UTC instant (`TIMESTAMP WITH TIME ZONE`).
     Timestamp,
+    /// Civil date and time (`TIMESTAMP WITHOUT TIME ZONE`).
+    CivilTimestamp,
+    /// Civil time of day (`TIME WITHOUT TIME ZONE`).
+    Time,
     Date,
     Json,
     Uuid,
@@ -198,6 +214,96 @@ pub struct ResultColumnDescriptor {
     pub nullable: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProcedureDescriptor {
+    pub catalog_id: String,
+    pub name: String,
+    pub definition_revision: u64,
+    pub fingerprint: String,
+    pub source_sha256: String,
+    pub language: String,
+    pub language_version: u16,
+    pub compiler_abi: u32,
+    pub runtime_abi: u32,
+    pub security: RoutineSecurityDescriptor,
+    pub volatility: RoutineVolatilityDescriptor,
+    pub arguments: Vec<RoutineArgumentDescriptor>,
+    pub result: RoutineResultDescriptor,
+    pub resource_policy: RoutineResourcePolicyDescriptor,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutineArgumentDescriptor {
+    pub ordinal: u32,
+    pub name: String,
+    pub mode: RoutineArgumentModeDescriptor,
+    pub sql_type: String,
+    /// `None` denotes a catalog-defined extension type. Its stable SQL name is
+    /// still carried in `sql_type`; application generators may reject it until
+    /// an explicit codec binding is configured.
+    pub data_type: Option<DataTypeDescriptor>,
+    pub nullable: bool,
+    pub default_expression: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineArgumentModeDescriptor {
+    In,
+    Out,
+    InOut,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RoutineResultDescriptor {
+    Void,
+    Scalar {
+        sql_type: String,
+        data_type: Option<DataTypeDescriptor>,
+        nullable: bool,
+    },
+    Table {
+        columns: Vec<RoutineResultColumnDescriptor>,
+    },
+    Trigger,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutineResultColumnDescriptor {
+    pub ordinal: u32,
+    pub name: String,
+    pub sql_type: String,
+    pub data_type: Option<DataTypeDescriptor>,
+    pub nullable: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineSecurityDescriptor {
+    Invoker,
+    Definer,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoutineVolatilityDescriptor {
+    Immutable,
+    Stable,
+    Volatile,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RoutineResourcePolicyDescriptor {
+    pub instructions: u64,
+    pub heap_bytes: u64,
+    pub frames: u32,
+    pub sql_statements: u64,
+    pub rows: u64,
+    pub result_bytes: u64,
+    pub deadline_ms: u64,
+}
+
 impl TableDescriptor {
     pub fn to_json(&self) -> Result<String, DescriptorError> {
         DescriptorEnvelope::new(DescriptorKind::Table, self.clone()).to_json()
@@ -235,6 +341,21 @@ impl DatabaseDescriptor {
 
     /// Compute the database fingerprint from its ordered, already-fingerprinted
     /// table/view catalog while excluding the fingerprint field itself.
+    pub fn computed_fingerprint(&self) -> Result<String, DescriptorError> {
+        let mut canonical = self.clone();
+        canonical.fingerprint.clear();
+        canonical_fingerprint(&canonical)
+    }
+
+    pub fn refresh_fingerprint(&mut self) -> Result<(), DescriptorError> {
+        self.fingerprint = self.computed_fingerprint()?;
+        Ok(())
+    }
+}
+
+impl ProcedureDescriptor {
+    /// Compute the procedure contract fingerprint with the fingerprint field
+    /// itself blank. Source text is represented only by `source_sha256`.
     pub fn computed_fingerprint(&self) -> Result<String, DescriptorError> {
         let mut canonical = self.clone();
         canonical.fingerprint.clear();
@@ -288,6 +409,44 @@ mod tests {
         assert!(
             DescriptorEnvelope::<TableDescriptor>::from_json(&json, DescriptorKind::Database)
                 .is_err()
+        );
+    }
+
+    #[test]
+    fn text_descriptor_preserves_old_unbounded_json_and_bounded_identity() {
+        let unbounded = DataTypeDescriptor::Text { max_chars: None };
+        assert_eq!(
+            serde_json::to_string(&unbounded).unwrap(),
+            r#"{"type":"text"}"#
+        );
+        assert_eq!(
+            serde_json::from_str::<DataTypeDescriptor>(r#"{"type":"text"}"#).unwrap(),
+            unbounded
+        );
+
+        let bounded = DataTypeDescriptor::Text {
+            max_chars: Some(255),
+        };
+        assert_eq!(
+            serde_json::to_string(&bounded).unwrap(),
+            r#"{"type":"text","max_chars":255}"#
+        );
+        assert_ne!(
+            canonical_fingerprint(&unbounded).unwrap(),
+            canonical_fingerprint(&bounded).unwrap()
+        );
+    }
+
+    #[test]
+    fn double_precision_has_a_distinct_stable_descriptor_identity() {
+        let double = DataTypeDescriptor::DoublePrecision;
+        assert_eq!(
+            serde_json::to_string(&double).unwrap(),
+            r#"{"type":"double_precision"}"#
+        );
+        assert_ne!(
+            canonical_fingerprint(&DataTypeDescriptor::Float).unwrap(),
+            canonical_fingerprint(&double).unwrap()
         );
     }
 }

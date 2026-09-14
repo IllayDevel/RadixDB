@@ -187,6 +187,8 @@ fn supports_comparison_pushdown(data_type: DataType) -> bool {
             | DataType::Text
             | DataType::Boolean
             | DataType::Timestamp
+            | DataType::CivilTimestamp
+            | DataType::Time
             | DataType::Uuid
             | DataType::Decimal
     )
@@ -195,7 +197,12 @@ fn supports_comparison_pushdown(data_type: DataType) -> bool {
 fn supports_between_pushdown(data_type: DataType) -> bool {
     matches!(
         data_type,
-        DataType::Integer | DataType::Float | DataType::Text | DataType::Timestamp
+        DataType::Integer
+            | DataType::Float
+            | DataType::Text
+            | DataType::Timestamp
+            | DataType::CivilTimestamp
+            | DataType::Time
     )
 }
 

@@ -68,6 +68,17 @@ pub enum DataType {
 
     /// Raw byte string.
     Bytes = 11,
+
+    /// Civil date and time without a time-zone offset.
+    ///
+    /// Stored physically as signed nanoseconds from the civil epoch
+    /// `1970-01-01 00:00:00`, but never interpreted as a UTC instant.
+    CivilTimestamp = 12,
+
+    /// Civil time of day without a time-zone offset.
+    ///
+    /// Stored physically as nanoseconds since midnight.
+    Time = 13,
 }
 
 /// Stable identity of one catalog-bound external scalar codec.
@@ -131,6 +142,12 @@ impl DataType {
         !matches!(self, DataType::Json | DataType::Vector)
     }
 
+    /// Returns true when the built-in scalar has a stable total key order and
+    /// can therefore own a primary-key B-tree (alone or in a composite key).
+    pub fn supports_primary_key(&self) -> bool {
+        *self != DataType::Null && self.is_orderable()
+    }
+
     /// Returns the type ID as u8 for serialization
     #[inline(always)]
     pub fn as_u8(&self) -> u8 {
@@ -152,6 +169,8 @@ impl DataType {
             9 => Some(DataType::Decimal),
             10 => Some(DataType::Date),
             11 => Some(DataType::Bytes),
+            12 => Some(DataType::CivilTimestamp),
+            13 => Some(DataType::Time),
             _ => None,
         }
     }
@@ -165,13 +184,15 @@ impl fmt::Display for DataType {
             DataType::Float => write!(f, "FLOAT"),
             DataType::Text => write!(f, "TEXT"),
             DataType::Boolean => write!(f, "BOOLEAN"),
-            DataType::Timestamp => write!(f, "TIMESTAMP"),
+            DataType::Timestamp => write!(f, "TIMESTAMPTZ"),
             DataType::Json => write!(f, "JSON"),
             DataType::Vector => write!(f, "VECTOR"),
             DataType::Uuid => write!(f, "UUID"),
             DataType::Decimal => write!(f, "DECIMAL"),
             DataType::Date => write!(f, "DATE"),
             DataType::Bytes => write!(f, "BYTES"),
+            DataType::CivilTimestamp => write!(f, "TIMESTAMP"),
+            DataType::Time => write!(f, "TIME"),
         }
     }
 }
@@ -241,11 +262,15 @@ impl FromStr for DataType {
             (base_type, None) => match base_type {
                 "NULL" => Ok(DataType::Null),
                 "INTEGER" | "INT" | "BIGINT" | "SMALLINT" | "TINYINT" => Ok(DataType::Integer),
-                "FLOAT" | "DOUBLE" | "REAL" => Ok(DataType::Float),
+                "FLOAT" | "DOUBLE" | "DOUBLE PRECISION" | "REAL" => Ok(DataType::Float),
                 "DECIMAL" | "NUMERIC" => Ok(DataType::Decimal),
                 "TEXT" | "VARCHAR" | "CHAR" | "STRING" | "CLOB" => Ok(DataType::Text),
                 "BOOLEAN" | "BOOL" => Ok(DataType::Boolean),
-                "TIMESTAMP" | "DATETIME" | "TIME" => Ok(DataType::Timestamp),
+                "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => Ok(DataType::Timestamp),
+                "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" | "DATETIME" => {
+                    Ok(DataType::CivilTimestamp)
+                }
+                "TIME" | "TIME WITHOUT TIME ZONE" => Ok(DataType::Time),
                 "DATE" => Ok(DataType::Date),
                 "JSON" | "JSONB" => Ok(DataType::Json),
                 "UUID" => Ok(DataType::Uuid),
@@ -588,7 +613,9 @@ mod tests {
         assert_eq!(DataType::Float.to_string(), "FLOAT");
         assert_eq!(DataType::Text.to_string(), "TEXT");
         assert_eq!(DataType::Boolean.to_string(), "BOOLEAN");
-        assert_eq!(DataType::Timestamp.to_string(), "TIMESTAMP");
+        assert_eq!(DataType::Timestamp.to_string(), "TIMESTAMPTZ");
+        assert_eq!(DataType::CivilTimestamp.to_string(), "TIMESTAMP");
+        assert_eq!(DataType::Time.to_string(), "TIME");
         assert_eq!(DataType::Json.to_string(), "JSON");
         assert_eq!(DataType::Vector.to_string(), "VECTOR");
         assert_eq!(DataType::Uuid.to_string(), "UUID");
@@ -606,6 +633,10 @@ mod tests {
         assert_eq!("TINYINT".parse::<DataType>().unwrap(), DataType::Integer);
         assert_eq!("float".parse::<DataType>().unwrap(), DataType::Float);
         assert_eq!(
+            "double precision".parse::<DataType>().unwrap(),
+            DataType::Float
+        );
+        assert_eq!(
             "DECIMAL(10,2)".parse::<DataType>().unwrap(),
             DataType::Decimal
         );
@@ -622,10 +653,22 @@ mod tests {
         assert_eq!("BOOL".parse::<DataType>().unwrap(), DataType::Boolean);
         assert_eq!(
             "TIMESTAMP".parse::<DataType>().unwrap(),
+            DataType::CivilTimestamp
+        );
+        assert_eq!(
+            "TIMESTAMP WITHOUT TIME ZONE".parse::<DataType>().unwrap(),
+            DataType::CivilTimestamp
+        );
+        assert_eq!(
+            "TIMESTAMPTZ".parse::<DataType>().unwrap(),
+            DataType::Timestamp
+        );
+        assert_eq!(
+            "TIMESTAMP WITH TIME ZONE".parse::<DataType>().unwrap(),
             DataType::Timestamp
         );
         assert_eq!("DATE".parse::<DataType>().unwrap(), DataType::Date);
-        assert_eq!("TIME".parse::<DataType>().unwrap(), DataType::Timestamp);
+        assert_eq!("TIME".parse::<DataType>().unwrap(), DataType::Time);
         assert_eq!("JSON".parse::<DataType>().unwrap(), DataType::Json);
         assert_eq!("JSONB".parse::<DataType>().unwrap(), DataType::Json);
         assert_eq!("UUID".parse::<DataType>().unwrap(), DataType::Uuid);

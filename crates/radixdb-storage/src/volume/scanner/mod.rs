@@ -806,12 +806,15 @@ impl VolumeScanner {
             {
                 TypedTarget::Bool(*v)
             }
-            (Value::Timestamp(dt), radixdb_core::DataType::Timestamp) => {
-                TypedTarget::Int64(dt.timestamp_nanos_opt().unwrap_or_else(|| {
-                    dt.timestamp()
-                        .saturating_mul(1_000_000_000)
-                        .saturating_add(dt.timestamp_subsec_nanos() as i64)
-                }))
+            (value, data_type)
+                if matches!(
+                    data_type,
+                    radixdb_core::DataType::Timestamp
+                        | radixdb_core::DataType::CivilTimestamp
+                        | radixdb_core::DataType::Time
+                ) && value.data_type() == data_type =>
+            {
+                TypedTarget::Int64(value.artifact_temporal_nanos()?)
             }
             _ => return None,
         };
@@ -1003,15 +1006,13 @@ impl VolumeScanner {
                 }
                 Some(TypedInList::Text(set))
             }
-            radixdb_core::DataType::Timestamp => {
+            data_type @ (radixdb_core::DataType::Timestamp
+            | radixdb_core::DataType::CivilTimestamp
+            | radixdb_core::DataType::Time) => {
                 let mut set = radixdb_core::I64Set::new();
                 for value in values {
-                    if let Value::Timestamp(dt) = value {
-                        set.insert(dt.timestamp_nanos_opt().unwrap_or_else(|| {
-                            dt.timestamp()
-                                .saturating_mul(1_000_000_000)
-                                .saturating_add(dt.timestamp_subsec_nanos() as i64)
-                        }));
+                    if value.data_type() == data_type {
+                        set.insert(value.artifact_temporal_nanos()?);
                     }
                 }
                 Some(TypedInList::Int64(set))
@@ -1402,6 +1403,8 @@ impl VolumeScanner {
                 | DataType::Text
                 | DataType::Boolean
                 | DataType::Timestamp
+                | DataType::CivilTimestamp
+                | DataType::Time
                 | DataType::Bytes
                 | DataType::Json
         )

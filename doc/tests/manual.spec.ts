@@ -24,7 +24,7 @@ test('locales, glossary and layout', async ({ page }, info) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   for (const locale of ['ru', 'en']) {
-    await page.goto(`/manual/1.2/${locale}/`);
+    await page.goto(`/manual/1.2.4/${locale}/`);
     await expect(page.locator('h1')).toContainText(locale === 'ru' ? 'Руководство' : 'Manual');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
     await page.screenshot({ path: info.outputPath(`${locale}-index.png`), fullPage: true });
@@ -39,7 +39,7 @@ test('locales, glossary and layout', async ({ page }, info) => {
 });
 
 for (const locale of ['en', 'ru']) test(`search returns the ${locale} glossary`, async ({ page }) => {
-  await page.goto(`/manual/1.2/${locale}/`);
+  await page.goto(`/manual/1.2.4/${locale}/`);
   await page.locator('site-search button').first().click();
   const search = page.getByRole('dialog').getByRole('textbox');
   await expect(search).toBeVisible();
@@ -49,11 +49,11 @@ for (const locale of ['en', 'ru']) test(`search returns the ${locale} glossary`,
   }).first();
   await expect(glossary).toBeVisible();
   await glossary.click();
-  await expect(page).toHaveURL(new RegExp(`/manual/1\\.2/${locale}/appendices/glossary/`));
+  await expect(page).toHaveURL(new RegExp(`/manual/1\\.2\\.4/${locale}/appendices/glossary/`));
 });
 
 test('language switch preserves the chapter', async ({ page }, info) => {
-  await page.goto('/manual/1.2/en/appendices/glossary/');
+  await page.goto('/manual/1.2.4/en/appendices/glossary/');
   if (info.project.name === 'mobile') await page.getByRole('button', { name: 'Menu', exact: true }).click();
   await page.getByRole('combobox', { name: 'Select language' }).selectOption({ label: 'Русский' });
   await expect(page).toHaveURL(/\/ru\/appendices\/glossary\//);
@@ -61,13 +61,13 @@ test('language switch preserves the chapter', async ({ page }, info) => {
 });
 
 test('build identity distinguishes target and application', async ({ page, request }) => {
-  await page.goto('/manual/1.2/ru/');
+  await page.goto('/manual/1.2.4/ru/');
   const identity = page.getByRole('complementary', { name: 'Версия документации' });
-  await expect(identity).toContainText('1.2 development');
-  const response = await request.get('/manual/1.2/build-manifest.json');
+  await expect(identity).toContainText('1.2.4 development');
+  const response = await request.get('/manual/1.2.4/build-manifest.json');
   expect(response.ok()).toBeTruthy();
   const manifest = await response.json();
-  expect(manifest.target).toBe('1.2');
+  expect(manifest.target).toBe('1.2.4');
   expect(manifest.channel).toBe('development');
   expect(manifest.revision).toMatch(/^[a-f0-9]{40}$/);
   await expect(identity).toContainText(manifest.application);
@@ -77,7 +77,7 @@ test('build identity distinguishes target and application', async ({ page, reque
 test('tutorial renders the tested SQL in both languages', async ({ page }, info) => {
   const setup = readFileSync(new URL('../examples/tutorial/setup.sql', import.meta.url), 'utf8').trim();
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/tutorial/first-database/`);
+    await page.goto(`/manual/1.2.4/${locale}/tutorial/first-database/`);
     await expect(page.locator('h1')).toHaveText(locale === 'ru' ? 'Первая база данных' : 'Your First Database');
     const block = page.locator('.expressive-code pre').filter({ hasText: 'CREATE TABLE departments' });
     await expect(block).toHaveText(setup, { useInnerText: true });
@@ -88,7 +88,7 @@ test('tutorial renders the tested SQL in both languages', async ({ page }, info)
 
 test('tutorial continues through server connection to client interfaces', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/tutorial/transactions/`);
+    await page.goto(`/manual/1.2.4/${locale}/tutorial/transactions/`);
     await page.locator('main a[href$="/server-connection/"]').first().click();
     await expect(page).toHaveURL(new RegExp(`/${locale}/tutorial/server-connection/`));
     await expect(page.locator('main')).toContainText('127.0.0.1:15443');
@@ -105,7 +105,7 @@ test('tutorial continues through server connection to client interfaces', async 
 
 test('schema definition and index chapters render in both languages', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/sql/ddl/`);
+    await page.goto(`/manual/1.2.4/${locale}/sql/ddl/`);
     await expect(page.locator('main h1')).toHaveText(locale === 'ru' ? 'Определение схемы' : 'Defining a Schema');
     await expect(page.locator('main')).toContainText('AUTO_INCREMENT');
     const describeLine = page.locator('.expressive-code .ec-line').filter({ hasText: 'DESCRIBE assets;' });
@@ -122,7 +122,7 @@ test('schema definition and index chapters render in both languages', async ({ p
 });
 
 test('sidebar selection and hover remain readable in both themes', async ({ page }, info) => {
-  await page.goto('/manual/1.2/ru/sql/ddl/');
+  await page.goto('/manual/1.2.4/ru/sql/ddl/');
   if (info.project.name === 'mobile') await page.getByRole('button', { name: 'Меню', exact: true }).click();
   const current = page.locator('#starlight__sidebar a[aria-current="page"]');
   const other = page.locator('#starlight__sidebar a:not([aria-current])').filter({ hasText: 'Изменение данных' }).first();
@@ -139,7 +139,7 @@ test('sidebar selection and hover remain readable in both themes', async ({ page
 
 test('query chapter renders checked joins, windows and limits', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/sql/queries/`);
+    await page.goto(`/manual/1.2.4/${locale}/sql/queries/`);
     await expect(page.locator('main h1')).toHaveText(locale === 'ru' ? 'Запросы к данным' : 'Querying Data');
     await expect(page.locator('main')).toContainText('FULL JOIN');
     await expect(page.locator('main')).toContainText('ROW_NUMBER');
@@ -152,7 +152,7 @@ test('query chapter renders checked joins, windows and limits', async ({ page },
 
 test('transaction chapter renders actual isolation and client limits', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/sql/transactions/`);
+    await page.goto(`/manual/1.2.4/${locale}/sql/transactions/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Транзакции и конкурентный доступ' : 'Transactions and Concurrency',
     );
@@ -168,7 +168,7 @@ test('transaction chapter renders actual isolation and client limits', async ({ 
 
 test('navigable references render paths, explain and write boundary', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/sql/navigable-references/`);
+    await page.goto(`/manual/1.2.4/${locale}/sql/navigable-references/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Навигация по ссылкам' : 'Navigable References',
     );
@@ -184,7 +184,7 @@ test('navigable references render paths, explain and write boundary', async ({ p
 
 test('SQL matrix exposes versioned support, limits and rejection evidence', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/appendices/compatibility/`);
+    await page.goto(`/manual/1.2.4/${locale}/appendices/compatibility/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Матрица покрытия SQL' : 'SQL Coverage Matrix',
     );
@@ -201,7 +201,7 @@ test('SQL matrix exposes versioned support, limits and rejection evidence', asyn
 
 test('limits distinguish hard ceilings, configuration and measured scale', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/appendices/limits/`);
+    await page.goto(`/manual/1.2.4/${locale}/appendices/limits/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Ограничения' : 'Limits',
     );
@@ -223,7 +223,7 @@ test('limits distinguish hard ceilings, configuration and measured scale', async
 
 test('benchmark appendix keeps NVMe performance and HDD reliability separate', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/appendices/benchmarks/`);
+    await page.goto(`/manual/1.2.4/${locale}/appendices/benchmarks/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Измерения' : 'Benchmarks',
     );
@@ -244,14 +244,14 @@ test('benchmark appendix keeps NVMe performance and HDD reliability separate', a
   }
 });
 
-test('release notes separate current 1.2 behavior from historical releases', async ({ page }, info) => {
+test('release notes separate current 1.2.4 behavior from historical releases', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/appendices/release-notes/`);
+    await page.goto(`/manual/1.2.4/${locale}/appendices/release-notes/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'История выпусков' : 'Release Notes',
     );
     await expect(page.locator('main table')).toHaveCount(0);
-    await expect(page.locator('main')).toContainText('1.2');
+    await expect(page.locator('main')).toContainText('1.2.4');
     await expect(page.locator('main')).toContainText('1.1.0');
     await expect(page.locator('main')).toContainText('1.0.0');
     await expect(page.locator('main')).toContainText('protocol 17');
@@ -263,7 +263,7 @@ test('release notes separate current 1.2 behavior from historical releases', asy
 
 test('installation and server chapters preserve lifecycle and readiness boundaries', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/administration/installation/`);
+    await page.goto(`/manual/1.2.4/${locale}/administration/installation/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Установка сервера' : 'Installing the Server',
     );
@@ -285,7 +285,7 @@ test('installation and server chapters preserve lifecycle and readiness boundari
 
 test('configuration separates code defaults, release values and restart application', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/administration/configuration/`);
+    await page.goto(`/manual/1.2.4/${locale}/administration/configuration/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Конфигурация сервера' : 'Server Configuration',
     );
@@ -310,7 +310,7 @@ test('configuration separates code defaults, release values and restart applicat
 
 test('storage chapter explains the hybrid generation and measured footprint', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/administration/storage/`);
+    await page.goto(`/manual/1.2.4/${locale}/administration/storage/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Архитектура хранения' : 'Storage Architecture',
     );
@@ -326,7 +326,7 @@ test('storage chapter explains the hybrid generation and measured footprint', as
 
 test('memory chapter separates budgets, RSS and the operating-system cache', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/administration/memory/`);
+    await page.goto(`/manual/1.2.4/${locale}/administration/memory/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Управление памятью' : 'Memory Management',
     );
@@ -343,7 +343,7 @@ test('memory chapter separates budgets, RSS and the operating-system cache', asy
 
 test('backup chapter keeps snapshots, external artifacts and migration distinct', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/administration/backup-restore/`);
+    await page.goto(`/manual/1.2.4/${locale}/administration/backup-restore/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Резервное копирование и восстановление' : 'Backup and Restore',
     );
@@ -361,7 +361,7 @@ test('backup chapter keeps snapshots, external artifacts and migration distinct'
 
 test('operations chapters separate upgrade, telemetry and media recovery', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/administration/upgrading/`);
+    await page.goto(`/manual/1.2.4/${locale}/administration/upgrading/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Обновление RadixDB' : 'Upgrading RadixDB',
     );
@@ -385,7 +385,7 @@ test('operations chapters separate upgrade, telemetry and media recovery', async
 
 test('Rust client chapters preserve ownership and reliability boundaries', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/clients/embedded-rust/`);
+    await page.goto(`/manual/1.2.4/${locale}/clients/embedded-rust/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Встраиваемый Rust' : 'Embedded Rust',
     );
@@ -408,9 +408,9 @@ test('Rust client chapters preserve ownership and reliability boundaries', async
 
 test('rendered manual links and anchors resolve', async ({ page, request }) => {
   test.setTimeout(60_000);
-  const manifest = await (await request.get('/manual/1.2/build-manifest.json')).json();
+  const manifest = await (await request.get('/manual/1.2.4/build-manifest.json')).json();
   for (const locale of manifest.locales) for (const chapter of manifest.chapters) {
-    await page.goto(`/manual/1.2/${locale}/${chapter ? `${chapter}/` : ''}`);
+    await page.goto(`/manual/1.2.4/${locale}/${chapter ? `${chapter}/` : ''}`);
     const links = await page.locator('a[href]').evaluateAll(anchors => [...new Set(anchors.map(a => (a as HTMLAnchorElement).href))]);
     for (const href of links) {
       const url = new URL(href);
@@ -427,19 +427,19 @@ test('rendered manual links and anchors resolve', async ({ page, request }) => {
 });
 
 test('version selector lists only the current built version', async ({ page }) => {
-  await page.goto('/manual/1.2/ru/');
+  await page.goto('/manual/1.2.4/ru/');
   const select = page.getByRole('combobox', { name: 'Версия руководства' });
   await expect(select.locator('option')).toHaveCount(1);
   await expect(select).toBeDisabled();
 });
 
 test('version selector preserves chapters and labels fallback in a fixture registry', async ({ page, request }) => {
-  const current = await (await request.get('/manual/1.2/build-manifest.json')).json();
+  const current = await (await request.get('/manual/1.2.4/build-manifest.json')).json();
   const previous = { ...current, target: '1.0', channel: 'release', base: '/manual/1.0/', chapters: ['', 'appendices/glossary'] };
-  await page.route('**/manual/1.2/versions.json', route => route.fulfill({ json: [{ ...current, base: '/manual/1.2/' }, previous] }));
+  await page.route('**/manual/1.2.4/versions.json', route => route.fulfill({ json: [{ ...current, base: '/manual/1.2.4/' }, previous] }));
   await page.route('**/manual/1.0/**', route => route.fulfill({ contentType: 'text/html', body: '<h1>Archive test fixture</h1>' }));
   for (const chapter of ['appendices/glossary', 'tutorial/first-database']) {
-    await page.goto(`/manual/1.2/ru/${chapter}/`);
+    await page.goto(`/manual/1.2.4/ru/${chapter}/`);
     const select = page.getByRole('combobox', { name: 'Версия руководства' });
     await expect(select).toBeEnabled();
     const fallback = chapter === 'tutorial/first-database';
@@ -451,12 +451,12 @@ test('version selector preserves chapters and labels fallback in a fixture regis
 
 test('invalid archive links never become selectable', async ({ page }) => {
   await page.route('**/versions.json', route => route.fulfill({ json: [{ target: '1.0', channel: 'release', base: '//evil.example/', locales: ['en'], chapters: [''] }] }));
-  await page.goto('/manual/1.2/en/');
+  await page.goto('/manual/1.2.4/en/');
   await expect(page.getByRole('combobox', { name: 'Manual version' })).toBeDisabled();
 });
 
 test('separate version artifacts keep separate search indexes', async ({ page }) => {
-  for (const version of ['1.2', '1.0']) {
+  for (const version of ['1.2.4', '1.0']) {
     await page.goto(`/manual/${version}/en/`);
     const counts = await page.evaluate(async version => {
       const engine = await import(`/manual/${version}/pagefind/pagefind.js`);
@@ -476,7 +476,7 @@ test('separate version artifacts keep separate search indexes', async ({ page })
 
 test('server programming follows the accepted PL, routine, trigger and Job chain', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/programming/pl-sql/`);
+    await page.goto(`/manual/1.2.4/${locale}/programming/pl-sql/`);
     await expect(page.locator('main h1')).toHaveText('RadixDB PL');
     await expect(page.locator('.starlight-aside--caution')).toHaveCount(0);
     await expect(page.locator('main')).toContainText('SQL_IDENTIFIER');
@@ -499,11 +499,11 @@ test('server programming follows the accepted PL, routine, trigger and Job chain
   }
 });
 
-test('authentication, ACL and routine security expose the verified 1.2 boundary', async ({ page }, info) => {
+test('authentication, ACL and routine security expose the verified 1.2.4 boundary', async ({ page }, info) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/administration/authentication/`);
+    await page.goto(`/manual/1.2.4/${locale}/administration/authentication/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Аутентификация' : 'Authentication',
     );
@@ -531,7 +531,7 @@ test('authentication, ACL and routine security expose the verified 1.2 boundary'
 
 test('program and configuration references cover the frozen command surfaces', async ({ page }, info) => {
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/reference/programs/cli/`);
+    await page.goto(`/manual/1.2.4/${locale}/reference/programs/cli/`);
     await expect(page.locator('main h1')).toHaveText('radixdb-cli');
     await expect(page.locator('main')).toContainText('--reset-storage');
     await expect(page.locator('main')).toContainText('sync_mode');
@@ -545,7 +545,7 @@ test('program and configuration references cover the frozen command surfaces', a
     );
     await expect(page.locator('main')).toContainText('max_compaction_output_bytes');
     await expect(page.locator('main')).toContainText('commit_batch_size');
-    await page.goto(`/manual/1.2/${locale}/reference/programs/server/`);
+    await page.goto(`/manual/1.2.4/${locale}/reference/programs/server/`);
     await expect(page.locator('main h1')).toHaveText('radixdb-server');
     await expect(page.locator('main')).toContainText('--help');
     await expect(page.locator('main')).toContainText('--print-endpoint');
@@ -557,15 +557,15 @@ test('program and configuration references cover the frozen command surfaces', a
 test('root redirect and SQL command reference remain navigable', async ({ page }, info) => {
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
-  await page.goto('/manual/1.2/');
-  await expect(page).toHaveURL(/\/manual\/1\.2\/en\/$/);
-  const missing = await page.goto('/manual/1.2/en/not-a-real-page/');
+  await page.goto('/manual/1.2.4/');
+  await expect(page).toHaveURL(/\/manual\/1\.2\.4\/en\/$/);
+  const missing = await page.goto('/manual/1.2.4/en/not-a-real-page/');
   expect(missing?.status()).toBe(404);
   await expect(page.locator('main h1')).toContainText('Page not found');
   await expect(page.getByRole('main').getByRole('link', { name: 'Russian contents', exact: true }))
     .toBeVisible();
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/reference/sql/`);
+    await page.goto(`/manual/1.2.4/${locale}/reference/sql/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Справочник команд SQL' : 'SQL Command Reference',
     );
@@ -575,7 +575,7 @@ test('root redirect and SQL command reference remain navigable', async ({ page }
     await expect(page.locator('main')).toContainText('LATERAL');
     await expect(page.locator('.expressive-code pre[data-language="radixdb-sql"]'))
       .toContainText('CREATE TABLE ref_select');
-    await page.goto(`/manual/1.2/${locale}/reference/sql/savepoint/`);
+    await page.goto(`/manual/1.2.4/${locale}/reference/sql/savepoint/`);
     await expect(page.locator('main h1')).toHaveText('SAVEPOINT');
     await expect(page.locator('main')).toContainText('CLI');
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBeTruthy();
@@ -588,17 +588,17 @@ test('internals preserve request, storage and protocol ownership boundaries', as
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   for (const locale of ['en', 'ru']) {
-    await page.goto(`/manual/1.2/${locale}/internals/overview/`);
+    await page.goto(`/manual/1.2.4/${locale}/internals/overview/`);
     await expect(page.locator('main h1')).toHaveText(
       locale === 'ru' ? 'Обзор архитектуры' : 'Architecture overview',
     );
     await expect(page.locator('main')).toContainText('DatabaseOwner');
     await expect(page.locator('main')).toContainText('radixdb-storage');
-    await page.goto(`/manual/1.2/${locale}/internals/storage/`);
+    await page.goto(`/manual/1.2.4/${locale}/internals/storage/`);
     await expect(page.locator('main')).toContainText('CONTROL.0');
     await expect(page.locator('main')).toContainText('immutable');
     await expect(page.locator('main')).toContainText('split-brain');
-    await page.goto(`/manual/1.2/${locale}/internals/protocol/`);
+    await page.goto(`/manual/1.2.4/${locale}/internals/protocol/`);
     await expect(page.locator('main')).toContainText('protocol 17');
     await expect(page.locator('main')).toContainText('64 MiB');
     await expect(page.locator('main')).toContainText('CompactionBackpressure');

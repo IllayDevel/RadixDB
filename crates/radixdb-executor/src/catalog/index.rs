@@ -34,21 +34,23 @@ pub(super) fn bind_constraint_indexes(
     let mut output = BoundIndexes::default();
     let mut local_names = BTreeSet::new();
     for constraint in constraints {
-        let (key_column_ids, base_name) = match constraint.payload() {
+        let (key_column_ids, base_name, primary_key) = match constraint.payload() {
             CatalogPayload::Constraint(ConstraintPayload::PrimaryKey { local_column_ids }) => (
                 local_column_ids.clone(),
                 format!("{}_idx", constraint.name().normalized().as_str()),
+                true,
             ),
             CatalogPayload::Constraint(ConstraintPayload::Unique { local_column_ids }) => (
                 local_column_ids.clone(),
                 constraint.name().display().as_str().to_owned(),
+                false,
             ),
             _ => continue,
         };
         let index_id = ids.next(generation)?;
         let name = allocate_index_name(base_name, index_id, generation, &mut local_names)?;
         let payload = IndexPayload::new(
-            constraint_index_access_method(&key_column_ids, columns)?,
+            constraint_index_access_method(&key_column_ids, columns, primary_key)?,
             true,
             key_column_ids,
             vec![],
@@ -89,7 +91,11 @@ pub(super) fn bind_constraint_indexes(
 fn constraint_index_access_method(
     key_column_ids: &[ObjectId],
     columns: &[BoundColumn],
+    primary_key: bool,
 ) -> Result<AccessMethod> {
+    if primary_key {
+        return Ok(AccessMethod::Btree);
+    }
     if key_column_ids.len() != 1 {
         return Ok(AccessMethod::Btree);
     }
@@ -367,7 +373,7 @@ fn bind_index_payload(
     let predicate_sql = if let Some(predicate) = &statement.where_clause {
         if operator_class.is_some() {
             return Err(Error::NotSupported(
-                "partial indexes over external operator classes are not supported in v1.2"
+                "partial indexes over external operator classes are not supported in v1.2.4"
                     .to_owned(),
             ));
         }
@@ -585,6 +591,12 @@ fn schema_for_table(generation: &CatalogGeneration, table: &CatalogObject) -> Re
                 payload.data_type().parameter_1() as u8,
                 payload.data_type().parameter_2() as u8,
             );
+        }
+        if payload.data_type().is_double_precision() {
+            builder = builder.set_last_double_precision(true);
+        }
+        if payload.data_type().logical_type() == DataType::Text {
+            builder = builder.set_last_text_max_chars(payload.data_type().parameter_1());
         }
     }
     Ok(builder.build())

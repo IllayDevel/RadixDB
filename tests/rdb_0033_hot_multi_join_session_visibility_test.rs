@@ -104,10 +104,10 @@ fn create_fixture(db: &Database) {
             normalized_username TEXT NOT NULL,
             display_name TEXT NOT NULL,
             profile_revision INTEGER NOT NULL DEFAULT 1,
-            created_at TIMESTAMP NOT NULL,
-            updated_at TIMESTAMP NOT NULL,
-            disabled_at TIMESTAMP,
-            deleted_at TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
+            updated_at TIMESTAMPTZ NOT NULL,
+            disabled_at TIMESTAMPTZ,
+            deleted_at TIMESTAMPTZ,
             account_kind TEXT NOT NULL DEFAULT 'human',
             avatar_attachment_id UUID
         )",
@@ -117,9 +117,9 @@ fn create_fixture(db: &Database) {
             platform TEXT NOT NULL,
             display_name TEXT NOT NULL,
             app_version TEXT,
-            created_at TIMESTAMP NOT NULL,
-            last_seen_at TIMESTAMP NOT NULL,
-            revoked_at TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
+            last_seen_at TIMESTAMPTZ NOT NULL,
+            revoked_at TIMESTAMPTZ,
             revision INTEGER NOT NULL DEFAULT 1
         )",
         "CREATE TABLE sessions (
@@ -128,12 +128,12 @@ fn create_fixture(db: &Database) {
             device_id UUID NOT NULL REFERENCES devices(id),
             token_family_id UUID NOT NULL,
             refresh_token_hash TEXT NOT NULL,
-            created_at TIMESTAMP NOT NULL,
-            last_used_at TIMESTAMP NOT NULL,
-            expires_at TIMESTAMP NOT NULL,
-            revoked_at TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL,
+            last_used_at TIMESTAMPTZ NOT NULL,
+            expires_at TIMESTAMPTZ NOT NULL,
+            revoked_at TIMESTAMPTZ,
             revision INTEGER NOT NULL DEFAULT 1,
-            absolute_expires_at TIMESTAMP
+            absolute_expires_at TIMESTAMPTZ
         )",
         "CREATE INDEX sessions_user_device_idx
          ON sessions (user_id, device_id, revoked_at)",
@@ -141,7 +141,7 @@ fn create_fixture(db: &Database) {
             id UUID PRIMARY KEY,
             user_id UUID NOT NULL REFERENCES users(id),
             state TEXT NOT NULL,
-            expires_at TIMESTAMP NOT NULL
+            expires_at TIMESTAMPTZ NOT NULL
         )",
     ] {
         db.execute(statement, ()).unwrap();

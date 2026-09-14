@@ -10,8 +10,7 @@ use std::{
 
 use crate::api::{
     sql_contains_transaction_control, DatabaseRuntimeState, ServerBatchFallback,
-    ServerCancellation, ServerColumnBatch, ServerColumnData, ServerExecutionContext,
-    ServerRuntimeMetrics,
+    ServerCancellation, ServerColumnBatch, ServerExecutionContext, ServerRuntimeMetrics,
 };
 use crate::protocol::{
     encode_payload, encoded_payload_len, read_frame_with_payload_len_hook, write_frame_payload,
@@ -22,11 +21,13 @@ use crate::protocol::{
 use crate::{
     ApiTransaction, Database, Error as DatabaseError, IsolationLevel, ObjectId, Rows, Statement,
 };
+use radixdb_core::SessionTimeZone;
 use radixdb_plugin_host::PluginRegistry;
+use radixdb_sql::{Expression as SqlExpression, Parser as SqlParser, Statement as SqlStatement};
 
 use super::value_codec::{
-    radixdb_value_to_wire, slice_external_bytes, wire_column_len, wire_column_retained_bytes,
-    wire_parameters_to_named, wire_value_to_radixdb,
+    column_data_to_wire_column, radixdb_value_to_wire, slice_external_bytes, wire_column_len,
+    wire_column_retained_bytes, wire_parameters_to_named, wire_value_to_radixdb,
 };
 use super::{build_identity, ServerConfig};
 use status::{collect_database_artifacts, server_status, unavailable_artifact_summary};
@@ -450,6 +451,7 @@ struct ReadySession {
     column_batch_v1: bool,
     build_identity_v1: bool,
     external_value_v1: bool,
+    time_zone: SessionTimeZone,
 }
 
 struct WireBindings {
@@ -796,6 +798,7 @@ fn handle_message_with_cancellation(
                             column_batch_v1: *column_batch_v1,
                             build_identity_v1: *build_identity_v1,
                             external_value_v1: *external_value_v1,
+                            time_zone: SessionTimeZone::default(),
                         });
                         ServerResponse::Message(ServerMessage::AuthenticationAccepted)
                     }
@@ -827,6 +830,7 @@ fn handle_message_with_cancellation(
                             column_batch_v1: *column_batch_v1,
                             build_identity_v1: *build_identity_v1,
                             external_value_v1: *external_value_v1,
+                            time_zone: SessionTimeZone::default(),
                         });
                         ServerResponse::Message(ServerMessage::AuthenticationAccepted)
                     }
@@ -1076,6 +1080,56 @@ fn authenticate_client(
     }
 
     Err("root authentication failed".to_string())
+}
+
+fn session_time_zone_change(sql: &str) -> Result<Option<SessionTimeZone>, DatabaseError> {
+    if !contains_ascii_case_insensitive(sql.as_bytes(), b"SET")
+        || !contains_ascii_case_insensitive(sql.as_bytes(), b"TIME")
+    {
+        return Ok(None);
+    }
+    let program = SqlParser::new(sql)
+        .parse_program()
+        .map_err(|error| DatabaseError::parse(error.to_string()))?;
+    let mut time_zone = None;
+
+    for statement in &program.statements {
+        let SqlStatement::Set(statement) = statement else {
+            continue;
+        };
+        if !matches!(
+            statement.name.value.to_uppercase().as_str(),
+            "TIME ZONE" | "TIMEZONE" | "TIME_ZONE"
+        ) {
+            continue;
+        }
+        if program.statements.len() != 1 {
+            return Err(DatabaseError::invalid_argument(
+                "SET TIME ZONE must be the only statement in a request",
+            ));
+        }
+        let value = match &statement.value {
+            SqlExpression::StringLiteral(value) => value.value.as_str(),
+            SqlExpression::Identifier(value) => value.value.as_str(),
+            _ => {
+                return Err(DatabaseError::invalid_argument(
+                    "SET TIME ZONE requires a string value",
+                ));
+            }
+        };
+        time_zone = Some(SessionTimeZone::parse(value)?);
+    }
+
+    Ok(time_zone)
+}
+
+fn contains_ascii_case_insensitive(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|window| {
+        window
+            .iter()
+            .zip(needle)
+            .all(|(left, right)| left.eq_ignore_ascii_case(right))
+    })
 }
 
 #[cfg(test)]
@@ -1520,6 +1574,13 @@ fn execute_sql(
         ..
     } = session_runtime;
     let WireBindings { positional, named } = bindings;
+    let pending_time_zone = match session_time_zone_change(sql) {
+        Ok(value) => value,
+        Err(error) => return database_error(error),
+    };
+    if pending_time_zone.is_some() && session.transaction.is_some() {
+        return transaction_error("SET TIME ZONE is only allowed outside an active transaction");
+    }
     if !session.external_value_v1
         && positional
             .iter()
@@ -1542,6 +1603,9 @@ fn execute_sql(
     };
     if let Err(message) = context.bind_request_identity(session.principal_id, request_id) {
         return protocol_error(message.to_string());
+    }
+    if let Err(error) = context.bind_session_time_zone(&session.time_zone.to_string()) {
+        return database_error(error);
     }
     context.bind_parent_cancellation(cancellation);
     let execution_cancellation = context.cancellation();
@@ -1582,7 +1646,12 @@ fn execute_sql(
     };
 
     let rows = match result {
-        Ok(rows) => rows,
+        Ok(rows) => {
+            if let Some(time_zone) = pending_time_zone {
+                session.time_zone = time_zone;
+            }
+            rows
+        }
         Err(error) => return database_error(error),
     };
 
@@ -1713,6 +1782,13 @@ fn prepare_statement(session: &mut ReadySession, sql: &str) -> ServerMessage {
             "transaction control SQL cannot be prepared; use dedicated protocol messages",
         );
     }
+    match session_time_zone_change(sql) {
+        Ok(Some(_)) => {
+            return protocol_error("SET TIME ZONE is connection control and cannot be prepared");
+        }
+        Ok(None) => {}
+        Err(error) => return database_error(error),
+    }
     let statement = match database.prepare(sql) {
         Ok(statement) => statement,
         Err(error) => return database_error(error),
@@ -1763,6 +1839,9 @@ fn execute_prepared_statement(
     };
     if let Err(message) = context.bind_request_identity(session.principal_id, request_id) {
         return protocol_error(message.to_string());
+    }
+    if let Err(error) = context.bind_session_time_zone(&session.time_zone.to_string()) {
+        return database_error(error);
     }
     context.bind_parent_cancellation(cancellation);
     let execution_cancellation = context.cancellation();
@@ -2039,6 +2118,24 @@ fn wire_value_from_column(column: &WireColumn, row_idx: usize) -> Result<WireVal
             } else {
                 Ok(WireValue::TimestampNanos {
                     nanos_since_unix_epoch_utc: values[row_idx],
+                })
+            }
+        }
+        WireColumn::CivilTimestampNanos { values, nulls } => {
+            if nulls[row_idx] {
+                Ok(WireValue::Null)
+            } else {
+                Ok(WireValue::CivilTimestampNanos {
+                    nanos_since_civil_epoch: values[row_idx],
+                })
+            }
+        }
+        WireColumn::TimeNanos { values, nulls } => {
+            if nulls[row_idx] {
+                Ok(WireValue::Null)
+            } else {
+                Ok(WireValue::TimeNanos {
+                    nanos_since_midnight: values[row_idx],
                 })
             }
         }
@@ -2453,7 +2550,10 @@ fn wire_column_row_encoded_delta(
         wire_encoded_len(value)
     };
     match column {
-        WireColumn::Int64 { values, nulls } | WireColumn::TimestampNanos { values, nulls } => {
+        WireColumn::Int64 { values, nulls }
+        | WireColumn::TimestampNanos { values, nulls }
+        | WireColumn::CivilTimestampNanos { values, nulls }
+        | WireColumn::TimeNanos { values, nulls } => {
             let value = values
                 .get(row)
                 .ok_or_else(|| "typed integer column is shorter than its row count".to_string())?;
@@ -2597,6 +2697,14 @@ fn slice_wire_column(column: &WireColumn, start: usize, end: usize) -> WireColum
             values: values[start..end].to_vec(),
             nulls: nulls[start..end].to_vec(),
         },
+        WireColumn::CivilTimestampNanos { values, nulls } => WireColumn::CivilTimestampNanos {
+            values: values[start..end].to_vec(),
+            nulls: nulls[start..end].to_vec(),
+        },
+        WireColumn::TimeNanos { values, nulls } => WireColumn::TimeNanos {
+            values: values[start..end].to_vec(),
+            nulls: nulls[start..end].to_vec(),
+        },
         WireColumn::DictionaryText {
             ids,
             dictionary,
@@ -2675,90 +2783,6 @@ fn wire_columns_retained_bytes(columns: &[WireColumn]) -> u64 {
         .iter()
         .map(wire_column_retained_bytes)
         .fold(0_u64, u64::saturating_add)
-}
-
-/// Convert facade-owned typed columns directly into the public wire layout.
-///
-/// The scanner advertises typed batches only for storage types that have an
-/// explicit `WireColumn` representation. Keeping the exhaustive match here
-/// makes an accidental future widening fail closed instead of changing the
-/// meaning of an existing row result.
-fn column_data_to_wire_column(column: ServerColumnData) -> Result<WireColumn, String> {
-    match column {
-        ServerColumnData::Int64 { values, nulls } => Ok(WireColumn::Int64 { values, nulls }),
-        ServerColumnData::Float64 { values, nulls } => Ok(WireColumn::Float64 { values, nulls }),
-        ServerColumnData::Boolean { values, nulls } => Ok(WireColumn::Boolean { values, nulls }),
-        ServerColumnData::TimestampNanos { values, nulls } => {
-            Ok(WireColumn::TimestampNanos { values, nulls })
-        }
-        ServerColumnData::DictionaryText {
-            ids,
-            dictionary,
-            nulls,
-        } => Ok(WireColumn::DictionaryText {
-            ids,
-            dictionary,
-            nulls,
-        }),
-        ServerColumnData::Bytes {
-            data,
-            offsets,
-            nulls,
-        } => Ok(WireColumn::Bytes {
-            data,
-            offsets,
-            nulls,
-        }),
-        ServerColumnData::JsonText {
-            data,
-            offsets,
-            nulls,
-        } => Ok(WireColumn::JsonText {
-            data,
-            offsets,
-            nulls,
-        }),
-        ServerColumnData::External {
-            data,
-            offsets,
-            type_ref,
-            nulls,
-        } => {
-            let mut wire_offsets = Vec::with_capacity(offsets.len() + 1);
-            let mut wire_data = Vec::with_capacity(data.len());
-            wire_offsets.push(0);
-            for (row, ((offset, length), is_null)) in offsets.into_iter().zip(&nulls).enumerate() {
-                if *is_null {
-                    if length != 0 {
-                        return Err(format!("NULL external storage row {row} owns a byte range"));
-                    }
-                } else {
-                    let start = usize::try_from(offset)
-                        .map_err(|_| "external storage offset exceeds usize".to_string())?;
-                    let length = usize::try_from(length)
-                        .map_err(|_| "external storage length exceeds usize".to_string())?;
-                    let end = start
-                        .checked_add(length)
-                        .ok_or_else(|| "external storage byte range overflows".to_string())?;
-                    let value = data
-                        .get(start..end)
-                        .ok_or_else(|| "external storage byte range exceeds payload".to_string())?;
-                    wire_data.extend_from_slice(value);
-                }
-                wire_offsets.push(
-                    u32::try_from(wire_data.len())
-                        .map_err(|_| "external storage offset exceeds u32".to_string())?,
-                );
-            }
-            Ok(WireColumn::External {
-                type_object_id: type_ref.type_object_id(),
-                codec_version: type_ref.codec_version(),
-                data: wire_data,
-                offsets: wire_offsets,
-                nulls,
-            })
-        }
-    }
 }
 
 struct PreparedRowBatch {

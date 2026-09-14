@@ -25,13 +25,19 @@
 use rustc_hash::FxHashSet;
 use std::collections::BTreeMap;
 
-use radixdb_catalog::{CatalogPayload, ObjectKind};
+use radixdb_catalog::{
+    ArgumentMode, CatalogDataType, CatalogPayload, ObjectKind, RoutineResult, SecurityMode,
+    Volatility,
+};
 use radixdb_core::row_vec::RowVec;
 use radixdb_core::SmartString;
 use radixdb_core::{
     ColumnDescriptor, ConstraintDefinition, ConstraintDescriptor, DataTypeDescriptor,
     DatabaseDescriptor, DescriptorEnvelope, DescriptorKind, ForeignKeyActionDescriptor,
-    IndexDescriptor, ResultColumnDescriptor, TableDescriptor, ViewDescriptor,
+    IndexDescriptor, ProcedureDescriptor, ResultColumnDescriptor, RoutineArgumentDescriptor,
+    RoutineArgumentModeDescriptor, RoutineResourcePolicyDescriptor, RoutineResultColumnDescriptor,
+    RoutineResultDescriptor, RoutineSecurityDescriptor, RoutineVolatilityDescriptor,
+    TableDescriptor, ViewDescriptor,
 };
 use radixdb_core::{DataType, Error, ForeignKeyAction, Result, Row, SchemaConstraintKind, Value};
 use radixdb_sql::ast::*;
@@ -116,17 +122,24 @@ fn plugin_requirement_metadata(executor: &Executor) -> Result<Option<serde_json:
 
 fn descriptor_data_type(
     data_type: DataType,
+    double_precision: bool,
     vector_dimensions: u16,
     decimal_precision: u8,
     decimal_scale: u8,
+    text_max_chars: u32,
 ) -> DataTypeDescriptor {
     match data_type {
         DataType::Null => DataTypeDescriptor::Null,
         DataType::Integer => DataTypeDescriptor::Integer,
+        DataType::Float if double_precision => DataTypeDescriptor::DoublePrecision,
         DataType::Float => DataTypeDescriptor::Float,
-        DataType::Text => DataTypeDescriptor::Text,
+        DataType::Text => DataTypeDescriptor::Text {
+            max_chars: (text_max_chars > 0).then_some(text_max_chars),
+        },
         DataType::Boolean => DataTypeDescriptor::Boolean,
         DataType::Timestamp => DataTypeDescriptor::Timestamp,
+        DataType::CivilTimestamp => DataTypeDescriptor::CivilTimestamp,
+        DataType::Time => DataTypeDescriptor::Time,
         DataType::Date => DataTypeDescriptor::Date,
         DataType::Json => DataTypeDescriptor::Json,
         DataType::Uuid => DataTypeDescriptor::Uuid,
@@ -152,6 +165,159 @@ fn descriptor_fk_action(action: ForeignKeyAction) -> ForeignKeyActionDescriptor 
 
 fn descriptor_error(error: impl std::fmt::Display) -> Error {
     Error::internal(format!("failed to build schema descriptor: {error}"))
+}
+
+fn catalog_data_type_descriptor(data_type: CatalogDataType) -> Result<DataTypeDescriptor> {
+    if data_type.is_external() {
+        return Err(Error::internal(
+            "external catalog type cannot be represented as a built-in data type descriptor",
+        ));
+    }
+    let logical_type = data_type.logical_type();
+    let vector_dimensions = if logical_type == DataType::Vector {
+        u16::try_from(data_type.parameter_1())
+            .map_err(|error| descriptor_error(format!("invalid vector dimensions: {error}")))?
+    } else {
+        0
+    };
+    let (decimal_precision, decimal_scale) = if logical_type == DataType::Decimal {
+        (
+            u8::try_from(data_type.parameter_1())
+                .map_err(|error| descriptor_error(format!("invalid decimal precision: {error}")))?,
+            u8::try_from(data_type.parameter_2())
+                .map_err(|error| descriptor_error(format!("invalid decimal scale: {error}")))?,
+        )
+    } else {
+        (0, 0)
+    };
+    Ok(descriptor_data_type(
+        logical_type,
+        data_type.is_double_precision(),
+        vector_dimensions,
+        decimal_precision,
+        decimal_scale,
+        if logical_type == DataType::Text {
+            data_type.parameter_1()
+        } else {
+            0
+        },
+    ))
+}
+
+fn routine_data_type_descriptor(
+    catalog: &radixdb_catalog::CatalogGeneration,
+    data_type: CatalogDataType,
+) -> Result<(String, Option<DataTypeDescriptor>)> {
+    let sql_type = crate::procedural::catalog_type_name(catalog, data_type);
+    if data_type.is_external() {
+        return Ok((sql_type, None));
+    }
+    Ok((sql_type, Some(catalog_data_type_descriptor(data_type)?)))
+}
+
+fn procedure_descriptor(
+    catalog: &radixdb_catalog::CatalogGeneration,
+    object: &radixdb_catalog::CatalogObject,
+) -> Result<ProcedureDescriptor> {
+    let CatalogPayload::Procedure(payload) = object.payload() else {
+        return Err(Error::internal(
+            "catalog admitted Procedure with a different payload",
+        ));
+    };
+    let definition = payload.definition();
+    let arguments = definition
+        .arguments()
+        .iter()
+        .enumerate()
+        .map(|(ordinal, argument)| {
+            let (sql_type, data_type) =
+                routine_data_type_descriptor(catalog, argument.data_type())?;
+            Ok(RoutineArgumentDescriptor {
+                ordinal: u32::try_from(ordinal)
+                    .map_err(|error| descriptor_error(format!("too many arguments: {error}")))?,
+                name: argument.name().display().as_str().to_owned(),
+                mode: match argument.mode() {
+                    ArgumentMode::In => RoutineArgumentModeDescriptor::In,
+                    ArgumentMode::Out => RoutineArgumentModeDescriptor::Out,
+                    ArgumentMode::InOut => RoutineArgumentModeDescriptor::InOut,
+                },
+                sql_type,
+                data_type,
+                nullable: argument.nullable(),
+                default_expression: argument
+                    .default_sql()
+                    .map(|value| value.as_str().to_owned()),
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let result = match definition.result() {
+        RoutineResult::Void => RoutineResultDescriptor::Void,
+        RoutineResult::Scalar {
+            data_type,
+            nullable,
+        } => {
+            let (sql_type, data_type) = routine_data_type_descriptor(catalog, *data_type)?;
+            RoutineResultDescriptor::Scalar {
+                sql_type,
+                data_type,
+                nullable: *nullable,
+            }
+        }
+        RoutineResult::Table(columns) => RoutineResultDescriptor::Table {
+            columns: columns
+                .iter()
+                .enumerate()
+                .map(|(ordinal, column)| {
+                    let (sql_type, data_type) =
+                        routine_data_type_descriptor(catalog, column.data_type())?;
+                    Ok(RoutineResultColumnDescriptor {
+                        ordinal: u32::try_from(ordinal).map_err(|error| {
+                            descriptor_error(format!("too many result columns: {error}"))
+                        })?,
+                        name: column.name().display().as_str().to_owned(),
+                        sql_type,
+                        data_type,
+                        nullable: column.nullable(),
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?,
+        },
+        RoutineResult::Trigger => RoutineResultDescriptor::Trigger,
+    };
+    let policy = definition.resource_policy();
+    let mut descriptor = ProcedureDescriptor {
+        catalog_id: uuid::Uuid::from_bytes(object.id().into_bytes()).to_string(),
+        name: crate::catalog::qualified_catalog_name(catalog, object)?,
+        definition_revision: object.definition_revision(),
+        fingerprint: String::new(),
+        source_sha256: descriptor_hex(definition.source().digest()),
+        language: "radix_pl".to_owned(),
+        language_version: definition.language_version(),
+        compiler_abi: definition.compiler_abi(),
+        runtime_abi: definition.runtime_abi(),
+        security: match definition.security() {
+            SecurityMode::Invoker => RoutineSecurityDescriptor::Invoker,
+            SecurityMode::Definer => RoutineSecurityDescriptor::Definer,
+        },
+        volatility: match definition.volatility() {
+            Volatility::Immutable => RoutineVolatilityDescriptor::Immutable,
+            Volatility::Stable => RoutineVolatilityDescriptor::Stable,
+            Volatility::Volatile => RoutineVolatilityDescriptor::Volatile,
+        },
+        arguments,
+        result,
+        resource_policy: RoutineResourcePolicyDescriptor {
+            instructions: policy.instructions,
+            heap_bytes: policy.heap_bytes,
+            frames: policy.frames,
+            sql_statements: policy.sql_statements,
+            rows: policy.rows,
+            result_bytes: policy.result_bytes,
+            deadline_ms: policy.deadline_ms,
+        },
+    };
+    descriptor.refresh_fingerprint().map_err(descriptor_error)?;
+    Ok(descriptor)
 }
 
 /// Derive a durable opaque generation token from canonical descriptor content.
@@ -453,9 +619,11 @@ impl Executor {
                     name: column.name.clone(),
                     data_type: descriptor_data_type(
                         column.data_type,
+                        column.double_precision,
                         column.vector_dimensions,
                         column.decimal_precision,
                         column.decimal_scale,
+                        column.text_max_chars,
                     ),
                     nullable: column.nullable,
                     auto_increment: column.auto_increment,
@@ -614,12 +782,24 @@ impl Executor {
                             ))
                         })?
                         .into_iter()
-                        .map(|column| ResultColumnDescriptor {
-                            name: column.name,
-                            data_type: descriptor_data_type(column.data_type, 0, 0, 0),
-                            nullable: column.nullable,
+                        .map(|column| {
+                            let data_type = match column.logical_type {
+                                radixdb_core::LogicalTypeRef::Builtin(_) => {
+                                    catalog_data_type_descriptor(
+                                        crate::catalog::bind_catalog_type(&column.type_name)?,
+                                    )?
+                                }
+                                radixdb_core::LogicalTypeRef::External(_) => {
+                                    descriptor_data_type(column.data_type, false, 0, 0, 0, 0)
+                                }
+                            };
+                            Ok(ResultColumnDescriptor {
+                                name: column.name,
+                                data_type,
+                                nullable: column.nullable,
+                            })
                         })
-                        .collect();
+                        .collect::<Result<Vec<_>>>()?;
                     views.push(ViewDescriptor {
                         name: view.original_name.clone(),
                         query: view.query.clone(),
@@ -627,6 +807,17 @@ impl Executor {
                         result_columns,
                     });
                 }
+
+                let (catalog, _) = crate::procedural::transaction_visible_catalog(self)?;
+                let mut procedures = catalog
+                    .objects_of_kind(ObjectKind::Procedure)
+                    .map(|object| procedure_descriptor(catalog.as_ref(), object))
+                    .collect::<Result<Vec<_>>>()?;
+                procedures.sort_by(|left, right| {
+                    left.name
+                        .cmp(&right.name)
+                        .then_with(|| left.catalog_id.cmp(&right.catalog_id))
+                });
 
                 let mut extensions = BTreeMap::new();
                 if let Some(requirements) = plugin_requirement_metadata(self)? {
@@ -637,6 +828,7 @@ impl Executor {
                     fingerprint: String::new(),
                     tables,
                     views,
+                    procedures,
                     extensions,
                 };
                 descriptor.schema_generation = descriptor_content_generation(

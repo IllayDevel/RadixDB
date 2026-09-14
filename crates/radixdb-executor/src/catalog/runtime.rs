@@ -143,6 +143,12 @@ fn bind_table(
                 catalog_type.parameter_2() as u8,
             );
         }
+        if catalog_type.is_double_precision() {
+            builder = builder.set_last_double_precision(true);
+        }
+        if data_type == DataType::Text {
+            builder = builder.set_last_text_max_chars(catalog_type.parameter_1());
+        }
         if let Some(type_ref) = catalog_type.external_type_ref() {
             let type_id = catalog_type
                 .type_object_id()

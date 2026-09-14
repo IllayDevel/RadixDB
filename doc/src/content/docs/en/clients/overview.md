@@ -11,6 +11,7 @@ an application abstraction, not a third deployment mode.
 | Embedded Rust API | Inside the application process | Open the database, execute operations and close it |
 | Rust TCP client | In a separate RadixDB server process | Connect, authenticate, select a database and consume results |
 | ORM | Uses a database execution interface | Describe models or records and choose transaction boundaries |
+| Application SDK | In a trusted Rust application service | Bind product requests to generated schema-specific contracts |
 
 ## Embedded Access
 
@@ -40,6 +41,16 @@ or errors. Choose embedded versus server deployment separately from whether
 the application uses ORM operations. See [Embedded Rust](../embedded-rust/),
 the [Rust TCP client](../rust-client/) and the [Rust ORM](../orm/) for the
 detailed contracts and executable examples.
+
+## Application SDK
+
+`radixdb-app-sdk` builds on the asynchronous client and ORM for trusted
+application services. It adds request identity, deadlines, cooperative
+cancellation, bounded typed results, classified outcomes and generated
+procedure contracts. It remains domain-neutral: authentication, product
+permissions, routes and business rules belong to the application. See the
+[Application SDK](../application-sdk/) chapter for schema generation, typed
+procedure calls and retry handling.
 
 ## Scope of This Overview
 

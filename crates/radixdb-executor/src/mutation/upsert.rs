@@ -187,7 +187,7 @@ pub(super) fn apply_on_duplicate_update<T: MutationHost + ?Sized>(
             let mut updates = Vec::with_capacity(compiled.compiled_updates.len());
             for (idx, col_type, vec_dims, program) in &compiled.compiled_updates {
                 let v = vm.execute_cow(program, &exec_ctx)?;
-                let coerced = v.try_coerce_to_type(*col_type)?;
+                let coerced = ctx.try_coerce_value_to_type(&v, *col_type)?;
                 validate_coercion(
                     &v,
                     &coerced,

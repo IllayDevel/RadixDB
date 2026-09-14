@@ -305,8 +305,7 @@ fn transactional_create_table_validates_schema_and_name_before_reservation() {
     assert!(txn.create_table("requested_name", mismatched).is_err());
 
     let invalid = SchemaBuilder::new("invalid")
-        .add_primary_key("id", DataType::Integer)
-        .add_primary_key("other_id", DataType::Integer)
+        .column("id", DataType::Integer, true, true)
         .build();
     assert!(txn.create_table("invalid", invalid).is_err());
     assert!(engine.get_table_schema("requested_name").is_err());
@@ -1561,6 +1560,404 @@ fn uuid_primary_key_cold_updates_do_not_resurrect_predecessors() {
     assert_eq!(rows[0].1.get(0), Some(&key));
     assert_eq!(rows[0].1.get(1), Some(&Value::Integer(8)));
     reopened.close_engine().unwrap();
+}
+
+#[test]
+fn uuid_primary_key_insert_batch_uses_one_bloom_pruned_cold_probe() {
+    fn uuid_value(sequence: u64) -> Value {
+        let mut bytes = [0_u8; 16];
+        bytes[8..].copy_from_slice(&sequence.to_be_bytes());
+        Value::uuid(bytes)
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("uuid-cold-insert-batch");
+    let mut config = Config::with_path(database_path.to_string_lossy().into_owned());
+    config.persistence.checkpoint_interval = u32::MAX;
+    config.persistence.checkpoint_on_close = false;
+    config.persistence.target_volume_rows = 4_096;
+    config.persistence.compact_threshold = 16;
+    config.cleanup.enabled = false;
+
+    let engine = MVCCEngine::new(config);
+    engine.open_engine().unwrap();
+    create_catalog_test_table(
+        &engine,
+        SchemaBuilder::new("items")
+            .column("id", DataType::Uuid, false, true)
+            .column("value", DataType::Integer, false, false)
+            .build(),
+    )
+    .unwrap();
+
+    let mut seed = engine.begin_transaction().unwrap();
+    seed.get_table("items")
+        .unwrap()
+        .insert_batch(
+            (0..4_096_u64)
+                .map(|sequence| {
+                    Row::from_values(vec![
+                        uuid_value(sequence),
+                        Value::Integer(sequence as i64),
+                    ])
+                })
+                .collect(),
+        )
+        .unwrap();
+    seed.commit().unwrap();
+    crate::traits::Engine::force_checkpoint_cycle(&engine).unwrap();
+    assert_table_segments_artifact_backed(&engine, "items");
+
+    crate::instrumentation::begin_artifact_io_probe();
+    crate::instrumentation::begin_posting_lookup_probe();
+    crate::instrumentation::begin_row_materialization_probe();
+    let mut distinct = engine.begin_transaction().unwrap();
+    distinct
+        .get_table("items")
+        .unwrap()
+        .insert_batch(
+            (10_000..12_048_u64)
+                .map(|sequence| {
+                    Row::from_values(vec![
+                        uuid_value(sequence),
+                        Value::Integer(sequence as i64),
+                    ])
+                })
+                .collect(),
+        )
+        .unwrap();
+    let materialization = crate::instrumentation::end_row_materialization_probe();
+    let posting = crate::instrumentation::end_posting_lookup_probe();
+    let artifact_io = crate::instrumentation::end_artifact_io_probe();
+    distinct.rollback().unwrap();
+
+    assert_eq!(posting.exact_calls, 1, "the batch must issue one cold lookup");
+    assert_eq!(posting.exact_segments, 1);
+    assert_eq!(
+        materialization.rows, 0,
+        "absent UUID keys must not read DATA payload rows"
+    );
+    assert!(
+        artifact_io.pread_calls < 2_048,
+        "Bloom pruning must keep INDEX reads below one probe per input key: {artifact_io:?}"
+    );
+
+    let mut duplicate = engine.begin_transaction().unwrap();
+    let error = duplicate
+        .get_table("items")
+        .unwrap()
+        .insert_batch(vec![
+            Row::from_values(vec![uuid_value(20_000), Value::Integer(20_000)]),
+            Row::from_values(vec![uuid_value(7), Value::Integer(7)]),
+            Row::from_values(vec![uuid_value(20_001), Value::Integer(20_001)]),
+        ])
+        .expect_err("one cold UUID duplicate must reject the complete insert batch");
+    assert!(matches!(error, Error::UniqueConstraint { .. }));
+    duplicate.rollback().unwrap();
+    assert_eq!(collect_rows(&engine, "items").len(), 4_096);
+
+    engine.close_engine().unwrap();
+}
+
+#[test]
+fn uuid_primary_key_commit_recheck_batches_a_concurrent_seal() {
+    fn uuid_value(sequence: u64) -> Value {
+        let mut bytes = [0_u8; 16];
+        bytes[8..].copy_from_slice(&sequence.to_be_bytes());
+        Value::uuid(bytes)
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("uuid-cold-commit-recheck-batch");
+    let mut config = Config::with_path(database_path.to_string_lossy().into_owned());
+    config.persistence.checkpoint_interval = u32::MAX;
+    config.persistence.checkpoint_on_close = false;
+    config.persistence.target_volume_rows = 4_096;
+    config.persistence.compact_threshold = 16;
+    config.cleanup.enabled = false;
+
+    let engine = MVCCEngine::new(config);
+    engine.open_engine().unwrap();
+    create_catalog_test_table(
+        &engine,
+        SchemaBuilder::new("items")
+            .column("id", DataType::Uuid, false, true)
+            .column("value", DataType::Integer, false, false)
+            .build(),
+    )
+    .unwrap();
+
+    let mut seed = engine.begin_transaction().unwrap();
+    seed.get_table("items")
+        .unwrap()
+        .insert_batch(
+            (0..4_096_u64)
+                .map(|sequence| {
+                    Row::from_values(vec![
+                        uuid_value(sequence),
+                        Value::Integer(sequence as i64),
+                    ])
+                })
+                .collect(),
+        )
+        .unwrap();
+    seed.commit().unwrap();
+    crate::traits::Engine::force_checkpoint_cycle(&engine).unwrap();
+
+    let mut pending = engine.begin_transaction().unwrap();
+    pending
+        .get_table("items")
+        .unwrap()
+        .insert_batch(
+            (10_000..12_048_u64)
+                .map(|sequence| {
+                    Row::from_values(vec![
+                        uuid_value(sequence),
+                        Value::Integer(sequence as i64),
+                    ])
+                })
+                .collect(),
+        )
+        .unwrap();
+
+    let mut generation_writer = engine.begin_transaction().unwrap();
+    generation_writer
+        .get_table("items")
+        .unwrap()
+        .insert(Row::from_values(vec![
+            uuid_value(20_000),
+            Value::Integer(20_000),
+        ]))
+        .unwrap();
+    generation_writer.commit().unwrap();
+    crate::traits::Engine::force_checkpoint_cycle(&engine).unwrap();
+
+    crate::instrumentation::begin_artifact_io_probe();
+    crate::instrumentation::begin_posting_lookup_probe();
+    crate::instrumentation::begin_row_materialization_probe();
+    pending.commit().unwrap();
+    let materialization = crate::instrumentation::end_row_materialization_probe();
+    let posting = crate::instrumentation::end_posting_lookup_probe();
+    let artifact_io = crate::instrumentation::end_artifact_io_probe();
+
+    assert_eq!(posting.exact_calls, 1, "commit must issue one cold lookup");
+    assert_eq!(posting.exact_segments, 2);
+    assert_eq!(
+        materialization.rows, 0,
+        "absent UUID keys must not read DATA payload rows at commit"
+    );
+    assert!(
+        artifact_io.pread_calls < 2_048,
+        "commit Bloom pruning must avoid one INDEX probe per key: {artifact_io:?}"
+    );
+    assert_eq!(collect_rows(&engine, "items").len(), 6_145);
+    engine.close_engine().unwrap();
+}
+
+#[test]
+fn composite_uuid_primary_key_insert_batch_uses_one_cold_probe() {
+    fn uuid_value(sequence: u64) -> Value {
+        let mut bytes = [0_u8; 16];
+        bytes[8..].copy_from_slice(&sequence.to_be_bytes());
+        Value::uuid(bytes)
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("composite-uuid-cold-insert-batch");
+    let mut config = Config::with_path(database_path.to_string_lossy().into_owned());
+    config.persistence.checkpoint_interval = u32::MAX;
+    config.persistence.checkpoint_on_close = false;
+    config.persistence.target_volume_rows = 4_096;
+    config.persistence.compact_threshold = 16;
+    config.cleanup.enabled = false;
+
+    let engine = MVCCEngine::new(config);
+    engine.open_engine().unwrap();
+    let mut schema = SchemaBuilder::new("links")
+        .column("left_id", DataType::Uuid, false, true)
+        .column("right_id", DataType::Uuid, false, true)
+        .column("value", DataType::Integer, false, false)
+        .build();
+    schema
+        .register_primary_key_constraint(vec!["left_id".to_owned(), "right_id".to_owned()])
+        .unwrap();
+    create_catalog_test_table(&engine, schema).unwrap();
+
+    let mut seed = engine.begin_transaction().unwrap();
+    seed.get_table("links")
+        .unwrap()
+        .insert_batch(
+            (0..4_096_u64)
+                .map(|sequence| {
+                    Row::from_values(vec![
+                        uuid_value(sequence / 64),
+                        uuid_value(sequence),
+                        Value::Integer(sequence as i64),
+                    ])
+                })
+                .collect(),
+        )
+        .unwrap();
+    seed.commit().unwrap();
+    crate::traits::Engine::force_checkpoint_cycle(&engine).unwrap();
+    assert_table_segments_artifact_backed(&engine, "links");
+
+    crate::instrumentation::begin_artifact_io_probe();
+    crate::instrumentation::begin_posting_lookup_probe();
+    crate::instrumentation::begin_row_materialization_probe();
+    let mut distinct = engine.begin_transaction().unwrap();
+    distinct
+        .get_table("links")
+        .unwrap()
+        .insert_batch(
+            (10_000..12_048_u64)
+                .map(|sequence| {
+                    Row::from_values(vec![
+                        uuid_value(sequence / 64),
+                        uuid_value(sequence),
+                        Value::Integer(sequence as i64),
+                    ])
+                })
+                .collect(),
+        )
+        .unwrap();
+    let materialization = crate::instrumentation::end_row_materialization_probe();
+    let posting = crate::instrumentation::end_posting_lookup_probe();
+    let artifact_io = crate::instrumentation::end_artifact_io_probe();
+    distinct.rollback().unwrap();
+
+    assert_eq!(posting.exact_calls, 1, "the batch must issue one cold lookup");
+    assert_eq!(posting.exact_segments, 1);
+    assert_eq!(
+        materialization.rows, 0,
+        "absent composite UUID keys must not read DATA payload rows"
+    );
+    assert!(
+        artifact_io.pread_calls < 2_048,
+        "one ordered-page cache must replace one INDEX scan per input key: {artifact_io:?}"
+    );
+
+    let mut duplicate = engine.begin_transaction().unwrap();
+    let error = duplicate
+        .get_table("links")
+        .unwrap()
+        .insert_batch(vec![
+            Row::from_values(vec![
+                uuid_value(20_000),
+                uuid_value(20_001),
+                Value::Integer(20_000),
+            ]),
+            Row::from_values(vec![
+                uuid_value(7 / 64),
+                uuid_value(7),
+                Value::Integer(7),
+            ]),
+        ])
+        .expect_err("one cold composite UUID duplicate must reject the complete insert batch");
+    assert!(matches!(error, Error::UniqueConstraint { .. }));
+    duplicate.rollback().unwrap();
+    assert_eq!(collect_rows(&engine, "links").len(), 4_096);
+
+    engine.close_engine().unwrap();
+}
+
+#[test]
+fn composite_uuid_primary_key_commit_recheck_batches_a_concurrent_seal() {
+    fn uuid_value(sequence: u64) -> Value {
+        let mut bytes = [0_u8; 16];
+        bytes[8..].copy_from_slice(&sequence.to_be_bytes());
+        Value::uuid(bytes)
+    }
+
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("composite-uuid-cold-commit-recheck-batch");
+    let mut config = Config::with_path(database_path.to_string_lossy().into_owned());
+    config.persistence.checkpoint_interval = u32::MAX;
+    config.persistence.checkpoint_on_close = false;
+    config.persistence.target_volume_rows = 4_096;
+    config.persistence.compact_threshold = 16;
+    config.cleanup.enabled = false;
+
+    let engine = MVCCEngine::new(config);
+    engine.open_engine().unwrap();
+    let mut schema = SchemaBuilder::new("links")
+        .column("left_id", DataType::Uuid, false, true)
+        .column("right_id", DataType::Uuid, false, true)
+        .column("value", DataType::Integer, false, false)
+        .build();
+    schema
+        .register_primary_key_constraint(vec!["left_id".to_owned(), "right_id".to_owned()])
+        .unwrap();
+    create_catalog_test_table(&engine, schema).unwrap();
+
+    let mut seed = engine.begin_transaction().unwrap();
+    seed.get_table("links")
+        .unwrap()
+        .insert_batch(
+            (0..4_096_u64)
+                .map(|sequence| {
+                    Row::from_values(vec![
+                        uuid_value(sequence / 64),
+                        uuid_value(sequence),
+                        Value::Integer(sequence as i64),
+                    ])
+                })
+                .collect(),
+        )
+        .unwrap();
+    seed.commit().unwrap();
+    crate::traits::Engine::force_checkpoint_cycle(&engine).unwrap();
+
+    let mut pending = engine.begin_transaction().unwrap();
+    pending
+        .get_table("links")
+        .unwrap()
+        .insert_batch(
+            (10_000..12_048_u64)
+                .map(|sequence| {
+                    Row::from_values(vec![
+                        uuid_value(sequence / 64),
+                        uuid_value(sequence),
+                        Value::Integer(sequence as i64),
+                    ])
+                })
+                .collect(),
+        )
+        .unwrap();
+
+    let mut generation_writer = engine.begin_transaction().unwrap();
+    generation_writer
+        .get_table("links")
+        .unwrap()
+        .insert(Row::from_values(vec![
+            uuid_value(20_000),
+            uuid_value(20_001),
+            Value::Integer(20_000),
+        ]))
+        .unwrap();
+    generation_writer.commit().unwrap();
+    crate::traits::Engine::force_checkpoint_cycle(&engine).unwrap();
+
+    crate::instrumentation::begin_artifact_io_probe();
+    crate::instrumentation::begin_posting_lookup_probe();
+    crate::instrumentation::begin_row_materialization_probe();
+    pending.commit().unwrap();
+    let materialization = crate::instrumentation::end_row_materialization_probe();
+    let posting = crate::instrumentation::end_posting_lookup_probe();
+    let artifact_io = crate::instrumentation::end_artifact_io_probe();
+
+    assert_eq!(posting.exact_calls, 1, "commit must issue one cold lookup");
+    assert_eq!(posting.exact_segments, 2);
+    assert_eq!(
+        materialization.rows, 0,
+        "absent composite UUID keys must not read DATA payload rows at commit"
+    );
+    assert!(
+        artifact_io.pread_calls < 2_048,
+        "commit must share one ordered-page cache for the complete key batch: {artifact_io:?}"
+    );
+    assert_eq!(collect_rows(&engine, "links").len(), 6_145);
+    engine.close_engine().unwrap();
 }
 
 #[test]

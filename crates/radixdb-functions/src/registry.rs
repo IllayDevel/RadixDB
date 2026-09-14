@@ -47,21 +47,22 @@ use super::scalar::vector::{
 };
 use super::scalar::{
     AbsFunction, CastFunction, CeilFunction, CeilingFunction, CharFunction, CharLengthFunction,
-    CoalesceFunction, CollateFunction, ConcatFunction, ConcatWsFunction, ContainsFunction,
-    CosFunction, Crc32Function, CurrentDateFunction, CurrentTimeFunction, CurrentTimestampFunction,
-    DateAddFunction, DateDiffAliasFunction, DateDiffFunction, DateSubFunction, DateTruncFunction,
-    DayFunction, EndsWithFunction, ExpFunction, ExtractFunction, FloorFunction, FromHexFunction,
-    GreatestFunction, HourFunction, IfNullFunction, IifFunction, InstrFunction, JsonArrayFunction,
-    JsonArrayLengthFunction, JsonExtractFunction, JsonKeysFunction, JsonObjectFunction,
-    JsonTypeFunction, JsonTypeOfFunction, JsonValidFunction, LeastFunction, LeftFunction,
-    LengthFunction, LnFunction, LocateFunction, Log10Function, Log2Function, LogFunction,
-    LowerFunction, LpadFunction, LtrimFunction, Md5Function, MinuteFunction, ModFunction,
-    MonthFunction, NowFunction, NullIfFunction, PiFunction, PositionFunction, PowFunction,
-    PowerFunction, RandomFunction, RepeatFunction, ReplaceFunction, ReverseFunction, RightFunction,
-    RoundFunction, RpadFunction, RtrimFunction, SecondFunction, Sha1Function, Sha256Function,
-    Sha384Function, Sha512Function, SignFunction, SinFunction, SleepFunction, SplitPartFunction,
-    SqrtFunction, StartsWithFunction, StrposFunction, SubstrFunction, SubstringFunction,
-    TanFunction, TimeTruncFunction, ToCharFunction, TrimFunction, TruncFunction, TruncateFunction,
+    CivilToTimestamptzFunction, CoalesceFunction, CollateFunction, ConcatFunction,
+    ConcatWsFunction, ContainsFunction, CosFunction, Crc32Function, CurrentDateFunction,
+    CurrentTimeFunction, CurrentTimestampFunction, DateAddFunction, DateDiffAliasFunction,
+    DateDiffFunction, DateSubFunction, DateTruncFunction, DayFunction, EndsWithFunction,
+    ExpFunction, ExtractFunction, FloorFunction, FromHexFunction, GreatestFunction, HourFunction,
+    IfNullFunction, IifFunction, InstrFunction, JsonArrayFunction, JsonArrayLengthFunction,
+    JsonExtractFunction, JsonKeysFunction, JsonObjectFunction, JsonTypeFunction,
+    JsonTypeOfFunction, JsonValidFunction, LeastFunction, LeftFunction, LengthFunction, LnFunction,
+    LocateFunction, Log10Function, Log2Function, LogFunction, LowerFunction, LpadFunction,
+    LtrimFunction, Md5Function, MinuteFunction, ModFunction, MonthFunction, NowFunction,
+    NullIfFunction, PiFunction, PositionFunction, PowFunction, PowerFunction, RandomFunction,
+    RepeatFunction, ReplaceFunction, ReverseFunction, RightFunction, RoundFunction, RpadFunction,
+    RtrimFunction, SecondFunction, Sha1Function, Sha256Function, Sha384Function, Sha512Function,
+    SignFunction, SinFunction, SleepFunction, SplitPartFunction, SqrtFunction, StartsWithFunction,
+    StrposFunction, SubstrFunction, SubstringFunction, TanFunction, TimeTruncFunction,
+    TimestamptzToCivilFunction, ToCharFunction, TrimFunction, TruncFunction, TruncateFunction,
     TypeOfFunction, UpperFunction, VersionFunction, YearFunction,
 };
 use super::tvf::{GenerateSeriesFunction, GenerateSeriesScalarFunction, TableValuedFunction};
@@ -192,6 +193,8 @@ impl FunctionRegistry {
         registry.register_scalar::<CurrentDateFunction>();
         registry.register_scalar::<CurrentTimeFunction>();
         registry.register_scalar::<CurrentTimestampFunction>();
+        registry.register_scalar::<CivilToTimestamptzFunction>();
+        registry.register_scalar::<TimestamptzToCivilFunction>();
         registry.register_scalar::<DateTruncFunction>();
         registry.register_scalar::<TimeTruncFunction>();
         registry.register_scalar::<ExtractFunction>();

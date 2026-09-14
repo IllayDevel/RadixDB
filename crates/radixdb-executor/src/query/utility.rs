@@ -33,8 +33,51 @@ impl Executor {
 
                 Ok(Box::new(ExecResult::empty()))
             }
+            "TIME ZONE" | "TIMEZONE" | "TIME_ZONE" => {
+                let time_zone = match &stmt.value {
+                    Expression::StringLiteral(lit) => lit.value.as_str(),
+                    Expression::Identifier(id) => id.value.as_str(),
+                    _ => {
+                        return Err(Error::invalid_argument(
+                            "SET TIME ZONE requires a string value (e.g., 'Asia/Barnaul' or '+07:00')",
+                        ));
+                    }
+                };
+                SessionTimeZone::parse(time_zone)?;
+                Ok(Box::new(ExecResult::empty()))
+            }
             _ => Err(Error::invalid_argument(format!(
-                "unknown SET variable '{}'; supported variables: ISOLATION_LEVEL, ISOLATIONLEVEL, TRANSACTION_ISOLATION",
+                "unknown SET variable '{}'; supported variables: ISOLATION_LEVEL, ISOLATIONLEVEL, TRANSACTION_ISOLATION, TIME ZONE",
+                stmt.name.value
+            ))),
+        }
+    }
+
+    /// Execute SHOW for a connection-local variable snapshot.
+    pub(crate) fn execute_show_variable(
+        &self,
+        stmt: &ShowVariableStatement,
+        ctx: &ExecutionContext,
+    ) -> Result<Box<dyn QueryResult>> {
+        match stmt.name.value.to_uppercase().as_str() {
+            "TIME ZONE" | "TIMEZONE" | "TIME_ZONE" => {
+                let time_zone = match ctx.get_session_var("timezone") {
+                    Some(Value::Text(value)) => value.as_str(),
+                    Some(_) => {
+                        return Err(Error::internal(
+                            "session timezone has a non-text internal value",
+                        ));
+                    }
+                    None => "UTC",
+                };
+                SessionTimeZone::parse(time_zone)?;
+                let columns = vec!["TimeZone".to_string()];
+                let mut rows = RowVec::with_capacity(1);
+                rows.push((0, Row::from_values(vec![Value::text(time_zone)])));
+                Ok(Box::new(ExecutorResult::new(columns, rows)))
+            }
+            _ => Err(Error::invalid_argument(format!(
+                "unknown SHOW variable '{}'",
                 stmt.name.value
             ))),
         }
@@ -1805,6 +1848,7 @@ fn acl_privilege_names(bits: u64) -> String {
         (radixdb_catalog::PRIVILEGE_UPDATE, "UPDATE"),
         (radixdb_catalog::PRIVILEGE_DELETE, "DELETE"),
         (radixdb_catalog::PRIVILEGE_EXECUTE, "EXECUTE"),
+        (radixdb_catalog::PRIVILEGE_DESCRIBE, "DESCRIBE"),
     ]
     .into_iter()
     .filter_map(|(bit, name)| (bits & bit != 0).then_some(name))

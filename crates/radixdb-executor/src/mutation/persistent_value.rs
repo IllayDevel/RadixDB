@@ -60,7 +60,7 @@ pub(super) fn persistent_value_expression(value: &Value, token: &Token) -> Resul
         Value::Timestamp(value) => Expression::StringLiteral(StringLiteral {
             token: token.clone(),
             value: value.to_rfc3339().into(),
-            type_hint: Some("TIMESTAMP".into()),
+            type_hint: Some("TIMESTAMPTZ".into()),
         }),
         Value::Extension(_) if value.as_json().is_some() => cast_text(
             value

@@ -132,11 +132,19 @@ impl Table for MVCCTable {
     fn insert_batch(&mut self, rows: Vec<Row>) -> Result<()> {
         let statement_boundary = get_fast_timestamp();
         let result = (|| {
-            // Use insert_discard since we don't need returned rows
-            for row in rows {
-                self.insert_discard(row)?;
+            let mut prepared = Vec::with_capacity(rows.len());
+            let mut statement_row_ids = rustc_hash::FxHashSet::default();
+            for mut row in rows {
+                let row_id = self.prepare_insert(&mut row)?;
+                if !statement_row_ids.insert(row_id) {
+                    return Err(Error::primary_key_constraint(row_id));
+                }
+                prepared.push((row_id, row));
             }
-            Ok(())
+            self.txn_versions
+                .write()
+                .unwrap()
+                .put_batch_for_insert(prepared)
         })();
         if result.is_err() {
             self.txn_versions

@@ -132,9 +132,9 @@ fn tcp_typed_parameters_expose_and_execute_composite_index_union() {
             "CREATE TABLE outbox_jobs (
                 id INTEGER PRIMARY KEY,
                 state TEXT NOT NULL,
-                available_at TIMESTAMP NOT NULL,
-                lease_until TIMESTAMP,
-                created_at TIMESTAMP NOT NULL,
+                available_at TIMESTAMPTZ NOT NULL,
+                lease_until TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL,
                 revision INTEGER NOT NULL
             )",
         );
@@ -151,12 +151,12 @@ fn tcp_typed_parameters_expose_and_execute_composite_index_union() {
         command(
             &mut connection,
             "INSERT INTO outbox_jobs VALUES
-             (1, 'pending', TIMESTAMP '2026-08-08 10:00:00', NULL,
-                 TIMESTAMP '2026-08-08 09:00:00', 1),
-             (2, 'leased', TIMESTAMP '2026-08-08 08:00:00',
-                 TIMESTAMP '2026-08-08 11:00:00', TIMESTAMP '2026-08-08 08:00:00', 1),
-             (3, 'leased', TIMESTAMP '2026-08-08 07:00:00', NULL,
-                 TIMESTAMP '2026-08-08 07:00:00', 1)",
+             (1, 'pending', TIMESTAMPTZ '2026-08-08 10:00:00Z', NULL,
+                 TIMESTAMPTZ '2026-08-08 09:00:00Z', 1),
+             (2, 'leased', TIMESTAMPTZ '2026-08-08 08:00:00Z',
+                 TIMESTAMPTZ '2026-08-08 11:00:00Z', TIMESTAMPTZ '2026-08-08 08:00:00Z', 1),
+             (3, 'leased', TIMESTAMPTZ '2026-08-08 07:00:00Z', NULL,
+                 TIMESTAMPTZ '2026-08-08 07:00:00Z', 1)",
         );
 
         let plan_result = connection

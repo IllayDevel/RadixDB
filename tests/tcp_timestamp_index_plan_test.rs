@@ -87,7 +87,7 @@ fn typed_tcp_timestamp_parameter_selects_executable_composite_index_plan() {
                     "CREATE TABLE jobs (
                         id INTEGER PRIMARY KEY,
                         state TEXT NOT NULL,
-                        due_at TIMESTAMP NOT NULL
+                        due_at TIMESTAMPTZ NOT NULL
                     )",
                 )
                 .unwrap(),
@@ -101,8 +101,8 @@ fn typed_tcp_timestamp_parameter_selects_executable_composite_index_plan() {
             connection
                 .execute(
                     "INSERT INTO jobs VALUES
-                     (1, 'pending', TIMESTAMP '2026-08-08 10:00:00'),
-                     (2, 'pending', TIMESTAMP '2026-08-10 10:00:00')",
+                     (1, 'pending', TIMESTAMPTZ '2026-08-08 10:00:00Z'),
+                     (2, 'pending', TIMESTAMPTZ '2026-08-10 10:00:00Z')",
                 )
                 .unwrap(),
         );

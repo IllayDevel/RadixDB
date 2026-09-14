@@ -724,8 +724,8 @@ fn immutable_context_values_cross_definer_and_dynamic_sql_frames_without_spoofin
             "CREATE TABLE context_log ( \
                  id INTEGER PRIMARY KEY AUTO_INCREMENT, kind TEXT NOT NULL, \
                  session_id UUID NOT NULL, effective_id UUID NOT NULL, \
-                 transaction_id INTEGER, request_id INTEGER, statement_at TIMESTAMP NOT NULL, \
-                 job_id UUID, job_attempt INTEGER, scheduled_at TIMESTAMP, idempotency_key TEXT \
+                 transaction_id INTEGER, request_id INTEGER, statement_at TIMESTAMPTZ NOT NULL, \
+                 job_id UUID, job_attempt INTEGER, scheduled_at TIMESTAMPTZ, idempotency_key TEXT \
              )",
         )
         .unwrap();

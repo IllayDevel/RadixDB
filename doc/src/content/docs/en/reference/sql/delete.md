@@ -38,7 +38,7 @@ commit.
 
 Restrictive foreign keys can reject a delete. Writer waits, deadlocks and
 timeouts follow the transaction retry contract. Navigable paths are rejected in
-DML predicates and RETURNING expressions in 1.2.
+DML predicates and RETURNING expressions in 1.2.4.
 
 ## Privileges
 

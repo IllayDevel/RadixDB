@@ -3,7 +3,7 @@ title: Wire protocol
 description: Framing protocol 17, состояния session, cursors, external values и compatibility.
 ---
 
-Server RadixDB 1.2 и TCP clients разделяют один binary contract, которым владеет
+Server RadixDB 1.2.4 и TCP clients разделяют один binary contract, которым владеет
 private crate `radixdb-protocol`. Это собственный protocol 17 RadixDB, а не
 PostgreSQL wire protocol. Приложения используют `radixdb-client`; прямое
 использование codec является internal integration boundary.

@@ -38,6 +38,10 @@ pub enum ComparisonValue {
     Text(String),
     Boolean(bool),
     Timestamp(DateTime<Utc>),
+    CivilTemporal {
+        data_type: DataType,
+        nanos: i64,
+    },
     Uuid([u8; 16]),
     Decimal {
         unscaled: i128,
@@ -56,6 +60,20 @@ impl ComparisonValue {
             Value::Text(s) => ComparisonValue::Text(s.to_string()),
             Value::Boolean(b) => ComparisonValue::Boolean(*b),
             Value::Timestamp(t) => ComparisonValue::Timestamp(*t),
+            Value::Extension(data)
+                if matches!(
+                    data.first().and_then(|tag| DataType::from_u8(*tag)),
+                    Some(DataType::CivilTimestamp | DataType::Time)
+                ) =>
+            {
+                value
+                    .artifact_temporal_nanos()
+                    .map(|nanos| ComparisonValue::CivilTemporal {
+                        data_type: value.data_type(),
+                        nanos,
+                    })
+                    .unwrap_or(ComparisonValue::Null)
+            }
             Value::Extension(data) if data.first() == Some(&(DataType::Decimal as u8)) => value
                 .as_decimal_parts()
                 .map(|(unscaled, precision, scale)| ComparisonValue::Decimal {
@@ -91,6 +109,7 @@ impl ComparisonValue {
             ComparisonValue::Text(_) => DataType::Text,
             ComparisonValue::Boolean(_) => DataType::Boolean,
             ComparisonValue::Timestamp(_) => DataType::Timestamp,
+            ComparisonValue::CivilTemporal { data_type, .. } => *data_type,
             ComparisonValue::Uuid(_) => DataType::Uuid,
             ComparisonValue::Decimal { .. } => DataType::Decimal,
         }
@@ -110,6 +129,9 @@ impl ComparisonValue {
             ComparisonValue::Text(s) => Value::Text(SmartString::new(s)),
             ComparisonValue::Boolean(b) => Value::Boolean(*b),
             ComparisonValue::Timestamp(t) => Value::Timestamp(*t),
+            ComparisonValue::CivilTemporal { data_type, nanos } => {
+                Value::from_temporal_nanos(*data_type, *nanos).unwrap_or(Value::Null(*data_type))
+            }
             ComparisonValue::Uuid(bytes) => Value::uuid(*bytes),
             ComparisonValue::Decimal {
                 unscaled,
@@ -398,6 +420,19 @@ impl Expression for ComparisonExpr {
                 Ok(self.compare_timestamps(*col_val, *cmp_val))
             }
 
+            (
+                ComparisonValue::CivilTemporal {
+                    data_type,
+                    nanos: cmp_val,
+                },
+                Value::Extension(_),
+            ) if col_value.data_type() == *data_type => col_value
+                .artifact_temporal_nanos()
+                .map(|col_val| self.compare_integers(col_val, *cmp_val))
+                .ok_or_else(|| {
+                    Error::type_conversion(format!("{col_value:?}"), data_type.to_string())
+                }),
+
             // UUID comparisons
             (ComparisonValue::Uuid(cmp_val), Value::Extension(_)) => col_value
                 .as_uuid_bytes()
@@ -485,6 +520,15 @@ impl Expression for ComparisonExpr {
             (ComparisonValue::Timestamp(cmp_val), Value::Timestamp(col_val)) => {
                 self.compare_timestamps(*col_val, *cmp_val)
             }
+            (
+                ComparisonValue::CivilTemporal {
+                    data_type,
+                    nanos: cmp_val,
+                },
+                Value::Extension(_),
+            ) if col_value.data_type() == *data_type => col_value
+                .artifact_temporal_nanos()
+                .is_some_and(|col_val| self.compare_integers(col_val, *cmp_val)),
             (ComparisonValue::Uuid(cmp_val), Value::Extension(_)) => col_value
                 .as_uuid_bytes()
                 .map(|col_val| self.compare_uuids(&col_val, cmp_val))
@@ -543,7 +587,10 @@ impl Expression for ComparisonExpr {
         self.col_index = find_column_index(schema, &self.column);
         if let Some(idx) = self.col_index {
             let column_type = schema.columns[idx].data_type;
-            if matches!(column_type, DataType::Uuid | DataType::Decimal) {
+            if matches!(
+                column_type,
+                DataType::Uuid | DataType::Decimal | DataType::CivilTimestamp | DataType::Time
+            ) {
                 let coerced = self.original_value.coerce_to_type(column_type);
                 if !coerced.is_null() {
                     self.value = ComparisonValue::from_value(&coerced);

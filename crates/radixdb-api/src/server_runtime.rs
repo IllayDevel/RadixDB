@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use crate::ObjectId;
 use crate::{Database, NamedParams, ParamVec};
-use radixdb_core::{Error, Result};
+use radixdb_core::{Error, Result, Value};
 use radixdb_executor::context::{CancellationHandle, ExecutionContext};
 #[doc(hidden)]
 pub use radixdb_executor::procedural::{
@@ -91,6 +91,14 @@ impl ServerExecutionContext {
     pub fn bind_request_identity(&mut self, principal_id: ObjectId, request_id: u64) -> Result<()> {
         self.inner = self.inner.with_principal_id(principal_id);
         self.inner.set_request_id(request_id)
+    }
+
+    /// Bind the immutable connection-local time-zone snapshot for this request.
+    pub fn bind_session_time_zone(&mut self, time_zone: &str) -> Result<()> {
+        let canonical = radixdb_core::SessionTimeZone::parse(time_zone)?.to_string();
+        self.inner
+            .set_session_var("timezone", Value::text(canonical));
+        Ok(())
     }
 
     /// Inherit session/server shutdown cancellation without sharing the
@@ -192,6 +200,7 @@ pub enum ServerColumnData {
     },
     TimestampNanos {
         values: Vec<i64>,
+        data_type: radixdb_core::DataType,
         nulls: Vec<bool>,
     },
     Boolean {
@@ -251,9 +260,15 @@ fn server_column_from_storage(column: ColumnData) -> Result<ServerColumnData> {
     match column {
         ColumnData::Int64 { values, nulls } => Ok(ServerColumnData::Int64 { values, nulls }),
         ColumnData::Float64 { values, nulls } => Ok(ServerColumnData::Float64 { values, nulls }),
-        ColumnData::TimestampNanos { values, nulls } => {
-            Ok(ServerColumnData::TimestampNanos { values, nulls })
-        }
+        ColumnData::TimestampNanos {
+            values,
+            data_type,
+            nulls,
+        } => Ok(ServerColumnData::TimestampNanos {
+            values,
+            data_type,
+            nulls,
+        }),
         ColumnData::Boolean { values, nulls } => Ok(ServerColumnData::Boolean { values, nulls }),
         ColumnData::Dictionary {
             ids,

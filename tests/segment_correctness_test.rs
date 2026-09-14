@@ -1461,7 +1461,7 @@ fn test_upsert_on_cold_unique_constraint() {
         &db,
         "CREATE TABLE candles (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        time TIMESTAMP NOT NULL,
+        time TIMESTAMPTZ NOT NULL,
         exchange TEXT NOT NULL,
         symbol TEXT NOT NULL,
         open FLOAT,
@@ -1536,7 +1536,7 @@ fn test_insert_select_upsert_on_cold_unique() {
         &db,
         "CREATE TABLE raw (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        time TIMESTAMP NOT NULL,
+        time TIMESTAMPTZ NOT NULL,
         exchange TEXT NOT NULL,
         symbol TEXT NOT NULL,
         val FLOAT
@@ -1546,7 +1546,7 @@ fn test_insert_select_upsert_on_cold_unique() {
         &db,
         "CREATE TABLE agg (
         id INTEGER PRIMARY KEY AUTO_INCREMENT,
-        time TIMESTAMP NOT NULL,
+        time TIMESTAMPTZ NOT NULL,
         exchange TEXT NOT NULL,
         symbol TEXT NOT NULL,
         total FLOAT

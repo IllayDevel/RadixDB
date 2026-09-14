@@ -981,8 +981,11 @@ impl Column {
     pub fn float(name: impl Into<String>) -> Self {
         Self::new(name, DataTypeDescriptor::Float)
     }
+    pub fn double_precision(name: impl Into<String>) -> Self {
+        Self::new(name, DataTypeDescriptor::DoublePrecision)
+    }
     pub fn text(name: impl Into<String>) -> Self {
-        Self::new(name, DataTypeDescriptor::Text)
+        Self::new(name, DataTypeDescriptor::Text { max_chars: None })
     }
     pub fn boolean(name: impl Into<String>) -> Self {
         Self::new(name, DataTypeDescriptor::Boolean)
@@ -1505,7 +1508,7 @@ mod tests {
                 ColumnDescriptor {
                     ordinal: 1,
                     name: "name".to_string(),
-                    data_type: DataTypeDescriptor::Text,
+                    data_type: DataTypeDescriptor::Text { max_chars: None },
                     nullable: false,
                     auto_increment: false,
                     default_expression: None,
@@ -1526,7 +1529,12 @@ mod tests {
             .filter(dynamic.column("id").unwrap().eq(7_i64));
 
         let id = TypedColumn::<i64>::new("people", "id", DataTypeDescriptor::Integer, false);
-        let name = TypedColumn::<String>::new("people", "name", DataTypeDescriptor::Text, false);
+        let name = TypedColumn::<String>::new(
+            "people",
+            "name",
+            DataTypeDescriptor::Text { max_chars: None },
+            false,
+        );
         let generated_query = QueryBuilder::from_relation(table("people"))
             .select([id.clone().expr(), name.expr()])
             .filter(id.eq(7_i64));

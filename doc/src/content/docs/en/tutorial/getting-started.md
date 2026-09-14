@@ -23,7 +23,7 @@ export PATH="$PWD/target/debug:$PATH"
 
 `--locked` prevents the build from updating dependency resolution.
 The version output includes the application version, Git revision and lockfile
-digest. Record these when reporting a problem. This manual targets RadixDB 1.2
+digest. Record these when reporting a problem. This manual targets RadixDB 1.2.4
 development; the footer reports the documentation target and the application
 version separately. Include the Git revision when comparing a reported result
 with this manual.

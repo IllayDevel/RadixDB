@@ -17,26 +17,44 @@
 use chrono::{DateTime, Datelike, Duration, TimeZone, Timelike, Utc};
 
 use radixdb_core::time_compat::system_time_now;
-use radixdb_core::{parse_timestamp, Error, Result, SmartString, Value};
+use radixdb_core::{parse_timestamp, DataType, Error, Result, SessionTimeZone, SmartString, Value};
 
 use crate::validate_arg_count;
 use crate::{FunctionDataType, FunctionInfo, FunctionSignature, FunctionType, ScalarFunction};
 
-fn temporal_value(value: &Value, function: &str, argument: &str) -> Result<(DateTime<Utc>, bool)> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TemporalKind {
+    Instant,
+    Civil,
+    Date,
+}
+
+fn temporal_value(
+    value: &Value,
+    function: &str,
+    argument: &str,
+) -> Result<(DateTime<Utc>, TemporalKind)> {
     match value {
-        Value::Timestamp(timestamp) => Ok((*timestamp, false)),
+        Value::Timestamp(timestamp) => Ok((*timestamp, TemporalKind::Instant)),
         Value::Text(text) => parse_timestamp(text)
-            .map(|timestamp| (timestamp, false))
+            .map(|timestamp| (timestamp, TemporalKind::Instant))
             .map_err(|_| {
                 Error::invalid_argument(format!(
                     "{function} could not parse {argument} date/time: {text}"
                 ))
             }),
+        _ if value.as_civil_timestamp().is_some() => Ok((
+            value
+                .as_civil_timestamp()
+                .expect("civil timestamp was checked")
+                .and_utc(),
+            TemporalKind::Civil,
+        )),
         _ if value.as_date_days().is_some() => {
             let days = i64::from(value.as_date_days().expect("date was checked"));
             Utc.timestamp_opt(days * 86_400, 0)
                 .single()
-                .map(|timestamp| (timestamp, true))
+                .map(|timestamp| (timestamp, TemporalKind::Date))
                 .ok_or_else(|| {
                     Error::invalid_argument(format!("{function} {argument} DATE is out of range"))
                 })
@@ -163,20 +181,7 @@ impl ScalarFunction for DateTruncFunction {
             return Ok(Value::null_unknown());
         }
 
-        let ts = match &args[1] {
-            Value::Timestamp(t) => *t,
-            Value::Text(s) => {
-                // Try to parse as timestamp
-                parse_timestamp(s).map_err(|_| {
-                    Error::invalid_argument(format!("DATE_TRUNC could not parse timestamp: {}", s))
-                })?
-            }
-            _ => {
-                return Err(Error::invalid_argument(
-                    "DATE_TRUNC second argument must be a timestamp or string",
-                ))
-            }
-        };
+        let (ts, input_kind) = temporal_value(&args[1], "DATE_TRUNC", "second argument")?;
 
         // Truncate based on unit (case-insensitive without allocation)
         let result = if unit.eq_ignore_ascii_case("year") {
@@ -237,7 +242,11 @@ impl ScalarFunction for DateTruncFunction {
             )));
         };
 
-        Ok(Value::Timestamp(result))
+        if input_kind == TemporalKind::Civil {
+            Value::civil_timestamp(result.naive_utc())
+        } else {
+            Ok(Value::Timestamp(result))
+        }
     }
 }
 
@@ -421,20 +430,7 @@ impl ScalarFunction for TimeTruncFunction {
             return Ok(Value::null_unknown());
         }
 
-        let ts = match &args[1] {
-            Value::Timestamp(t) => *t,
-            Value::Text(s) => {
-                // Try to parse as timestamp
-                parse_timestamp(s).map_err(|_| {
-                    Error::invalid_argument(format!("TIME_TRUNC could not parse timestamp: {}", s))
-                })?
-            }
-            _ => {
-                return Err(Error::invalid_argument(
-                    "TIME_TRUNC second argument must be a timestamp or string",
-                ))
-            }
-        };
+        let (ts, input_kind) = temporal_value(&args[1], "TIME_TRUNC", "second argument")?;
 
         // Parse the duration (cached for repeated calls with the same string)
         let duration_nanos = Self::cached_parse_duration(&duration_str)?;
@@ -451,7 +447,11 @@ impl ScalarFunction for TimeTruncFunction {
         let result = DateTime::from_timestamp(seconds, nanos)
             .ok_or_else(|| Error::invalid_argument("TIME_TRUNC result is out of range"))?;
 
-        Ok(Value::Timestamp(result))
+        if input_kind == TemporalKind::Civil {
+            Value::civil_timestamp(result.naive_utc())
+        } else {
+            Ok(Value::Timestamp(result))
+        }
     }
 }
 
@@ -825,7 +825,7 @@ impl ScalarFunction for DateAddFunction {
             return Ok(Value::null_unknown());
         }
 
-        let (ts, input_was_date) = temporal_value(&args[0], "DATE_ADD", "first argument")?;
+        let (ts, input_kind) = temporal_value(&args[0], "DATE_ADD", "first argument")?;
 
         if args[1].is_null() {
             return Ok(Value::null_unknown());
@@ -905,7 +905,7 @@ impl ScalarFunction for DateAddFunction {
             checked_timestamp_delta(ts, interval, unit)?
         };
 
-        if input_was_date
+        if input_kind == TemporalKind::Date
             && (unit.eq_ignore_ascii_case("year")
                 || unit.eq_ignore_ascii_case("years")
                 || unit.eq_ignore_ascii_case("month")
@@ -916,6 +916,8 @@ impl ScalarFunction for DateAddFunction {
                 || unit.eq_ignore_ascii_case("days"))
         {
             date_value_from_timestamp(result, "DATE_ADD")
+        } else if input_kind == TemporalKind::Civil {
+            Value::civil_timestamp(result.naive_utc())
         } else {
             Ok(Value::Timestamp(result))
         }
@@ -1143,6 +1145,88 @@ impl ScalarFunction for CurrentTimeFunction {
         let now: DateTime<Utc> = system_time_now().into();
         let time_str = now.format("%H:%M:%S").to_string();
         Ok(Value::Text(SmartString::from_string(time_str)))
+    }
+}
+
+/// Convert a civil timestamp to one UTC instant using explicit zone policy.
+#[derive(Default)]
+pub struct CivilToTimestamptzFunction;
+
+impl ScalarFunction for CivilToTimestamptzFunction {
+    fn name(&self) -> &str {
+        "CIVIL_TO_TIMESTAMPTZ"
+    }
+
+    fn info(&self) -> FunctionInfo {
+        FunctionInfo::new(
+            "CIVIL_TO_TIMESTAMPTZ",
+            FunctionType::Scalar,
+            "Converts a civil timestamp to TIMESTAMPTZ using an explicit IANA zone or fixed offset",
+            FunctionSignature::new(
+                FunctionDataType::Timestamp,
+                vec![FunctionDataType::CivilTimestamp, FunctionDataType::String],
+                2,
+                2,
+            ),
+        )
+    }
+
+    fn evaluate(&self, args: &[Value]) -> Result<Value> {
+        validate_arg_count!(args, "CIVIL_TO_TIMESTAMPTZ", 2);
+        if args.iter().any(Value::is_null) {
+            return Ok(Value::Null(DataType::Timestamp));
+        }
+        let civil = args[0].as_civil_timestamp().ok_or_else(|| {
+            Error::invalid_argument(
+                "CIVIL_TO_TIMESTAMPTZ first argument must be TIMESTAMP WITHOUT TIME ZONE",
+            )
+        })?;
+        let zone = args[1].as_str().ok_or_else(|| {
+            Error::invalid_argument("CIVIL_TO_TIMESTAMPTZ second argument must be a time zone")
+        })?;
+        Ok(Value::Timestamp(
+            SessionTimeZone::parse(zone)?.civil_to_instant(civil)?,
+        ))
+    }
+}
+
+/// Convert a UTC instant to a civil timestamp using explicit zone policy.
+#[derive(Default)]
+pub struct TimestamptzToCivilFunction;
+
+impl ScalarFunction for TimestamptzToCivilFunction {
+    fn name(&self) -> &str {
+        "TIMESTAMPTZ_TO_CIVIL"
+    }
+
+    fn info(&self) -> FunctionInfo {
+        FunctionInfo::new(
+            "TIMESTAMPTZ_TO_CIVIL",
+            FunctionType::Scalar,
+            "Converts TIMESTAMPTZ to a civil timestamp using an explicit IANA zone or fixed offset",
+            FunctionSignature::new(
+                FunctionDataType::CivilTimestamp,
+                vec![FunctionDataType::Timestamp, FunctionDataType::String],
+                2,
+                2,
+            ),
+        )
+    }
+
+    fn evaluate(&self, args: &[Value]) -> Result<Value> {
+        validate_arg_count!(args, "TIMESTAMPTZ_TO_CIVIL", 2);
+        if args.iter().any(Value::is_null) {
+            return Ok(Value::Null(DataType::CivilTimestamp));
+        }
+        let Value::Timestamp(instant) = args[0] else {
+            return Err(Error::invalid_argument(
+                "TIMESTAMPTZ_TO_CIVIL first argument must be TIMESTAMPTZ",
+            ));
+        };
+        let zone = args[1].as_str().ok_or_else(|| {
+            Error::invalid_argument("TIMESTAMPTZ_TO_CIVIL second argument must be a time zone")
+        })?;
+        Value::civil_timestamp(SessionTimeZone::parse(zone)?.instant_to_civil(instant))
     }
 }
 
@@ -1706,6 +1790,47 @@ mod tests {
             .evaluate(&[Value::text("1h"), Value::null_unknown()])
             .unwrap()
             .is_null());
+    }
+
+    #[test]
+    fn explicit_time_zone_conversion_preserves_temporal_identity() {
+        let civil = Value::civil_timestamp(
+            chrono::NaiveDate::from_ymd_opt(2026, 9, 11)
+                .unwrap()
+                .and_hms_opt(12, 30, 0)
+                .unwrap(),
+        )
+        .unwrap();
+        let instant = CivilToTimestamptzFunction
+            .evaluate(&[civil.clone(), Value::text("+07:00")])
+            .unwrap();
+        assert_eq!(instant.data_type(), DataType::Timestamp);
+        let Value::Timestamp(instant_value) = instant.clone() else {
+            panic!("expected TIMESTAMPTZ");
+        };
+        assert_eq!(instant_value.to_rfc3339(), "2026-09-11T05:30:00+00:00");
+
+        let round_trip = TimestamptzToCivilFunction
+            .evaluate(&[instant, Value::text("+07:00")])
+            .unwrap();
+        assert_eq!(round_trip, civil);
+        assert_eq!(round_trip.data_type(), DataType::CivilTimestamp);
+    }
+
+    #[test]
+    fn explicit_time_zone_conversion_rejects_dst_ambiguity() {
+        for civil in [(2026, 3, 8, 2, 30), (2026, 11, 1, 1, 30)] {
+            let value = Value::civil_timestamp(
+                chrono::NaiveDate::from_ymd_opt(civil.0, civil.1, civil.2)
+                    .unwrap()
+                    .and_hms_opt(civil.3, civil.4, 0)
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(CivilToTimestamptzFunction
+                .evaluate(&[value, Value::text("America/New_York")])
+                .is_err());
+        }
     }
 
     #[test]

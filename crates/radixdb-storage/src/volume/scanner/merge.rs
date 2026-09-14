@@ -47,6 +47,8 @@ impl RowTypedScanner {
                         | DataType::Text
                         | DataType::Boolean
                         | DataType::Timestamp
+                        | DataType::CivilTimestamp
+                        | DataType::Time
                         | DataType::Bytes
                         | DataType::Json
                 )

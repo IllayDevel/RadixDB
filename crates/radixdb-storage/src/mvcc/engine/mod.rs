@@ -51,7 +51,7 @@ use super::file_lock::FileLock;
 
 use crate::config::Config;
 use crate::expression::Expression;
-use crate::index::BTreeIndex;
+use crate::index::{BTreeIndex, MultiColumnIndex};
 use crate::instrumentation;
 use crate::mvcc::persistence::PendingDmlWalOperation;
 use crate::mvcc::wal_manager::WALOperationType;
@@ -1523,17 +1523,21 @@ fn try_parse_default_literal(expr: &str, data_type: DataType) -> Option<Value> {
 }
 
 /// Register the authoritative uniqueness owner for every declared primary key.
-/// INTEGER keeps the virtual row-id PkIndex fast path; other single-column keys
-/// use a unique BTreeIndex. The index is schema-derived and rebuilt on every
-/// create/recovery path without separate WAL metadata.
+/// A single INTEGER keeps the virtual row-id PkIndex fast path, other
+/// single-column keys use a unique BTreeIndex, and composite keys use the
+/// existing unique MultiColumnIndex. The index is schema-derived and rebuilt on
+/// every create/recovery path without separate WAL metadata.
 fn schema_derived_pk_index_name(schema: &Schema) -> Option<String> {
     let pk_indices = schema.primary_key_indices();
     if pk_indices.is_empty() {
         return None;
     }
-    debug_assert_eq!(pk_indices.len(), 1, "schema validation owns PK arity");
-    let pk_col = &schema.columns[pk_indices[0]];
-    Some(format!("__pk_{}_{}", schema.table_name_lower, pk_col.name))
+    let columns = pk_indices
+        .iter()
+        .map(|index| schema.columns[*index].name_lower.as_str())
+        .collect::<Vec<_>>()
+        .join("_");
+    Some(format!("__pk_{}_{}", schema.table_name_lower, columns))
 }
 
 fn is_schema_derived_pk_index(schema: &Schema, index: &dyn Index) -> bool {
@@ -1544,14 +1548,13 @@ fn is_schema_derived_pk_index(schema: &Schema, index: &dyn Index) -> bool {
         return false;
     };
     let pk_indices = schema.primary_key_indices();
-    let pk_col = &schema.columns[pk_indices[0]];
-    // A table rename deliberately does not rewrite the private index name.
-    // The reserved prefix plus the unchanged PK-column suffix keeps the
-    // schema-derived BTree owner identifiable across that rename.
-    index.name().starts_with("__pk_")
-        && index.name().ends_with(&format!("_{}", pk_col.name_lower))
-        && index.is_unique()
-        && index.column_ids() == [pk_col.id as i32]
+    let column_ids = pk_indices
+        .iter()
+        .map(|index| schema.columns[*index].id as i32)
+        .collect::<Vec<_>>();
+    // A table or column rename deliberately does not rewrite the private index
+    // name. Its reserved prefix and exact ordered key identity are sufficient.
+    index.name().starts_with("__pk_") && index.is_unique() && index.column_ids() == column_ids
 }
 
 fn register_pk_index(schema: &Schema, version_store: &Arc<VersionStore>) -> Result<()> {
@@ -1559,25 +1562,44 @@ fn register_pk_index(schema: &Schema, version_store: &Arc<VersionStore>) -> Resu
         return Ok(());
     };
     let pk_indices = schema.primary_key_indices();
-    let pk_col = &schema.columns[pk_indices[0]];
-    let pk_index: Arc<dyn Index> = if pk_col.data_type == DataType::Integer {
-        Arc::new(PkIndex::new(
-            index_name.clone(),
-            schema.table_name.clone(),
-            pk_col.id as i32,
-            pk_col.name.clone(),
-        ))
-    } else {
-        Arc::new(BTreeIndex::new(
-            index_name.clone(),
-            schema.table_name.clone(),
-            pk_col.id as i32,
-            pk_col.name.clone(),
-            pk_col.data_type,
-            true,
-            0,
-        ))
-    };
+    let pk_columns = pk_indices
+        .iter()
+        .map(|index| &schema.columns[*index])
+        .collect::<Vec<_>>();
+    let pk_index: Arc<dyn Index> =
+        if pk_columns.len() == 1 && pk_columns[0].data_type == DataType::Integer {
+            let pk_col = pk_columns[0];
+            Arc::new(PkIndex::new(
+                index_name.clone(),
+                schema.table_name.clone(),
+                pk_col.id as i32,
+                pk_col.name.clone(),
+            ))
+        } else if pk_columns.len() == 1 {
+            let pk_col = pk_columns[0];
+            Arc::new(BTreeIndex::new(
+                index_name.clone(),
+                schema.table_name.clone(),
+                pk_col.id as i32,
+                pk_col.name.clone(),
+                pk_col.data_type,
+                true,
+                0,
+            ))
+        } else {
+            Arc::new(MultiColumnIndex::new(
+                index_name.clone(),
+                schema.table_name.clone(),
+                pk_columns
+                    .iter()
+                    .map(|column| column.name.clone())
+                    .collect(),
+                pk_columns.iter().map(|column| column.id as i32).collect(),
+                pk_columns.iter().map(|column| column.data_type).collect(),
+                true,
+                0,
+            ))
+        };
     version_store.add_index(index_name, pk_index)
 }
 

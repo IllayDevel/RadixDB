@@ -241,9 +241,14 @@ fn render_data_type(data_type: &DataTypeDescriptor) -> Result<String> {
         }
         DataTypeDescriptor::Integer => "INTEGER".to_string(),
         DataTypeDescriptor::Float => "FLOAT".to_string(),
-        DataTypeDescriptor::Text => "TEXT".to_string(),
+        DataTypeDescriptor::DoublePrecision => "DOUBLE PRECISION".to_string(),
+        DataTypeDescriptor::Text { max_chars } => max_chars
+            .map(|max_chars| format!("TEXT({max_chars})"))
+            .unwrap_or_else(|| "TEXT".to_string()),
         DataTypeDescriptor::Boolean => "BOOLEAN".to_string(),
-        DataTypeDescriptor::Timestamp => "TIMESTAMP".to_string(),
+        DataTypeDescriptor::Timestamp => "TIMESTAMPTZ".to_string(),
+        DataTypeDescriptor::CivilTimestamp => "TIMESTAMP".to_string(),
+        DataTypeDescriptor::Time => "TIME".to_string(),
         DataTypeDescriptor::Date => "DATE".to_string(),
         DataTypeDescriptor::Json => "JSON".to_string(),
         DataTypeDescriptor::Uuid => "UUID".to_string(),
@@ -642,7 +647,7 @@ fn render_value(value: &Value, column: &radixdb_orm::ColumnDescriptor) -> Result
         Value::Text(value) => quote_text(value),
         Value::Boolean(value) => if *value { "TRUE" } else { "FALSE" }.to_string(),
         Value::Timestamp(value) => {
-            format!("CAST({} AS TIMESTAMP)", quote_text(&value.to_rfc3339()))
+            format!("CAST({} AS TIMESTAMPTZ)", quote_text(&value.to_rfc3339()))
         }
         Value::Extension(_) => match value.data_type() {
             DataType::Json => format!(
@@ -1552,13 +1557,13 @@ mod tests {
         let source = Database::open("memory://sql_dump_source").unwrap();
         source
             .execute(
-                "CREATE TABLE parent (id UUID PRIMARY KEY, label TEXT UNIQUE, payload BYTES, amount DECIMAL(12,3), happened TIMESTAMP, day DATE, metadata JSON, embedding VECTOR(2))",
+                "CREATE TABLE parent (id UUID PRIMARY KEY, label TEXT(64) UNIQUE, payload BYTES, amount DECIMAL(12,3), happened TIMESTAMPTZ, day DATE, metadata JSON, embedding VECTOR(2))",
                 (),
             )
             .unwrap();
         source
             .execute(
-                "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id UUID, active BOOLEAN, score FLOAT, CHECK (score >= 0))",
+                "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id UUID, active BOOLEAN, score FLOAT, measurement DOUBLE PRECISION, CHECK (score >= 0))",
                 (),
             )
             .unwrap();
@@ -1588,13 +1593,13 @@ mod tests {
             .unwrap();
         source
             .execute(
-                "INSERT INTO parent VALUES (CAST('018c0e27-aa31-7000-8000-112233445566' AS UUID), 'O''Reilly\nline', FROM_HEX('00ff7f'), CAST('12.340' AS DECIMAL), CAST('2026-08-27T12:34:56.123456789Z' AS TIMESTAMP), CAST('2026-08-27' AS DATE), CAST('{\"k\":1}' AS JSON), CAST('[1.25,-2.5]' AS VECTOR(2)))",
+                "INSERT INTO parent VALUES (CAST('018c0e27-aa31-7000-8000-112233445566' AS UUID), 'O''Reilly\nline', FROM_HEX('00ff7f'), CAST('12.340' AS DECIMAL), CAST('2026-08-27T12:34:56.123456789Z' AS TIMESTAMPTZ), CAST('2026-08-27' AS DATE), CAST('{\"k\":1}' AS JSON), CAST('[1.25,-2.5]' AS VECTOR(2)))",
                 (),
             )
             .unwrap();
         source
             .execute(
-                "INSERT INTO child VALUES (7, CAST('018c0e27-aa31-7000-8000-112233445566' AS UUID), TRUE, CAST('-0.0' AS FLOAT))",
+                "INSERT INTO child VALUES (7, CAST('018c0e27-aa31-7000-8000-112233445566' AS UUID), TRUE, CAST('-0.0' AS FLOAT), CAST('1.25' AS DOUBLE PRECISION))",
                 (),
             )
             .unwrap();
@@ -1675,6 +1680,11 @@ mod tests {
             "CREATE INDEX \"child_parent_active_idx\" ON \"child\" (\"parent_id\", \"active\");"
         ));
         assert!(!rendered.contains("USING MULTICOLUMN"));
+        assert!(
+            rendered.contains("\"measurement\" DOUBLE PRECISION"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("\"label\" TEXT(64)"), "{rendered}");
         assert_eq!(first_summary.sha256, second_summary.sha256);
         assert_eq!(first_summary.tables, 6);
         assert_eq!(first_summary.rows, 4102);
@@ -1708,6 +1718,10 @@ mod tests {
         assert_eq!(bytes.as_bytes_value(), Some(&[0x00, 0xff, 0x7f][..]));
         let score: f64 = target.query_one("SELECT score FROM child", ()).unwrap();
         assert_eq!(score.to_bits(), (-0.0_f64).to_bits());
+        let measurement: f64 = target
+            .query_one("SELECT measurement FROM child", ())
+            .unwrap();
+        assert_eq!(measurement, 1.25);
         let navigation_label: String = target
             .query_one("SELECT c.parent_id.label FROM child c WHERE c.id = 7", ())
             .unwrap();

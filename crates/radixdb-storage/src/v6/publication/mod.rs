@@ -51,3 +51,4 @@ pub use rebuild::{
     stage_index_replacement, write_index_replacement, IndexReplacementBuildRequest,
     StagedIndexReplacement, WrittenIndexReplacement,
 };
+pub(crate) use resources::{planned_row_group_count, RowGroupPlanner};

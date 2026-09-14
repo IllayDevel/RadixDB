@@ -1,6 +1,6 @@
 ---
 title: Управление доступом
-description: Principals, roles, ownership и object или column privileges в RadixDB 1.2.
+description: Principals, roles, ownership и object или column privileges в RadixDB 1.2.4.
 ---
 
 Authorization RadixDB основана на catalog и deny-by-default. Каждый
@@ -120,7 +120,7 @@ grant option. Grantor может отозвать только собствен�
 
 ## Отсутствующие policy-возможности
 
-RadixDB 1.2 не реализует row-level security и `CREATE POLICY`. Также нет grants
+RadixDB 1.2.4 не реализует row-level security и `CREATE POLICY`. Также нет grants
 для `PUBLIC`, default privileges, explicit deny, `SET ROLE` и public SQL-команды
 для просмотра effective grants. Реализуйте row predicates в проверенных views
 или application queries, но не называйте это RLS.

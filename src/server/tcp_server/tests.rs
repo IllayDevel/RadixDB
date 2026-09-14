@@ -924,6 +924,124 @@ fn r12_batch_a_tcp_set_isolation_is_connection_local() {
 }
 
 #[test]
+fn session_time_zone_is_connection_local_and_fail_closed() {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let config = test_config(temp.path().join("data"));
+    let server = bind_test_server(&config);
+    let address = server.local_addr().expect("local addr");
+    let shutdown = AtomicBool::new(false);
+
+    thread::scope(|scope| {
+        let server_worker = scope.spawn(|| server.run_until(&shutdown));
+        let assertions = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut barnaul = connect_and_select(address, "session_time_zone");
+            let mut utc = connect_and_select(address, "session_time_zone");
+
+            assert_eq!(
+                fetch_single_value(&mut barnaul, "SHOW TIME ZONE"),
+                WireValue::String("UTC".into())
+            );
+            assert_command(
+                barnaul
+                    .execute("SET TIME ZONE 'Asia/Barnaul'")
+                    .expect("set named zone"),
+            );
+            assert_eq!(
+                fetch_single_value(&mut barnaul, "SHOW TIME ZONE"),
+                WireValue::String("Asia/Barnaul".into())
+            );
+            assert_eq!(
+                fetch_single_value(&mut utc, "SHOW TIME ZONE"),
+                WireValue::String("UTC".into()),
+                "time zone leaked into a neighbouring connection"
+            );
+            assert_command(
+                barnaul
+                    .execute(
+                        "CREATE TABLE zone_values (id INTEGER PRIMARY KEY, instant TIMESTAMPTZ)",
+                    )
+                    .expect("create timezone write fixture"),
+            );
+            let mut parameters = BTreeMap::new();
+            parameters.insert(
+                "instant".to_owned(),
+                WireValue::String("2026-09-11 12:30:00".into()),
+            );
+            assert_command(
+                barnaul
+                    .execute_with_parameters(
+                        "INSERT INTO zone_values VALUES (1, :instant)",
+                        parameters,
+                    )
+                    .expect("insert session-local timestamp parameter"),
+            );
+            let expected_barnaul_instant = WireValue::TimestampNanos {
+                nanos_since_unix_epoch_utc: chrono::DateTime::parse_from_rfc3339(
+                    "2026-09-11T05:30:00Z",
+                )
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap(),
+            };
+            assert_eq!(
+                fetch_single_value(&mut barnaul, "SELECT instant FROM zone_values WHERE id = 1"),
+                expected_barnaul_instant,
+                "write-boundary coercion ignored the session time zone"
+            );
+            let barnaul_instant =
+                fetch_single_value(&mut barnaul, "SELECT TIMESTAMPTZ '2026-09-11 12:30:00'");
+            let utc_instant =
+                fetch_single_value(&mut utc, "SELECT TIMESTAMPTZ '2026-09-11 12:30:00'");
+            assert_eq!(barnaul_instant, expected_barnaul_instant);
+            assert_eq!(
+                utc_instant,
+                WireValue::TimestampNanos {
+                    nanos_since_unix_epoch_utc: chrono::DateTime::parse_from_rfc3339(
+                        "2026-09-11T12:30:00Z"
+                    )
+                    .unwrap()
+                    .timestamp_nanos_opt()
+                    .unwrap(),
+                }
+            );
+            assert_eq!(
+                fetch_single_value(
+                    &mut barnaul,
+                    "SELECT CAST(TIMESTAMPTZ '2026-09-11 12:30:00+03:00' AS TEXT)",
+                ),
+                WireValue::String("2026-09-11T16:30:00+07:00".into()),
+                "explicit input offset did not win before session-zone rendering"
+            );
+
+            assert!(barnaul.execute("SET TIME ZONE 'Not/AZone'").is_err());
+            assert_eq!(
+                fetch_single_value(&mut barnaul, "SHOW TIME ZONE"),
+                WireValue::String("Asia/Barnaul".into()),
+                "invalid SET mutated connection state"
+            );
+            assert!(barnaul.prepare("SET TIME ZONE '+07:00'").is_err());
+
+            barnaul.begin().expect("begin transaction");
+            assert!(barnaul.execute("SET TIME ZONE '+07:00'").is_err());
+            barnaul.rollback().expect("rollback transaction");
+            assert_eq!(
+                fetch_single_value(&mut barnaul, "SHOW TIME ZONE"),
+                WireValue::String("Asia/Barnaul".into())
+            );
+
+            drop(utc);
+            drop(barnaul);
+        }));
+        shutdown.store(true, Ordering::Release);
+        let server_result = server_worker.join().expect("server thread");
+        if let Err(payload) = assertions {
+            std::panic::resume_unwind(payload);
+        }
+        server_result.expect("server shutdown");
+    });
+}
+
+#[test]
 fn r2_l05_c_shutdown_cancels_an_executing_tcp_statement_within_deadline() {
     use std::sync::mpsc;
     use std::time::Instant;
@@ -1650,7 +1768,7 @@ fn stock_server_scheduler_executes_persists_and_resumes_jobs_over_tcp() {
             assert_command(
                 client
                     .execute(
-                        "CREATE JOB once_job SCHEDULE AT TIMESTAMP '2020-01-01T00:00:00Z' \
+                        "CREATE JOB once_job SCHEDULE AT TIMESTAMPTZ '2020-01-01T00:00:00Z' \
                          RUN AS radix_system CALL bump_effect(1) ENABLE;",
                     )
                     .expect("create one-time job"),

@@ -3,7 +3,7 @@ title: Внутреннее устройство хранения
 description: Hot MVCC, immutable V6 artifacts, WAL, publication generations и recovery.
 ---
 
-RadixDB 1.2 сочетает изменяемое MVCC-состояние текущих transactions с immutable
+RadixDB 1.2.4 сочетает изменяемое MVCC-состояние текущих transactions с immutable
 V6 artifacts холодных committed data. Глава объясняет lifecycle и failure
 boundaries. Точные binary fields, checksums, limits и crash outcomes остаются
 определяются versioned codecs, format constants и исполняемыми recovery tests

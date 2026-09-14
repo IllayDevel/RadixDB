@@ -497,6 +497,14 @@ fn typed_value_to_core(value: &TypedValue) -> OrmResult<Value> {
             })?;
             Value::timestamp(timestamp.with_timezone(&Utc))
         }
+        TypedValue::CivilTimestamp(value) => Value::civil_timestamp(
+            radixdb_core::value::parse_civil_timestamp(value)
+                .map_err(|error| OrmError::InvalidValue(error.to_string()))?,
+        )?,
+        TypedValue::Time(value) => Value::time(
+            radixdb_core::value::parse_time(value)
+                .map_err(|error| OrmError::InvalidValue(error.to_string()))?,
+        ),
         TypedValue::Date(value) => {
             let date = NaiveDate::parse_from_str(value, "%Y-%m-%d")
                 .map_err(|error| OrmError::InvalidValue(format!("invalid ISO date: {error}")))?;
@@ -536,10 +544,12 @@ fn descriptor_data_type(data_type: &DataTypeDescriptor) -> DataType {
     match data_type {
         DataTypeDescriptor::Null => DataType::Null,
         DataTypeDescriptor::Integer => DataType::Integer,
-        DataTypeDescriptor::Float => DataType::Float,
-        DataTypeDescriptor::Text => DataType::Text,
+        DataTypeDescriptor::Float | DataTypeDescriptor::DoublePrecision => DataType::Float,
+        DataTypeDescriptor::Text { .. } => DataType::Text,
         DataTypeDescriptor::Boolean => DataType::Boolean,
         DataTypeDescriptor::Timestamp => DataType::Timestamp,
+        DataTypeDescriptor::CivilTimestamp => DataType::CivilTimestamp,
+        DataTypeDescriptor::Time => DataType::Time,
         DataTypeDescriptor::Date => DataType::Date,
         DataTypeDescriptor::Json => DataType::Json,
         DataTypeDescriptor::Uuid => DataType::Uuid,
@@ -812,6 +822,24 @@ fn core_value_to_typed(value: &Value, declared: &DataTypeDescriptor) -> OrmResul
                         .to_string(),
                 )
             }
+            DataTypeDescriptor::CivilTimestamp => TypedValue::CivilTimestamp(
+                value
+                    .as_civil_timestamp()
+                    .ok_or_else(|| {
+                        OrmError::InvalidValue("invalid TIMESTAMP result payload".to_string())
+                    })?
+                    .format("%Y-%m-%d %H:%M:%S%.f")
+                    .to_string(),
+            ),
+            DataTypeDescriptor::Time => TypedValue::Time(
+                value
+                    .as_time()
+                    .ok_or_else(|| {
+                        OrmError::InvalidValue("invalid TIME result payload".to_string())
+                    })?
+                    .format("%H:%M:%S%.f")
+                    .to_string(),
+            ),
             DataTypeDescriptor::Bytes => {
                 TypedValue::Bytes(base64::engine::general_purpose::STANDARD.encode(
                     value.as_bytes_value().ok_or_else(|| {

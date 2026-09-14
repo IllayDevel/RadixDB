@@ -9,6 +9,7 @@ pub const PRIVILEGE_INSERT: u64 = 1 << 3;
 pub const PRIVILEGE_UPDATE: u64 = 1 << 4;
 pub const PRIVILEGE_DELETE: u64 = 1 << 5;
 pub const PRIVILEGE_EXECUTE: u64 = 1 << 6;
+pub const PRIVILEGE_DESCRIBE: u64 = 1 << 8;
 pub const ALL_OBJECT_PRIVILEGES: u64 = PRIVILEGE_CONNECT
     | PRIVILEGE_USAGE
     | PRIVILEGE_CREATE
@@ -16,8 +17,10 @@ pub const ALL_OBJECT_PRIVILEGES: u64 = PRIVILEGE_CONNECT
     | PRIVILEGE_INSERT
     | PRIVILEGE_UPDATE
     | PRIVILEGE_DELETE
-    | PRIVILEGE_EXECUTE;
-const LEGACY_OBJECT_PRIVILEGES: u64 = ALL_OBJECT_PRIVILEGES & !PRIVILEGE_CREATE;
+    | PRIVILEGE_EXECUTE
+    | PRIVILEGE_DESCRIBE;
+const LEGACY_OBJECT_PRIVILEGES: u64 =
+    ALL_OBJECT_PRIVILEGES & !(PRIVILEGE_CREATE | PRIVILEGE_DESCRIBE);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrincipalPayload {
@@ -346,7 +349,7 @@ impl AclEntryPayload {
                 {
                     return Err(CatalogError::InvalidCatalogObject {
                         id: "acl-payload".to_owned(),
-                        detail: "payload version 1 cannot encode CREATE or column grant options",
+                        detail: "payload version 1 cannot encode CREATE, DESCRIBE or column grant options",
                     });
                 }
                 Self::object_privileges_with_column_options(
@@ -418,6 +421,12 @@ mod tests {
             super::super::PAYLOAD_VERSION,
             0,
             AclEntryPayload::object_privileges(id(1), PRIVILEGE_CREATE, 0, vec![]).unwrap(),
+        )
+        .is_err());
+        assert!(AclEntryPayload::from_fields(
+            super::super::PAYLOAD_VERSION,
+            0,
+            AclEntryPayload::object_privileges(id(1), PRIVILEGE_DESCRIBE, 0, vec![]).unwrap(),
         )
         .is_err());
         assert!(AclEntryPayload::from_fields(

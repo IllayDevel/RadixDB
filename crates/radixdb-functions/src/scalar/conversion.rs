@@ -75,7 +75,11 @@ impl ScalarFunction for CastFunction {
                 "DECIMAL" | "NUMERIC" => Value::Null(DataType::Decimal),
                 "STRING" | "TEXT" | "VARCHAR" | "CHAR" => Value::Null(DataType::Text),
                 "BOOLEAN" | "BOOL" => Value::Null(DataType::Boolean),
-                "TIMESTAMP" | "DATETIME" | "TIME" => Value::Null(DataType::Timestamp),
+                "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => Value::Null(DataType::Timestamp),
+                "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" | "DATETIME" => {
+                    Value::Null(DataType::CivilTimestamp)
+                }
+                "TIME" | "TIME WITHOUT TIME ZONE" => Value::Null(DataType::Time),
                 "DATE" => Value::Null(DataType::Date),
                 "JSON" => Value::Null(DataType::Json),
                 "BYTES" | "BLOB" | "BINARY" | "VARBINARY" => Value::Null(DataType::Bytes),
@@ -90,7 +94,11 @@ impl ScalarFunction for CastFunction {
             "DECIMAL" | "NUMERIC" => Ok(value.coerce_to_type(DataType::Decimal)),
             "STRING" | "TEXT" | "VARCHAR" | "CHAR" => cast_to_string(value),
             "BOOLEAN" | "BOOL" => cast_to_boolean(value),
-            "TIMESTAMP" | "DATETIME" | "TIME" => cast_to_timestamp(value),
+            "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => cast_to_timestamp(value),
+            "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" | "DATETIME" => {
+                value.try_coerce_to_type(DataType::CivilTimestamp)
+            }
+            "TIME" | "TIME WITHOUT TIME ZONE" => value.try_coerce_to_type(DataType::Time),
             "DATE" => Ok(value.coerce_to_type(DataType::Date)),
             "JSON" => cast_to_json(value),
             "BYTES" | "BLOB" | "BINARY" | "VARBINARY" => Ok(value.coerce_to_type(DataType::Bytes)),
@@ -161,7 +169,7 @@ fn cast_to_boolean(value: &Value) -> Result<Value> {
     }
 }
 
-/// Cast a value to TIMESTAMP
+/// Cast a value to TIMESTAMP WITH TIME ZONE.
 fn cast_to_timestamp(value: &Value) -> Result<Value> {
     match value {
         Value::Timestamp(t) => Ok(Value::Timestamp(*t)),
@@ -170,7 +178,7 @@ fn cast_to_timestamp(value: &Value) -> Result<Value> {
             match radixdb_core::parse_timestamp(s) {
                 Ok(t) => Ok(Value::Timestamp(t)),
                 Err(_) => Err(Error::invalid_argument(format!(
-                    "Cannot parse '{}' as TIMESTAMP",
+                    "Cannot parse '{}' as TIMESTAMPTZ",
                     s
                 ))),
             }
@@ -187,7 +195,7 @@ fn cast_to_timestamp(value: &Value) -> Result<Value> {
             }
         }
         _ => Err(Error::invalid_argument(format!(
-            "Cannot convert {:?} to TIMESTAMP",
+            "Cannot convert {:?} to TIMESTAMPTZ",
             value.data_type()
         ))),
     }

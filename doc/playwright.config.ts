@@ -6,7 +6,7 @@ export default defineConfig({
   use: { baseURL: 'http://127.0.0.1:4326', screenshot: 'only-on-failure' },
   webServer: {
     command: 'node scripts/search-fixture.mjs && node scripts/serve-build.mjs',
-    url: 'http://127.0.0.1:4326/manual/1.2/ru/',
+    url: 'http://127.0.0.1:4326/manual/1.2.4/ru/',
     reuseExistingServer: false,
   },
   projects: [

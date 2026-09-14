@@ -4065,25 +4065,20 @@ fn test_bug_111_negative_offset() {
 }
 
 // =============================================================================
-// Bug #112: TEXT PRIMARY KEY silently fails at CREATE, errors at INSERT
-// Description: CREATE TABLE should error for non-INTEGER PRIMARY KEY
+// Bug #112: TEXT PRIMARY KEY must have a complete enforcement owner
 // =============================================================================
 #[test]
-fn test_bug_112_text_primary_key() {
+fn test_bug_112_text_primary_key_is_enforced() {
     let db = setup_db("bug112");
 
-    // TEXT PRIMARY KEY should fail at CREATE TABLE time
-    let result = db.execute("CREATE TABLE t112 (id TEXT PRIMARY KEY, val INTEGER)", ());
+    db.execute("CREATE TABLE t112 (id TEXT PRIMARY KEY, val INTEGER)", ())
+        .expect("TEXT PRIMARY KEY should be admitted");
+    db.execute("INSERT INTO t112 VALUES ('same', 1)", ())
+        .expect("first TEXT key should be admitted");
     assert!(
-        result.is_err(),
-        "TEXT PRIMARY KEY should fail at CREATE TABLE time"
-    );
-
-    let err_msg = result.unwrap_err().to_string();
-    assert!(
-        err_msg.contains("INTEGER") || err_msg.contains("PRIMARY KEY"),
-        "Error should mention PRIMARY KEY must be INTEGER: {}",
-        err_msg
+        db.execute("INSERT INTO t112 VALUES ('same', 2)", ())
+            .is_err(),
+        "duplicate TEXT PRIMARY KEY should be rejected"
     );
 }
 

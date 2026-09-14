@@ -134,6 +134,22 @@ impl FromValue for chrono::DateTime<chrono::Utc> {
     }
 }
 
+impl FromValue for chrono::NaiveDateTime {
+    fn from_value(value: &Value) -> Result<Self> {
+        value
+            .as_civil_timestamp()
+            .ok_or_else(|| Error::type_conversion(format!("{value:?}"), "Timestamp"))
+    }
+}
+
+impl FromValue for chrono::NaiveTime {
+    fn from_value(value: &Value) -> Result<Self> {
+        value
+            .as_time()
+            .ok_or_else(|| Error::type_conversion(format!("{value:?}"), "Time"))
+    }
+}
+
 impl FromValue for chrono::NaiveDate {
     fn from_value(value: &Value) -> Result<Self> {
         let days = value

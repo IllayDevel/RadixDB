@@ -173,7 +173,7 @@ fn candidate_cost(
                 cost = cost.saturating_add(1);
             }
             Some(LogicalTypeRef::Builtin(DataType::Date))
-                if declared.data_type().logical_type() == DataType::Timestamp =>
+                if declared.data_type().logical_type() == DataType::CivilTimestamp =>
             {
                 cost = cost.saturating_add(1);
             }

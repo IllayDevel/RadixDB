@@ -41,6 +41,7 @@ mod evaluator_bridge;
 mod execution_context;
 mod ops;
 mod program;
+mod temporal;
 mod vm;
 
 pub use compiler::{

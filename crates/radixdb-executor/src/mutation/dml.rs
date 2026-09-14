@@ -471,7 +471,7 @@ pub trait DmlExecutorExt: MutationHost {
                 // Fill in values from SELECT using pre-computed indices with type coercion
                 for (i, value) in select_row.iter().enumerate() {
                     // Coerce value to target column type
-                    let coerced = value.coerce_to_type(column_types[i]);
+                    let coerced = ctx.try_coerce_value_to_type(value, column_types[i])?;
                     // Validate coercion didn't silently fail
                     validate_coercion(
                         value,
@@ -800,7 +800,7 @@ pub trait DmlExecutorExt: MutationHost {
                         vm.execute_cow(&program, &base_exec_ctx)?
                     };
                     // Coerce to target type
-                    let coerced = value.coerce_to_type(column_types[i]);
+                    let coerced = ctx.try_coerce_value_to_type(&value, column_types[i])?;
                     // Validate coercion didn't silently fail
                     validate_coercion(
                         &value,
@@ -993,6 +993,11 @@ pub trait DmlExecutorExt: MutationHost {
             }
         } else {
             // Fast path: normal INSERT without clones
+            let can_stage_batch = triggers.is_none()
+                && fk_schema.is_none()
+                && !needs_inserted_row
+                && auto_increment_pk_idx.is_none();
+            let mut staged_rows = can_stage_batch.then(|| Vec::with_capacity(stmt.values.len()));
             for value_row in &stmt.values {
                 if value_row.len() != column_indices.len() {
                     return Err(Error::InvalidArgument(format!(
@@ -1030,7 +1035,7 @@ pub trait DmlExecutorExt: MutationHost {
                         vm.execute_cow(&program, &base_exec_ctx)?
                     };
                     // Coerce to target type
-                    let coerced = value.coerce_to_type(column_types[i]);
+                    let coerced = ctx.try_coerce_value_to_type(&value, column_types[i])?;
                     // Validate coercion didn't silently fail
                     validate_coercion(
                         &value,
@@ -1078,6 +1083,12 @@ pub trait DmlExecutorExt: MutationHost {
                     )?;
                 }
 
+                if let Some(rows) = staged_rows.as_mut() {
+                    rows.push(row);
+                    rows_affected += 1;
+                    continue;
+                }
+
                 let inserted_row = insert_row_for_command_result(
                     &mut *table,
                     row,
@@ -1093,6 +1104,9 @@ pub trait DmlExecutorExt: MutationHost {
                     ctx,
                 )?;
                 rows_affected += 1;
+            }
+            if let Some(rows) = staged_rows {
+                table.insert_batch(rows)?;
             }
         }
 
@@ -1420,7 +1434,8 @@ pub trait DmlExecutorExt: MutationHost {
                     if let Some(value_pos) = col_to_value_pos[col_idx] {
                         // Column in insert list - use value from SELECT row
                         let value = &select_row[value_pos];
-                        let coerced = value.coerce_to_type(column_types[value_pos]);
+                        let coerced =
+                            ctx.try_coerce_value_to_type(value, column_types[value_pos])?;
                         validate_coercion(
                             value,
                             &coerced,
@@ -1511,7 +1526,7 @@ pub trait DmlExecutorExt: MutationHost {
                             };
 
                             let target_type = column_types[value_pos];
-                            let coerced = value.coerce_to_type(target_type);
+                            let coerced = ctx.try_coerce_value_to_type(&value, target_type)?;
                             validate_coercion(
                                 &value,
                                 &coerced,
@@ -2102,7 +2117,7 @@ pub trait DmlExecutorExt: MutationHost {
                     };
 
                     if let Some(new_value) = evaluated {
-                        let coerced = new_value.coerce_to_type(*col_type);
+                        let coerced = ctx.try_coerce_value_to_type(&new_value, *col_type)?;
                         validate_coercion(
                             &new_value,
                             &coerced,
@@ -2273,7 +2288,7 @@ pub trait DmlExecutorExt: MutationHost {
                     let mut updates = Vec::with_capacity(compiled_updates.len());
                     for (idx, col_name, col_type, vec_dims, program) in &compiled_updates {
                         let v = vm.execute_cow(program, &exec_ctx)?;
-                        let coerced = v.try_coerce_to_type(*col_type)?;
+                        let coerced = ctx.try_coerce_value_to_type(&v, *col_type)?;
                         validate_coercion(&v, &coerced, col_name, *col_type, *vec_dims)?;
                         updates.push((*idx, coerced));
                     }

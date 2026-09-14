@@ -77,3 +77,42 @@ fn r4_l05_messenger_contracts_alter_table_constraint_families_are_atomic_and_enf
 
     Ok(())
 }
+
+#[test]
+fn qualified_alter_table_add_constraint_matches_qualified_create_index() -> Result<()> {
+    let db = Database::open("memory://qualified-alter-add-constraint")?;
+    db.execute("CREATE SCHEMA application", ())?;
+    db.execute(
+        "CREATE TABLE application.parents (id INTEGER PRIMARY KEY)",
+        (),
+    )?;
+    db.execute(
+        "CREATE TABLE application.children (id INTEGER PRIMARY KEY, parent_id INTEGER, code TEXT)",
+        (),
+    )?;
+    db.execute("INSERT INTO application.parents VALUES (1)", ())?;
+    db.execute("INSERT INTO application.children VALUES (1, 1, 'one')", ())?;
+    db.execute(
+        "ALTER TABLE application.children ADD CONSTRAINT UNIQUE(code)",
+        (),
+    )?;
+    db.execute(
+        "ALTER TABLE application.children ADD CONSTRAINT FOREIGN KEY(parent_id) REFERENCES application.parents(id) ON DELETE NO ACTION ON UPDATE NO ACTION",
+        (),
+    )?;
+    db.execute(
+        "CREATE INDEX application_children_parent_idx ON application.children(parent_id) USING BTREE",
+        (),
+    )?;
+
+    assert!(db
+        .execute("INSERT INTO application.children VALUES (2, 1, 'one')", (),)
+        .is_err());
+    assert!(db
+        .execute(
+            "INSERT INTO application.children VALUES (2, 999, 'two')",
+            (),
+        )
+        .is_err());
+    Ok(())
+}

@@ -590,12 +590,12 @@ pub struct VolumeBuilder {
 
 #[derive(Clone, Copy)]
 enum StorageKind {
-    Int64(usize),           // index into int_cols
-    Float64(usize),         // index into float_cols
-    Timestamp(usize),       // index into ts_cols
-    Boolean(usize),         // index into bool_cols
-    Dictionary(usize),      // index into dict_cols
-    Bytes(usize, DataType), // index into bytes_cols + ext type
+    Int64(usize),               // index into int_cols
+    Float64(usize),             // index into float_cols
+    Timestamp(usize, DataType), // index into ts_cols + logical temporal type
+    Boolean(usize),             // index into bool_cols
+    Dictionary(usize),          // index into dict_cols
+    Bytes(usize, DataType),     // index into bytes_cols + ext type
 }
 
 impl VolumeBuilder {
@@ -628,10 +628,10 @@ impl VolumeBuilder {
                     last_values.push(None);
                     sorted.push(false); // floats: don't track sort
                 }
-                DataType::Timestamp => {
+                data_type @ (DataType::Timestamp | DataType::CivilTimestamp | DataType::Time) => {
                     let idx = ts_cols.len();
                     ts_cols.push(Vec::new());
-                    col_storage.push(StorageKind::Timestamp(idx));
+                    col_storage.push(StorageKind::Timestamp(idx, data_type));
                     last_values.push(None);
                     sorted.push(true);
                 }
@@ -755,7 +755,7 @@ impl VolumeBuilder {
                 match self.col_storage[col_idx] {
                     StorageKind::Int64(idx) => self.int_cols[idx].push(0),
                     StorageKind::Float64(idx) => self.float_cols[idx].push(0.0),
-                    StorageKind::Timestamp(idx) => self.ts_cols[idx].push(0),
+                    StorageKind::Timestamp(idx, _) => self.ts_cols[idx].push(0),
                     StorageKind::Boolean(idx) => self.bool_cols[idx].push(false),
                     StorageKind::Dictionary(idx) => self.dict_cols[idx].push(0),
                     StorageKind::Bytes(idx, _) => {
@@ -808,13 +808,11 @@ impl VolumeBuilder {
                     };
                     self.float_cols[idx].push(v);
                 }
-                StorageKind::Timestamp(idx) => {
-                    let nanos = match value {
-                        Value::Timestamp(_) => value
-                            .artifact_timestamp_nanos()
-                            .expect("validated artifact-backed timestamp must fit nanoseconds"),
-                        _ => 0,
-                    };
+                StorageKind::Timestamp(idx, data_type) => {
+                    let nanos = value
+                        .artifact_temporal_nanos()
+                        .filter(|_| value.data_type() == data_type)
+                        .expect("validated temporal value must fit i64 nanoseconds");
                     if self.sorted[col_idx] {
                         if let Some(last) = self.last_values[col_idx] {
                             if nanos < last {
@@ -900,8 +898,9 @@ impl VolumeBuilder {
                     values: std::mem::take(&mut self.float_cols[idx]),
                     nulls,
                 },
-                StorageKind::Timestamp(idx) => ColumnData::TimestampNanos {
+                StorageKind::Timestamp(idx, data_type) => ColumnData::TimestampNanos {
                     values: std::mem::take(&mut self.ts_cols[idx]),
+                    data_type,
                     nulls,
                 },
                 StorageKind::Boolean(idx) => ColumnData::Boolean {

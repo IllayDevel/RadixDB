@@ -10,24 +10,24 @@ CREATE TABLE users (
     account_kind TEXT NOT NULL,
     avatar_attachment_id UUID,
     profile_revision INTEGER NOT NULL,
-    disabled_at TIMESTAMP,
-    deleted_at TIMESTAMP
+    disabled_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ
 );
 
 CREATE TABLE devices (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id),
-    last_seen_at TIMESTAMP NOT NULL,
-    revoked_at TIMESTAMP
+    last_seen_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ
 );
 
 CREATE TABLE sessions (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL REFERENCES users(id),
     device_id UUID NOT NULL REFERENCES devices(id),
-    expires_at TIMESTAMP NOT NULL,
-    absolute_expires_at TIMESTAMP,
-    revoked_at TIMESTAMP
+    expires_at TIMESTAMPTZ NOT NULL,
+    absolute_expires_at TIMESTAMPTZ,
+    revoked_at TIMESTAMPTZ
 );
 
 CREATE TABLE conversations (
@@ -44,9 +44,9 @@ CREATE TABLE conversation_members (
     history_cleared_through_seq INTEGER NOT NULL,
     last_delivered_seq INTEGER NOT NULL,
     last_read_seq INTEGER NOT NULL,
-    joined_at TIMESTAMP NOT NULL,
-    left_at TIMESTAMP,
-    muted_until TIMESTAMP,
+    joined_at TIMESTAMPTZ NOT NULL,
+    left_at TIMESTAMPTZ,
+    muted_until TIMESTAMPTZ,
     revision INTEGER NOT NULL
 );
 
@@ -64,10 +64,10 @@ CREATE TABLE outbox_jobs (
     aggregate_type TEXT NOT NULL,
     aggregate_id UUID,
     state TEXT NOT NULL,
-    available_at TIMESTAMP NOT NULL,
-    lease_until TIMESTAMP,
+    available_at TIMESTAMPTZ NOT NULL,
+    lease_until TIMESTAMPTZ,
     revision INTEGER NOT NULL,
-    created_at TIMESTAMP NOT NULL
+    created_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE sync_events (
@@ -107,7 +107,7 @@ CREATE TABLE push_tokens (
     endpoint TEXT NOT NULL,
     p256dh TEXT,
     auth_secret TEXT,
-    disabled_at TIMESTAMP,
+    disabled_at TIMESTAMPTZ,
     revision INTEGER NOT NULL
 );
 
@@ -130,8 +130,8 @@ CREATE TABLE call_sessions (
     conversation_id UUID REFERENCES conversations(id),
     creator_user_id UUID NOT NULL REFERENCES users(id),
     lifecycle_state TEXT NOT NULL,
-    ringing_deadline_at TIMESTAMP,
-    absolute_expires_at TIMESTAMP NOT NULL
+    ringing_deadline_at TIMESTAMPTZ,
+    absolute_expires_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE call_participants (
@@ -147,7 +147,7 @@ CREATE TABLE call_device_deliveries (
     user_id UUID NOT NULL REFERENCES users(id),
     device_id UUID NOT NULL REFERENCES devices(id),
     delivery_state TEXT NOT NULL,
-    updated_at TIMESTAMP NOT NULL
+    updated_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE stream_upstreams (
@@ -161,7 +161,7 @@ CREATE TABLE streams (
     upstream_id UUID NOT NULL REFERENCES stream_upstreams(id),
     state TEXT NOT NULL,
     notifications_enabled INTEGER NOT NULL,
-    deleted_at TIMESTAMP
+    deleted_at TIMESTAMPTZ
 );
 
 CREATE TABLE stream_publications (
@@ -169,8 +169,8 @@ CREATE TABLE stream_publications (
     upstream_id UUID NOT NULL REFERENCES stream_upstreams(id),
     sort_key INTEGER NOT NULL,
     text_content TEXT,
-    deleted_at TIMESTAMP,
-    expires_at TIMESTAMP NOT NULL
+    deleted_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ NOT NULL
 );
 
 CREATE TABLE stream_read_states (

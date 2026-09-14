@@ -3,7 +3,7 @@ title: Native Extensions
 description: Build typed Rust extensions with the safe SDK, generated ABI adapters and reproducible packages.
 ---
 
-The RadixDB 1.2 extension SDK lets an author write ordinary typed Rust while
+The RadixDB 1.2.4 extension SDK lets an author write ordinary typed Rust while
 procedural macros generate the C-compatible ABI boundary. Application source
 does not need raw pointers, numeric ABI tags, descriptor arrays or
 `extern "C"` functions.
@@ -145,7 +145,7 @@ unchanged for the lifetime of compatible persisted data.
 | `#[radixdb_planner_support]` | Target function/class, result bounds and recheck policy | Supplies bounded candidate ranges without granting optimizer or storage ownership |
 
 The exported `radixdb_aggregate`, `radixdb_window` and `radixdb_tvf` names are
-reserved and deliberately fail compilation in 1.2. Native aggregate, window
+reserved and deliberately fail compilation in 1.2.4. Native aggregate, window
 and table-valued extension functions are outside this authoring revision.
 
 ## External types and codecs
@@ -267,7 +267,7 @@ fn distance_batch(
 }
 ```
 
-The host publishes no partial batch after an error. The 1.2 scalar callback
+The host publishes no partial batch after an error. The 1.2.4 scalar callback
 shape does not expose `CallContext`, so scalar work must remain bounded by its
 declaration. Batch callbacks use `check_cancelled()` and may use
 `charge_work()` for additional budget accounting. Output must always remain
@@ -280,12 +280,12 @@ faults, undefined behavior or malicious code.
 
 ## Operators, operator classes and planner support
 
-An operator is metadata over an already declared native scalar. The 1.2 Rust
+An operator is metadata over an already declared native scalar. The 1.2.4 Rust
 macro declares binary operators with explicit left, right and result types.
 An operator class then binds a complete strategy set and a canonical key
 encoder to a core-owned B-tree, hash or bitmap index. B-tree requires `<`,
 `<=`, `=`, `>=` and `>`; hash and bitmap require `=`. External HNSW operator
-classes are not available in the 1.2 SDK.
+classes are not available in the 1.2.4 SDK.
 
 ```rust
 #[radixdb_operator(
@@ -387,7 +387,7 @@ describes official builds, compatibility comparison and artifact inspection;
 the [administration chapter](../../administration/extensions/) covers server
 installation and database binding.
 
-The 1.2 SDK does not generate text input/output callbacks for SQL literals and
+The 1.2.4 SDK does not generate text input/output callbacks for SQL literals and
 does not provide a generic high-level ORM representation for external values.
 Clients exchange canonical bytes with protocol 17 and should generate a
 plugin-aware adapter from `DESCRIBE DATABASE` metadata. Do not substitute raw

@@ -1042,6 +1042,36 @@
     }
 
     #[test]
+    fn validates_and_reads_session_time_zone_snapshot() {
+        let executor = create_test_executor();
+        executor
+            .execute("SET TIME ZONE 'Asia/Barnaul'")
+            .unwrap();
+        assert!(executor.execute("SET TIME ZONE 'Not/AZone'").is_err());
+
+        let context = ExecutionContextBuilder::new()
+            .session_var("timezone", Value::text("+07:00"))
+            .build();
+        let mut result = executor
+            .execute_with_context("SHOW TIME ZONE", &context)
+            .unwrap();
+        assert_eq!(result.columns(), &["TimeZone"]);
+        assert!(result.next());
+        assert_eq!(result.row().get(0), Some(&Value::text("+07:00")));
+        assert!(!result.next());
+
+        let mut cast = executor
+            .execute_with_context(
+                "SELECT CAST('2026-09-11 12:30:00' AS TIMESTAMPTZ)",
+                &context,
+            )
+            .unwrap();
+        assert!(cast.next());
+        let expected = radixdb_core::parse_timestamp("2026-09-11T05:30:00Z").unwrap();
+        assert_eq!(cast.row().get(0), Some(&Value::Timestamp(expected)));
+    }
+
+    #[test]
     fn derived_aggregate_fallback_preserves_prefetched_numeric_row() {
         let executor = create_test_executor();
         executor

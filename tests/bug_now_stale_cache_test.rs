@@ -103,7 +103,7 @@ fn test_now_in_where_not_cached() {
     let db = Database::open("memory://now_where_cache").unwrap();
 
     db.execute(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMP)",
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ)",
         (),
     )
     .unwrap();

@@ -5,10 +5,9 @@ import { parse } from 'smol-toml';
 
 const root = new URL('../', import.meta.url);
 export function validatePublication(publication, applicationVersion) {
-  assert(/^\d+\.\d+(?:\.\d+)?$/.test(publication.version), 'Invalid target version');
+  assert(/^\d+\.\d+\.\d+$/.test(publication.version), 'Invalid target version');
   assert(['development', 'release'].includes(publication.channel), 'Invalid publication channel');
-  const normalize = v => /^\d+\.\d+$/.test(v) ? `${v}.0` : v;
-  if (publication.channel === 'release') assert.equal(normalize(publication.version), normalize(applicationVersion), 'Release version mismatch');
+  assert.equal(publication.version, applicationVersion, 'Documentation version mismatch');
 }
 
 export function readPublication() {

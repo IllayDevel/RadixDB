@@ -105,7 +105,7 @@ pub(super) fn bind_expression_dependencies(
 
 pub(crate) fn catalog_type_name(catalog: &CatalogGeneration, data_type: CatalogDataType) -> String {
     data_type.type_object_id().map_or_else(
-        || data_type.logical_type().to_string(),
+        || super::binding_types::catalog_type_spelling(data_type),
         |id| {
             catalog
                 .object(id)

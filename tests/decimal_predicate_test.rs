@@ -192,3 +192,62 @@ fn decimal_predicates_are_exact_for_hot_cold_reopened_and_mixed_rows() {
         );
     }
 }
+
+#[test]
+fn decimal_arithmetic_and_rounding_preserve_exact_dml_values() {
+    let db = Database::open_in_memory().expect("open in-memory database");
+    db.execute(
+        "CREATE TABLE derived_values (
+            id INTEGER PRIMARY KEY,
+            gross DECIMAL(18, 3) NOT NULL,
+            tare DECIMAL(18, 3) NOT NULL,
+            net DECIMAL(18, 3) NOT NULL DEFAULT 0,
+            quantity DECIMAL(18, 3) NOT NULL,
+            unit_price DECIMAL(18, 2) NOT NULL,
+            amount DECIMAL(18, 2) NOT NULL DEFAULT 0
+         )",
+        (),
+    )
+    .expect("create derived-value table");
+    db.execute(
+        "INSERT INTO derived_values
+         (id, gross, tare, quantity, unit_price)
+         VALUES (1, 25.750, 8.250, 17.500, 123.45)",
+        (),
+    )
+    .expect("insert exact operands");
+
+    let arithmetic = db
+        .query(
+            "SELECT CAST(gross - tare AS TEXT),
+                    CAST(quantity * unit_price AS TEXT)
+             FROM derived_values WHERE id = 1",
+            (),
+        )
+        .expect("evaluate exact DECIMAL arithmetic")
+        .collect::<radixdb::Result<Vec<_>>>()
+        .expect("arithmetic row");
+    assert_eq!(arithmetic.len(), 1);
+    assert_eq!(arithmetic[0].get::<String>(0).unwrap(), "17.50");
+    assert_eq!(arithmetic[0].get::<String>(1).unwrap(), "2160.375");
+
+    db.execute(
+        "UPDATE derived_values
+         SET net = gross - tare,
+             amount = CAST(ROUND(quantity * unit_price, 2) AS DECIMAL)
+         WHERE id = 1",
+        (),
+    )
+    .expect("store database-owned derived values");
+    let stored = db
+        .query(
+            "SELECT CAST(net AS TEXT), CAST(amount AS TEXT)
+             FROM derived_values WHERE id = 1",
+            (),
+        )
+        .expect("read stored derived values")
+        .collect::<radixdb::Result<Vec<_>>>()
+        .expect("stored row");
+    assert_eq!(stored[0].get::<String>(0).unwrap(), "17.50");
+    assert_eq!(stored[0].get::<String>(1).unwrap(), "2160.38");
+}

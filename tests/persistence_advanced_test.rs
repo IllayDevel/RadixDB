@@ -34,7 +34,7 @@ fn test_update_persistence_with_snapshot() {
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL,
                 email TEXT,
-                created_at TIMESTAMP
+                created_at TIMESTAMPTZ
             )",
             (),
         )
@@ -1703,7 +1703,7 @@ fn test_consistent_checkpoint_behavior() {
             "CREATE TABLE consistency_test (
                 id INTEGER PRIMARY KEY,
                 counter INTEGER NOT NULL DEFAULT 0,
-                updated_at TIMESTAMP
+                updated_at TIMESTAMPTZ
             )",
             (),
         )

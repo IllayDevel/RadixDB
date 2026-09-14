@@ -555,6 +555,8 @@ pub(crate) const fn is_ordered_key_type(data_type: DataType) -> bool {
             | DataType::Text
             | DataType::Boolean
             | DataType::Timestamp
+            | DataType::CivilTimestamp
+            | DataType::Time
             | DataType::Uuid
             | DataType::Decimal
             | DataType::Date

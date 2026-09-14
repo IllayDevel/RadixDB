@@ -2,7 +2,7 @@ use rustc_hash::FxHashMap;
 
 use crate::context::StoredFunctionInvoker;
 use crate::operator::RowRef;
-use radixdb_core::{CompactArc, Row, Value};
+use radixdb_core::{CompactArc, Error, Result, Row, SessionTimeZone, Value};
 use radixdb_storage::DeferredRow;
 
 /// A read-only row view accepted by the expression VM.
@@ -172,5 +172,18 @@ impl<'a> ExecuteContext<'a> {
     pub fn with_outer_row(mut self, outer_row: &'a FxHashMap<CompactArc<str>, Value>) -> Self {
         self.outer_row = Some(outer_row);
         self
+    }
+
+    pub(super) fn session_time_zone(&self) -> Result<SessionTimeZone> {
+        match self
+            .named_params
+            .and_then(|params| params.get("CURRENT_TIME_ZONE"))
+        {
+            Some(Value::Text(value)) => SessionTimeZone::parse(value),
+            Some(_) => Err(Error::internal(
+                "CURRENT_TIME_ZONE has a non-text internal value",
+            )),
+            None => Ok(SessionTimeZone::default()),
+        }
     }
 }

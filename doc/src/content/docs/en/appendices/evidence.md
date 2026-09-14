@@ -1,6 +1,6 @@
 ---
 title: Evidence archive
-description: Accepted benchmark, resource-use and reliability evidence distributed with the RadixDB 1.2 manual.
+description: Accepted benchmark, resource-use and reliability evidence distributed with the RadixDB 1.2.4 manual.
 ---
 
 This archive contains the compact source reports behind the measured claims in
@@ -22,7 +22,7 @@ filesystem paths.
 | [Previous RadixDB 100M baseline](../../../evidence/performance/FINAL_100M_NVME_ACCEPTANCE_REPORT.md) | Three accepted NVMe runs used by the comparison |
 | [PostgreSQL 18.3 baseline](../../../evidence/performance/icp621-pg18-page-cache-matrix-100m-20260828.md) | Preserved PostgreSQL participant and cache-state matrix |
 | [RadixDB 1.1 release validation](../../../evidence/performance/RADIXDB_1_1_100M_VALIDATION.md) | Accepted query medians, checksums, access paths and peak RSS |
-| [RadixDB 1.2 100M validation](../../../evidence/performance/RADIXDB_1_2_100M_VALIDATION.md) | Current-source checksum, elapsed time, RSS and allocated size |
+| [RadixDB 1.2.4 100M validation](../../../evidence/performance/RADIXDB_1_2_100M_VALIDATION.md) | Current-source checksum, elapsed time, RSS and allocated size |
 
 ## Reliability
 

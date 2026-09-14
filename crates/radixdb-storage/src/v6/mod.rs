@@ -79,6 +79,7 @@ pub use index::{
     decode_hnsw_index_from_source, decode_index_artifact_layout, decode_ordered_index_page,
     encode_exact_index_pages, encode_hnsw_index_sections, encode_index_artifact,
     encode_ordered_index_pages, lookup_exact_index, lookup_exact_index_from_source,
+    lookup_unique_ordered_index_keys_from_source, lookup_unique_ordered_index_values_from_source,
     open_index_artifact_metadata, open_index_artifact_metadata_with_limits, read_index_page,
     read_index_page_from_source, read_index_section, read_index_section_from_source,
     scan_ordered_index, scan_ordered_index_from_source, visit_exact_index_or_scan,
@@ -129,6 +130,7 @@ pub use publication::{
     MAX_FANOUT_SPILL_BYTES, MAX_MERGE_FAN_IN, MAX_SORT_RUN_BYTES, MAX_SORT_RUN_DESCRIPTOR_SLOTS,
     MAX_SORT_RUN_FILES, MAX_SORT_RUN_RECORDS,
 };
+pub(crate) use publication::{planned_row_group_count, RowGroupPlanner};
 #[cfg(feature = "test-hooks")]
 pub use publication::{
     publication_diagnostics, reset_publication_diagnostics, PublicationDiagnostics,

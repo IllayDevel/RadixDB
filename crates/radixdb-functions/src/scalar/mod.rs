@@ -54,10 +54,10 @@ pub mod vector;
 
 pub use conversion::{CastFunction, CollateFunction};
 pub use datetime::{
-    CurrentDateFunction, CurrentTimeFunction, CurrentTimestampFunction, DateAddFunction,
-    DateDiffAliasFunction, DateDiffFunction, DateSubFunction, DateTruncFunction, DayFunction,
-    ExtractFunction, HourFunction, MinuteFunction, MonthFunction, SecondFunction,
-    TimeTruncFunction, ToCharFunction, VersionFunction, YearFunction,
+    CivilToTimestamptzFunction, CurrentDateFunction, CurrentTimeFunction, CurrentTimestampFunction,
+    DateAddFunction, DateDiffAliasFunction, DateDiffFunction, DateSubFunction, DateTruncFunction,
+    DayFunction, ExtractFunction, HourFunction, MinuteFunction, MonthFunction, SecondFunction,
+    TimeTruncFunction, TimestamptzToCivilFunction, ToCharFunction, VersionFunction, YearFunction,
 };
 pub use hash::{
     Crc32Function, Md5Function, Sha1Function, Sha256Function, Sha384Function, Sha512Function,

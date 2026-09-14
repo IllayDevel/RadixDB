@@ -5,7 +5,8 @@ use std::collections::BTreeMap;
 use chrono::{TimeZone, Utc};
 use radixdb_plugin_host::PluginRegistry;
 
-use crate::protocol::WireValue;
+use crate::api::ServerColumnData;
+use crate::protocol::{WireColumn, WireValue};
 use crate::{DataType, NamedParams, Value};
 
 pub(super) fn wire_parameters_to_named(
@@ -62,6 +63,14 @@ pub(super) fn wire_value_to_radixdb(
         } => Ok(Value::Timestamp(chrono::DateTime::from_timestamp_nanos(
             nanos_since_unix_epoch_utc,
         ))),
+        WireValue::CivilTimestampNanos {
+            nanos_since_civil_epoch,
+        } => Value::from_temporal_nanos(DataType::CivilTimestamp, nanos_since_civil_epoch)
+            .map_err(|error| error.to_string()),
+        WireValue::TimeNanos {
+            nanos_since_midnight,
+        } => Value::from_temporal_nanos(DataType::Time, nanos_since_midnight)
+            .map_err(|error| error.to_string()),
         WireValue::Json(value) => Value::try_json(value).map_err(|error| error.to_string()),
         WireValue::Vector(bytes) => {
             Value::try_vector_from_bytes(crate::common::CompactArc::from(bytes))
@@ -124,6 +133,18 @@ pub(super) fn radixdb_value_to_wire(value: &Value) -> Result<WireValue, String> 
                 days_since_unix_epoch,
             })
             .ok_or_else(|| "invalid DATE payload in RadixDB value".to_string()),
+        Value::Extension(_) if value.data_type() == DataType::CivilTimestamp => value
+            .artifact_temporal_nanos()
+            .map(|nanos_since_civil_epoch| WireValue::CivilTimestampNanos {
+                nanos_since_civil_epoch,
+            })
+            .ok_or_else(|| "invalid TIMESTAMP payload in RadixDB value".to_string()),
+        Value::Extension(_) if value.data_type() == DataType::Time => value
+            .artifact_temporal_nanos()
+            .map(|nanos_since_midnight| WireValue::TimeNanos {
+                nanos_since_midnight,
+            })
+            .ok_or_else(|| "invalid TIME payload in RadixDB value".to_string()),
         Value::Extension(_) if value.data_type() == DataType::Bytes => value
             .as_bytes_value()
             .map(|bytes| WireValue::Bytes(bytes.to_vec()))
@@ -140,6 +161,94 @@ pub(super) fn radixdb_value_to_wire(value: &Value) -> Result<WireValue, String> 
             "RadixDB value type {} is not supported by the binary protocol MVP",
             value.data_type()
         )),
+    }
+}
+
+/// Convert facade-owned typed columns directly into the public wire layout.
+pub(super) fn column_data_to_wire_column(column: ServerColumnData) -> Result<WireColumn, String> {
+    match column {
+        ServerColumnData::Int64 { values, nulls } => Ok(WireColumn::Int64 { values, nulls }),
+        ServerColumnData::Float64 { values, nulls } => Ok(WireColumn::Float64 { values, nulls }),
+        ServerColumnData::Boolean { values, nulls } => Ok(WireColumn::Boolean { values, nulls }),
+        ServerColumnData::TimestampNanos {
+            values,
+            data_type,
+            nulls,
+        } => match data_type {
+            DataType::Timestamp => Ok(WireColumn::TimestampNanos { values, nulls }),
+            DataType::CivilTimestamp => Ok(WireColumn::CivilTimestampNanos { values, nulls }),
+            DataType::Time => Ok(WireColumn::TimeNanos { values, nulls }),
+            other => Err(format!(
+                "temporal column batch has incompatible logical type {other}"
+            )),
+        },
+        ServerColumnData::DictionaryText {
+            ids,
+            dictionary,
+            nulls,
+        } => Ok(WireColumn::DictionaryText {
+            ids,
+            dictionary,
+            nulls,
+        }),
+        ServerColumnData::Bytes {
+            data,
+            offsets,
+            nulls,
+        } => Ok(WireColumn::Bytes {
+            data,
+            offsets,
+            nulls,
+        }),
+        ServerColumnData::JsonText {
+            data,
+            offsets,
+            nulls,
+        } => Ok(WireColumn::JsonText {
+            data,
+            offsets,
+            nulls,
+        }),
+        ServerColumnData::External {
+            data,
+            offsets,
+            type_ref,
+            nulls,
+        } => {
+            let mut wire_offsets = Vec::with_capacity(offsets.len() + 1);
+            let mut wire_data = Vec::with_capacity(data.len());
+            wire_offsets.push(0);
+            for (row, ((offset, length), is_null)) in offsets.into_iter().zip(&nulls).enumerate() {
+                if *is_null {
+                    if length != 0 {
+                        return Err(format!("NULL external storage row {row} owns a byte range"));
+                    }
+                } else {
+                    let start = usize::try_from(offset)
+                        .map_err(|_| "external storage offset exceeds usize".to_string())?;
+                    let length = usize::try_from(length)
+                        .map_err(|_| "external storage length exceeds usize".to_string())?;
+                    let end = start
+                        .checked_add(length)
+                        .ok_or_else(|| "external storage byte range overflows".to_string())?;
+                    let value = data
+                        .get(start..end)
+                        .ok_or_else(|| "external storage byte range exceeds payload".to_string())?;
+                    wire_data.extend_from_slice(value);
+                }
+                wire_offsets.push(
+                    u32::try_from(wire_data.len())
+                        .map_err(|_| "external storage offset exceeds u32".to_string())?,
+                );
+            }
+            Ok(WireColumn::External {
+                type_object_id: type_ref.type_object_id(),
+                codec_version: type_ref.codec_version(),
+                data: wire_data,
+                offsets: wire_offsets,
+                nulls,
+            })
+        }
     }
 }
 
@@ -162,9 +271,10 @@ pub(super) fn slice_external_bytes(
 pub(super) fn wire_column_len(column: &crate::protocol::WireColumn) -> usize {
     use crate::protocol::WireColumn;
     match column {
-        WireColumn::Int64 { values, .. } | WireColumn::TimestampNanos { values, .. } => {
-            values.len()
-        }
+        WireColumn::Int64 { values, .. }
+        | WireColumn::TimestampNanos { values, .. }
+        | WireColumn::CivilTimestampNanos { values, .. }
+        | WireColumn::TimeNanos { values, .. } => values.len(),
         WireColumn::Float64 { values, .. } => values.len(),
         WireColumn::Boolean { values, .. } => values.len(),
         WireColumn::DictionaryText { ids, .. } => ids.len(),
@@ -176,7 +286,10 @@ pub(super) fn wire_column_len(column: &crate::protocol::WireColumn) -> usize {
 pub(super) fn wire_column_retained_bytes(column: &crate::protocol::WireColumn) -> u64 {
     use crate::protocol::WireColumn;
     match column {
-        WireColumn::Int64 { values, nulls } | WireColumn::TimestampNanos { values, nulls } => {
+        WireColumn::Int64 { values, nulls }
+        | WireColumn::TimestampNanos { values, nulls }
+        | WireColumn::CivilTimestampNanos { values, nulls }
+        | WireColumn::TimeNanos { values, nulls } => {
             retained_vec_bytes(values).saturating_add(retained_vec_bytes(nulls))
         }
         WireColumn::Float64 { values, nulls } => {

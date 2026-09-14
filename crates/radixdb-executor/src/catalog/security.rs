@@ -7,7 +7,8 @@ use radixdb_catalog::{
     CatalogName, CatalogObject, CatalogPayload, ColumnPrivilegeSet, CredentialVerifier, EdgeKind,
     NamespacePayload, ObjectId, ObjectKind, ObjectPrecondition, PrincipalPayload, RolePayload,
     CREDENTIAL_SCHEME_ARGON2ID_PHC_V1, PRIVILEGE_CONNECT, PRIVILEGE_CREATE, PRIVILEGE_DELETE,
-    PRIVILEGE_EXECUTE, PRIVILEGE_INSERT, PRIVILEGE_SELECT, PRIVILEGE_UPDATE, PRIVILEGE_USAGE,
+    PRIVILEGE_DESCRIBE, PRIVILEGE_EXECUTE, PRIVILEGE_INSERT, PRIVILEGE_SELECT, PRIVILEGE_UPDATE,
+    PRIVILEGE_USAGE,
 };
 use radixdb_core::{Error, Result};
 use radixdb_sql::{
@@ -1062,6 +1063,7 @@ fn validate_privilege_target(privileges: &[PrivilegeSyntax], target: &CatalogObj
     for privilege in privileges {
         let valid = match privilege.kind {
             ObjectPrivilegeSyntax::Connect => target.id() == ObjectId::BOOTSTRAP_NAMESPACE,
+            ObjectPrivilegeSyntax::Describe => target.id() == ObjectId::BOOTSTRAP_NAMESPACE,
             ObjectPrivilegeSyntax::Usage => target.kind() == ObjectKind::Namespace,
             ObjectPrivilegeSyntax::Create => target.kind() == ObjectKind::Namespace,
             ObjectPrivilegeSyntax::Select => {
@@ -1923,6 +1925,7 @@ const fn privilege_bit(privilege: ObjectPrivilegeSyntax) -> u64 {
         ObjectPrivilegeSyntax::Update => PRIVILEGE_UPDATE,
         ObjectPrivilegeSyntax::Delete => PRIVILEGE_DELETE,
         ObjectPrivilegeSyntax::Execute => PRIVILEGE_EXECUTE,
+        ObjectPrivilegeSyntax::Describe => PRIVILEGE_DESCRIBE,
     }
 }
 

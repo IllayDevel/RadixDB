@@ -1528,14 +1528,11 @@ fn r4_l02_batch_c_ctas_fk_and_public_primary_key_contract() {
         .add("payload", DataType::Text)
         .build();
     create_catalog_test_table(&engine, uuid_schema).unwrap();
-    let invalid_composite = SchemaBuilder::new("invalid_composite")
+    let composite_schema = SchemaBuilder::new("composite_keys")
         .column("tenant", DataType::Text, false, true)
         .column("code", DataType::Integer, false, true)
         .build();
-    assert!(matches!(
-        create_catalog_test_table(&engine, invalid_composite),
-        Err(Error::NotSupported(_))
-    ));
+    create_catalog_test_table(&engine, composite_schema).unwrap();
 
     let mut insert = engine.begin_transaction().unwrap();
     insert
@@ -1554,6 +1551,11 @@ fn r4_l02_batch_c_ctas_fk_and_public_primary_key_contract() {
             Value::text("seven"),
         ]))
         .unwrap();
+    insert
+        .get_table("composite_keys")
+        .unwrap()
+        .insert(Row::from_values(vec![Value::text("tenant"), Value::Integer(7)]))
+        .unwrap();
     insert.commit().unwrap();
 
     for (table_name, row) in [
@@ -1564,6 +1566,10 @@ fn r4_l02_batch_c_ctas_fk_and_public_primary_key_contract() {
         (
             "uuid_keys",
             Row::from_values(vec![Value::uuid([7; 16]), Value::text("duplicate")]),
+        ),
+        (
+            "composite_keys",
+            Row::from_values(vec![Value::text("tenant"), Value::Integer(7)]),
         ),
     ] {
         let mut duplicate = engine.begin_transaction().unwrap();
@@ -1577,6 +1583,10 @@ fn r4_l02_batch_c_ctas_fk_and_public_primary_key_contract() {
 
     assert!(engine.list_table_indexes("text_keys").unwrap().is_empty());
     assert!(engine.list_table_indexes("uuid_keys").unwrap().is_empty());
+    assert!(engine
+        .list_table_indexes("composite_keys")
+        .unwrap()
+        .is_empty());
     engine.checkpoint_cycle_inner(true).unwrap();
     engine.close_engine().unwrap();
     drop(engine);
@@ -1585,8 +1595,14 @@ fn r4_l02_batch_c_ctas_fk_and_public_primary_key_contract() {
     reopened.open_engine().unwrap();
     assert!(reopened.list_table_indexes("text_keys").unwrap().is_empty());
     assert!(reopened.list_table_indexes("uuid_keys").unwrap().is_empty());
+    let composite_indexes = reopened.list_table_indexes("composite_keys").unwrap();
+    assert!(
+        composite_indexes.is_empty(),
+        "schema-derived composite PK index leaked into public indexes: {composite_indexes:?}"
+    );
     assert_eq!(collect_rows(&reopened, "text_keys").len(), 1);
     assert_eq!(collect_rows(&reopened, "uuid_keys").len(), 1);
+    assert_eq!(collect_rows(&reopened, "composite_keys").len(), 1);
     for (table_name, row) in [
         (
             "text_keys",
@@ -1595,6 +1611,10 @@ fn r4_l02_batch_c_ctas_fk_and_public_primary_key_contract() {
         (
             "uuid_keys",
             Row::from_values(vec![Value::uuid([7; 16]), Value::text("again")]),
+        ),
+        (
+            "composite_keys",
+            Row::from_values(vec![Value::text("tenant"), Value::Integer(7)]),
         ),
     ] {
         let mut duplicate = reopened.begin_transaction().unwrap();

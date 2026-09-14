@@ -14,11 +14,10 @@ const registry = parse(readFileSync(path.join(root, '_meta/chapters.toml'), 'utf
 const publication = parse(readFileSync(path.join(root, '_meta/publication.toml'), 'utf8'));
 const manifest = parse(readFileSync(path.join(repo, 'Cargo.toml'), 'utf8'));
 assert.equal(registry.target_version, publication.version);
-if (publication.channel === 'release') {
-  // Appending only a zero patch is allowed: a 1.2 documentation target matches 1.2.0.
-  const normalize = v => /^\d+\.\d+$/.test(v) ? `${v}.0` : v;
-  assert.equal(normalize(publication.version), normalize(manifest.workspace.package.version));
-}
+assert(/^\d+\.\d+\.\d+$/.test(publication.version),
+  `Documentation target must use MAJOR.MINOR.PATCH: ${publication.version}`);
+assert.equal(publication.version, manifest.workspace.package.version,
+  'Documentation target and application version differ');
 const ids = new Set();
 const declared = new Set();
 const orders = new Set();

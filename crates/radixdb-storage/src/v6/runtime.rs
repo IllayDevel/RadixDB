@@ -7,6 +7,7 @@ use radixdb_core::{Error, Result, Value};
 
 use super::{
     decode_runtime_row_id, encode_runtime_row_id, lookup_exact_index_from_source,
+    lookup_unique_ordered_index_keys_from_source, lookup_unique_ordered_index_values_from_source,
     open_data_artifact_metadata, open_data_artifact_metadata_with_limits,
     open_index_artifact_metadata, open_index_artifact_metadata_with_limits,
     read_data_row_ids_from_source, read_data_typed_column_from_source,
@@ -262,6 +263,114 @@ impl ArtifactIndexSource {
             return Ok(None);
         }
         Ok(Some(rows))
+    }
+
+    /// Resolve several values of one column through one artifact lease. The
+    /// UNIQUE ordered path caches decoded pages for the duration of the batch;
+    /// exact and other eligible accelerators retain point-lookup semantics.
+    pub fn lookup_equalities(
+        &self,
+        column_ordinals: &[usize],
+        values: &[Value],
+        max_candidates: Option<usize>,
+    ) -> Result<Option<Vec<u64>>> {
+        if column_ordinals.len() != 1 {
+            return Ok(None);
+        }
+        let Some(accelerator) = self.accelerator_for_columns(column_ordinals, true) else {
+            return Ok(None);
+        };
+        if accelerator.kind() == IndexAcceleratorKind::Ordered
+            && accelerator.unique()
+            && !values.iter().any(Value::is_null)
+        {
+            if let Some(rows) = lookup_unique_ordered_index_values_from_source(
+                self.source.as_ref(),
+                self.layout.as_ref(),
+                self.data.layout().as_ref(),
+                accelerator.logical_index_id(),
+                values,
+                max_candidates,
+            )
+            .map_err(index_runtime_error)?
+            {
+                return Ok(Some(rows));
+            }
+        }
+
+        let mut output = Vec::new();
+        for value in values {
+            let remaining = max_candidates.map(|limit| limit.saturating_sub(output.len()));
+            let Some(mut rows) =
+                self.lookup_equality(column_ordinals, std::slice::from_ref(value), remaining)?
+            else {
+                return Ok(None);
+            };
+            output.append(&mut rows);
+            if max_candidates.is_some_and(|limit| output.len() > limit) {
+                return Ok(None);
+            }
+        }
+        output.sort_unstable();
+        output.dedup();
+        Ok(Some(output))
+    }
+
+    /// Resolve several complete keys through one artifact lease. UNIQUE
+    /// ordered accelerators share a decoded-page cache across the complete
+    /// batch, which keeps composite-key constraint checks proportional to the
+    /// touched INDEX pages instead of `keys * pages`.
+    pub fn lookup_equality_keys(
+        &self,
+        column_ordinals: &[usize],
+        keys: &[Vec<Value>],
+        max_candidates: Option<usize>,
+    ) -> Result<Option<Vec<u64>>> {
+        if column_ordinals.is_empty()
+            || keys
+                .iter()
+                .any(|values| values.len() != column_ordinals.len())
+        {
+            return Ok(None);
+        }
+        if keys.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+        let Some(accelerator) = self.accelerator_for_columns(column_ordinals, true) else {
+            return Ok(None);
+        };
+        if accelerator.kind() == IndexAcceleratorKind::Ordered
+            && accelerator.unique()
+            && !keys.iter().flatten().any(Value::is_null)
+        {
+            if let Some(rows) = lookup_unique_ordered_index_keys_from_source(
+                self.source.as_ref(),
+                self.layout.as_ref(),
+                self.data.layout().as_ref(),
+                accelerator.logical_index_id(),
+                keys,
+                max_candidates,
+            )
+            .map_err(index_runtime_error)?
+            {
+                return Ok(Some(rows));
+            }
+        }
+
+        let mut output = Vec::new();
+        for values in keys {
+            let remaining = max_candidates.map(|limit| limit.saturating_sub(output.len()));
+            let Some(mut rows) = self.lookup_equality(column_ordinals, values, remaining)? else {
+                return Ok(None);
+            };
+            output.append(&mut rows);
+            if max_candidates.is_some_and(|limit| output.len() > limit) {
+                return Ok(None);
+            }
+        }
+        output.sort_unstable();
+        output.dedup();
+        Ok(Some(output))
     }
 
     /// Resolve a bounded ordered range through the canonical INDEX artifact.

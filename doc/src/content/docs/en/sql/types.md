@@ -38,7 +38,7 @@ bytes.
 
 External values travel through protocol 17 with their type object ID and codec
 revision. They do not fall back to `BYTES`, and the generic ORM does not decode
-them without a plugin-aware adapter. The Rust SDK 1.2 also has no generic SQL
+them without a plugin-aware adapter. The Rust SDK 1.2.4 also has no generic SQL
 literal input/output callback, so value construction normally uses a native
 function or typed client adapter. See
 [Native extension commands](../../reference/sql/extensions/) and

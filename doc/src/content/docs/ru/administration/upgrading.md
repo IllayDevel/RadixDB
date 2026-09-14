@@ -38,7 +38,7 @@ SemVer с тем же package UUID делает эту version active при с�
 version, откроется в restricted diagnostic mode, если старый exact package
 перестал быть active.
 
-В RadixDB 1.2 нет `ALTER EXTENSION UPDATE`, hot reload или automatic codec
+В RadixDB 1.2.4 нет `ALTER EXTENSION UPDATE`, hot reload или automatic codec
 migration. Сохраняйте старый package для rollback, а при смене identity или
 codec выполняйте explicit logical либо application migration в отдельно
 проверенные objects. Compatibility report команды
@@ -53,7 +53,7 @@ codec выполняйте explicit logical либо application migration в о
 
 ```sh
 OLD_BUNDLE=/srv/radixdb-releases/old
-NEW_BUNDLE=/srv/radixdb-releases/1.2
+NEW_BUNDLE=/srv/radixdb-releases/1.2.4
 OLD_ROOT=/opt/radixdb/data/databases/app
 NEW_ROOT=/opt/radixdb/data/databases/app-v11
 DUMP=/srv/radixdb-migrations/app-v11.sql
@@ -72,7 +72,7 @@ df -B1 "$OLD_ROOT" "$(dirname "$NEW_ROOT")" "$(dirname "$DUMP")"
    constraints, indexes, views и прикладных данных.
 3. Проверьте конфигурацию кандидата и протокол клиента в отдельном сервисе.
 4. Оцените место для dump, нового физического root и rollback-копии.
-5. Определите момент остановки записи приложения. RadixDB 1.2 не предоставляет
+5. Определите момент остановки записи приложения. RadixDB 1.2.4 не предоставляет
    replication, online logical catch-up или automatic failover для перехода.
 
 ## Экспорт старым движком

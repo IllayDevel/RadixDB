@@ -36,7 +36,7 @@ Known current limitations are documented in:
 - [Current limitations](doc/src/content/docs/en/appendices/limits.md)
 - [Текущие ограничения](doc/src/content/docs/ru/appendices/limits.md)
 
-The 1.2 development server authenticates catalog Principals with Argon2id-backed
+The 1.2.4 development server authenticates catalog Principals with Argon2id-backed
 password verifiers. Plain TCP is supported for trusted hosts or protected
 networks; direct TLS validates certificate chains and server names and rejects
 plaintext downgrade on that endpoint. A configured Argon2id verifier requires

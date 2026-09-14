@@ -145,7 +145,7 @@ named ready status with a complete artifact scan, and execute representative
 application checks. Compare the result to the recorded recovery point. Keep
 the previous root and logs through an observation window.
 
-RadixDB 1.2 does not claim high availability, replication, automatic failover,
+RadixDB 1.2.4 does not claim high availability, replication, automatic failover,
 point-in-time recovery to an arbitrary WAL position, or recovery from lost
 media without an external backup. Operational procedures must not turn strict
 failure into a silent fallback.

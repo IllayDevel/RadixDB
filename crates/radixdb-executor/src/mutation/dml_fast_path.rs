@@ -506,7 +506,10 @@ pub trait DmlFastPathExt: MutationHost {
                     })?
                 }
             };
-            updates.push((u.column_idx, value.try_coerce_to_type(u.column_type)?));
+            updates.push((
+                u.column_idx,
+                ctx.try_coerce_value_to_type(&value, u.column_type)?,
+            ));
         }
 
         self.execute_pk_update_minimal(

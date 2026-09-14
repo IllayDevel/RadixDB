@@ -787,7 +787,7 @@ mod tests {
             .unwrap();
         database
             .execute(
-                "CREATE JOB retry_schedule SCHEDULE AT TIMESTAMP '2020-01-01T00:00:00Z' \
+                "CREATE JOB retry_schedule SCHEDULE AT TIMESTAMPTZ '2020-01-01T00:00:00Z' \
                  RUN AS radix_system CALL retry_job() ENABLE;",
                 (),
             )

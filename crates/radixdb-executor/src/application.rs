@@ -64,7 +64,7 @@ const INSTALL_SQL: &str = r#"
 BEGIN;
 CREATE TABLE IF NOT EXISTS "audit.event" (
     event_id UUID PRIMARY KEY,
-    occurred_at TIMESTAMP NOT NULL,
+    occurred_at TIMESTAMPTZ NOT NULL,
     transaction_id INTEGER NOT NULL,
     session_principal UUID NOT NULL,
     effective_principal UUID NOT NULL,
@@ -79,15 +79,15 @@ CREATE TABLE IF NOT EXISTS "outbox.message" (
     schema_version INTEGER NOT NULL,
     payload JSON NOT NULL,
     state TEXT NOT NULL,
-    created_at TIMESTAMP NOT NULL,
-    available_at TIMESTAMP NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    available_at TIMESTAMPTZ NOT NULL,
     lease_owner TEXT,
     lease_token UUID,
-    lease_expires_at TIMESTAMP,
+    lease_expires_at TIMESTAMPTZ,
     attempt_count INTEGER NOT NULL,
-    completed_at TIMESTAMP,
+    completed_at TIMESTAMPTZ,
     last_error TEXT,
-    dead_lettered_at TIMESTAMP
+    dead_lettered_at TIMESTAMPTZ
 );
 COMMIT;
 "#;
@@ -1040,15 +1040,15 @@ mod tests {
                     schema_version INTEGER NOT NULL,
                     payload JSON NOT NULL,
                     state TEXT NOT NULL,
-                    created_at TIMESTAMP NOT NULL,
-                    available_at TIMESTAMP NOT NULL,
+                    created_at TIMESTAMPTZ NOT NULL,
+                    available_at TIMESTAMPTZ NOT NULL,
                     lease_owner TEXT,
                     lease_token UUID,
-                    lease_expires_at TIMESTAMP,
+                    lease_expires_at TIMESTAMPTZ,
                     attempt_count INTEGER NOT NULL,
-                    completed_at TIMESTAMP,
+                    completed_at TIMESTAMPTZ,
                     last_error TEXT,
-                    dead_lettered_at TIMESTAMP
+                    dead_lettered_at TIMESTAMPTZ
                 )"#,
             )
             .unwrap();

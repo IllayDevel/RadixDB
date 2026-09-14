@@ -30,7 +30,7 @@ use thiserror::Error;
 pub const SOURCE_COMMIT: &str = "60c4e70ea5b5e036c8f5b23466e6ebe3600e1eea";
 pub const SOURCE_PATH: &str = "_work/v2/RADIXDB_HEAVY_JOIN_WORKLOAD.md";
 pub const SOURCE_SHA256: &str = "2b3cfef9ceb09b224af888a35ca4728d1c0a6f1f4492ae7f5951677dea34e043";
-pub const SCHEMA_GENERATION: &str = "0069";
+pub const SCHEMA_GENERATION: &str = "0070";
 pub const FIXED_NOW: &str = "2026-08-28T12:00:00Z";
 pub const RINGING_STARTED_AFTER: &str = "2026-08-28T10:00:00Z";
 

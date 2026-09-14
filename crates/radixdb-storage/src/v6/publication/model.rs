@@ -601,12 +601,12 @@ impl ArtifactPairBuildRequest {
             u32::try_from(columns.len())
                 .map_err(|_| invalid_data("artifact column count does not fit u32"))?,
         )?;
-        let expected_groups = data_header
+        let minimum_groups = data_header
             .row_count()
             .div_ceil(u64::from(planned_group_rows));
-        if expected_groups != u64::from(data_header.row_group_count()) {
+        if u64::from(data_header.row_group_count()) < minimum_groups {
             return Err(invalid_data(
-                "data header row-group count differs from fanout limit",
+                "data header row-group count is below the fanout minimum",
             ));
         }
         accelerators.sort_by_key(AcceleratorBuildSpec::logical_index_id);
@@ -695,12 +695,12 @@ fn validate_data_build_request(
         u32::try_from(columns.len())
             .map_err(|_| invalid_data("artifact column count does not fit u32"))?,
     )?;
-    let expected_groups = data_header
+    let minimum_groups = data_header
         .row_count()
         .div_ceil(u64::from(planned_group_rows));
-    if expected_groups != u64::from(data_header.row_group_count()) {
+    if u64::from(data_header.row_group_count()) < minimum_groups {
         return Err(invalid_data(
-            "data header row-group count differs from build limit",
+            "data header row-group count is below the build minimum",
         ));
     }
     Ok(())

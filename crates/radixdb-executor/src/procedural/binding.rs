@@ -846,7 +846,7 @@ fn contextual_null_argument(
 fn lossless_call_conversion(source: CatalogDataType, target: CatalogDataType) -> bool {
     matches!(
         (source.logical_type(), target.logical_type()),
-        (DataType::Integer, DataType::Decimal) | (DataType::Date, DataType::Timestamp)
+        (DataType::Integer, DataType::Decimal) | (DataType::Date, DataType::CivilTimestamp)
     )
 }
 

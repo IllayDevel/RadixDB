@@ -208,7 +208,7 @@ fn partial_unique_soft_delete_contract_survives_public_tcp_client_restart() {
                     "CREATE TABLE users (
                         id UUID PRIMARY KEY,
                         email TEXT NOT NULL,
-                        __raf_deleted_at TIMESTAMP
+                        __raf_deleted_at TIMESTAMPTZ
                     )",
                 )
                 .expect("create users table"),

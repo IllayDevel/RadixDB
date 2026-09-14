@@ -13,7 +13,8 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-/// Version 17 adds catalog-bound external scalar values. Version 16 added
+/// Version 18 adds distinct civil TIMESTAMP and TIME scalar/column values.
+/// Version 17 added catalog-bound external scalar values. Version 16 added
 /// observable stock Job scheduler counters. Version 15 added
 /// database-bound catalog Principal authentication. Older peers are
 /// rejected at handshake because bincode enum layouts are not self-describing.
@@ -21,7 +22,7 @@ use serde::{Deserialize, Serialize};
 /// A client must know whether a failed COMMIT remains rollback-capable or was
 /// atomically aborted by a durability failure. Older bincode decoders do not
 /// know `TransactionFailed`, so the handshake rejects them explicitly.
-pub const PROTOCOL_VERSION: u16 = 17;
+pub const PROTOCOL_VERSION: u16 = 18;
 pub const DEFAULT_MAX_FRAME_BYTES: u32 = 64 * 1024 * 1024;
 /// A validated endpoint must be able to carry every mandatory handshake/control
 /// response even when the data-frame limit is configured aggressively low.
@@ -486,9 +487,17 @@ pub enum WireColumn {
         offsets: Vec<u32>,
         nulls: Vec<bool>,
     },
+    CivilTimestampNanos {
+        values: Vec<i64>,
+        nulls: Vec<bool>,
+    },
+    TimeNanos {
+        values: Vec<i64>,
+        nulls: Vec<bool>,
+    },
 }
 
-/// Scalar values admitted by protocol v17. Recursive collection/object values
+/// Scalar values admitted by protocol v18. Recursive collection/object values
 /// are intentionally absent: no SQL/server owner supported them, and removing
 /// them gives the unauthenticated decoder a fixed nesting depth.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -528,6 +537,12 @@ pub enum WireValue {
         type_object_id: [u8; 16],
         codec_version: u32,
         payload: Vec<u8>,
+    },
+    CivilTimestampNanos {
+        nanos_since_civil_epoch: i64,
+    },
+    TimeNanos {
+        nanos_since_midnight: i64,
     },
 }
 
@@ -651,7 +666,10 @@ fn validate_wire_value(value: &WireValue, column: &Column) -> Result<(), String>
     if ty == "UNKNOWN" {
         return Ok(());
     }
-    let compatible = match ty.as_str() {
+    let base_type = ty
+        .split_once('(')
+        .map_or(ty.as_str(), |(base, _)| base.trim());
+    let compatible = match base_type {
         "BOOLEAN" | "BOOL" => matches!(value, WireValue::Bool(_)),
         "TINYINT" => matches!(value, WireValue::Int8(_)),
         "SMALLINT" => matches!(value, WireValue::Int16(_)),
@@ -660,13 +678,20 @@ fn validate_wire_value(value: &WireValue, column: &Column) -> Result<(), String>
             value,
             WireValue::UInt(_) | WireValue::UInt8(_) | WireValue::UInt16(_) | WireValue::UInt32(_)
         ),
-        "FLOAT" | "DOUBLE" | "REAL" => matches!(value, WireValue::Float64(_)),
-        name if name.starts_with("DECIMAL") => matches!(value, WireValue::Decimal { .. }),
+        "FLOAT" | "DOUBLE" | "DOUBLE PRECISION" | "REAL" => {
+            matches!(value, WireValue::Float64(_))
+        }
+        "DECIMAL" | "NUMERIC" => matches!(value, WireValue::Decimal { .. }),
         "TEXT" | "STRING" | "VARCHAR" => matches!(value, WireValue::String(_)),
         "BYTES" | "BLOB" | "BINARY" => matches!(value, WireValue::Bytes(_)),
         "DATE" => matches!(value, WireValue::Date { .. }),
-        "DATETIME" => matches!(value, WireValue::DateTime { .. }),
-        "TIMESTAMP" => matches!(value, WireValue::TimestampNanos { .. }),
+        "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE" => {
+            matches!(value, WireValue::TimestampNanos { .. })
+        }
+        "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" | "DATETIME" => {
+            matches!(value, WireValue::CivilTimestampNanos { .. })
+        }
+        "TIME" | "TIME WITHOUT TIME ZONE" => matches!(value, WireValue::TimeNanos { .. }),
         "JSON" => {
             matches!(value, WireValue::Json(text) if serde_json::from_str::<serde_json::Value>(text).is_ok())
         }
@@ -688,7 +713,18 @@ impl WireColumn {
             ProtocolError::InvalidBatchShape(format!("column {index}: {message}"))
         };
         let (values_len, nulls) = match self {
-            Self::Int64 { values, nulls } | Self::TimestampNanos { values, nulls } => {
+            Self::Int64 { values, nulls }
+            | Self::TimestampNanos { values, nulls }
+            | Self::CivilTimestampNanos { values, nulls } => (values.len(), nulls),
+            Self::TimeNanos { values, nulls } => {
+                if let Some((row, value)) = values.iter().enumerate().find(|(row, value)| {
+                    !nulls.get(*row).copied().unwrap_or(false)
+                        && !(0..86_400_000_000_000_i64).contains(value)
+                }) {
+                    return Err(invalid(format!(
+                        "row {row} TIME value {value} is outside one civil day"
+                    )));
+                }
                 (values.len(), nulls)
             }
             Self::Float64 { values, nulls } => (values.len(), nulls),
@@ -809,6 +845,8 @@ impl WireColumn {
             | Self::Float64 { nulls, .. }
             | Self::Boolean { nulls, .. }
             | Self::TimestampNanos { nulls, .. }
+            | Self::CivilTimestampNanos { nulls, .. }
+            | Self::TimeNanos { nulls, .. }
             | Self::DictionaryText { nulls, .. }
             | Self::Bytes { nulls, .. }
             | Self::JsonText { nulls, .. }
@@ -847,14 +885,32 @@ impl WireColumn {
         }
         let ty = normalized_type_name(&contract.type_name);
         if ty != "UNKNOWN" {
+            let base_type = ty
+                .split_once('(')
+                .map_or(ty.as_str(), |(base, _)| base.trim());
             let compatible = match self {
-                Self::Int64 { .. } => matches!(ty.as_str(), "INTEGER" | "INT" | "BIGINT"),
-                Self::Float64 { .. } => matches!(ty.as_str(), "FLOAT" | "DOUBLE" | "REAL"),
-                Self::Boolean { .. } => matches!(ty.as_str(), "BOOLEAN" | "BOOL"),
-                Self::TimestampNanos { .. } => ty == "TIMESTAMP",
-                Self::DictionaryText { .. } => matches!(ty.as_str(), "TEXT" | "STRING" | "VARCHAR"),
-                Self::Bytes { .. } => matches!(ty.as_str(), "BYTES" | "BLOB" | "BINARY"),
-                Self::JsonText { .. } => ty == "JSON",
+                Self::Int64 { .. } => matches!(base_type, "INTEGER" | "INT" | "BIGINT"),
+                Self::Float64 { .. } => {
+                    matches!(base_type, "FLOAT" | "DOUBLE" | "DOUBLE PRECISION" | "REAL")
+                }
+                Self::Boolean { .. } => matches!(base_type, "BOOLEAN" | "BOOL"),
+                Self::TimestampNanos { .. } => {
+                    matches!(base_type, "TIMESTAMPTZ" | "TIMESTAMP WITH TIME ZONE")
+                }
+                Self::CivilTimestampNanos { .. } => {
+                    matches!(
+                        base_type,
+                        "TIMESTAMP" | "TIMESTAMP WITHOUT TIME ZONE" | "DATETIME"
+                    )
+                }
+                Self::TimeNanos { .. } => {
+                    matches!(base_type, "TIME" | "TIME WITHOUT TIME ZONE")
+                }
+                Self::DictionaryText { .. } => {
+                    matches!(base_type, "TEXT" | "STRING" | "VARCHAR" | "CHAR" | "CLOB")
+                }
+                Self::Bytes { .. } => matches!(base_type, "BYTES" | "BLOB" | "BINARY"),
+                Self::JsonText { .. } => base_type == "JSON",
                 Self::External { .. } => unreachable!("external branch returned above"),
             };
             if !compatible {
@@ -1112,6 +1168,53 @@ mod tests {
             std::slice::from_ref(&integer),
             false,
         ));
+        let double_precision = Column {
+            name: "measurement".into(),
+            type_name: "DOUBLE PRECISION".into(),
+            nullable: false,
+            external_type: None,
+        };
+        assert!(validate_row_batch(
+            &[Row {
+                values: vec![WireValue::Float64(1.5)],
+            }],
+            std::slice::from_ref(&double_precision),
+        )
+        .is_ok());
+        assert!(validate_column_batch(
+            &[WireColumn::Float64 {
+                values: vec![1.5],
+                nulls: vec![false],
+            }],
+            1,
+            std::slice::from_ref(&double_precision),
+            false,
+        )
+        .is_ok());
+        let bounded_text = Column {
+            name: "label".into(),
+            type_name: "TEXT(32)".into(),
+            nullable: false,
+            external_type: None,
+        };
+        assert!(validate_row_batch(
+            &[Row {
+                values: vec![WireValue::String("sample".into())],
+            }],
+            std::slice::from_ref(&bounded_text),
+        )
+        .is_ok());
+        assert!(validate_column_batch(
+            &[WireColumn::DictionaryText {
+                dictionary: vec!["sample".into()],
+                ids: vec![0],
+                nulls: vec![false],
+            }],
+            1,
+            std::slice::from_ref(&bounded_text),
+            false,
+        )
+        .is_ok());
         protocol_error_is_invalid_batch_shape(validate_column_batch(
             &[WireColumn::DictionaryText {
                 ids: vec![1],
@@ -1318,6 +1421,37 @@ mod tests {
         };
         assert!(validate_column_batch(std::slice::from_ref(&batch), 2, &[column], false).is_ok());
         assert_eq!(encode_payload(&batch).unwrap()[0], 7);
+    }
+
+    #[test]
+    fn protocol_v18_temporal_tags_are_appended_after_v17() {
+        let civil = WireValue::CivilTimestampNanos {
+            nanos_since_civil_epoch: 86_400_000_000_007,
+        };
+        let time = WireValue::TimeNanos {
+            nanos_since_midnight: 45_296_000_000_008,
+        };
+        assert_eq!(encode_payload(&civil).unwrap()[0], 21);
+        assert_eq!(encode_payload(&time).unwrap()[0], 22);
+        assert_eq!(
+            decode_payload::<WireValue>(&encode_payload(&civil).unwrap()).unwrap(),
+            civil
+        );
+        assert_eq!(
+            decode_payload::<WireValue>(&encode_payload(&time).unwrap()).unwrap(),
+            time
+        );
+
+        let civil_column = WireColumn::CivilTimestampNanos {
+            values: vec![86_400_000_000_007],
+            nulls: vec![false],
+        };
+        let time_column = WireColumn::TimeNanos {
+            values: vec![45_296_000_000_008],
+            nulls: vec![false],
+        };
+        assert_eq!(encode_payload(&civil_column).unwrap()[0], 8);
+        assert_eq!(encode_payload(&time_column).unwrap()[0], 9);
     }
 
     #[test]

@@ -128,7 +128,11 @@ fn primitive_persisted_tags_are_unchanged() {
         assert_eq!(data_type.as_u8(), tag as u8);
         assert_eq!(DataType::from_u8(tag as u8), Some(data_type));
     }
-    assert_eq!(DataType::from_u8(12), None);
+    assert_eq!(DataType::CivilTimestamp.as_u8(), 12);
+    assert_eq!(DataType::from_u8(12), Some(DataType::CivilTimestamp));
+    assert_eq!(DataType::Time.as_u8(), 13);
+    assert_eq!(DataType::from_u8(13), Some(DataType::Time));
+    assert_eq!(DataType::from_u8(14), None);
 
     let actions = [
         ForeignKeyAction::Restrict,

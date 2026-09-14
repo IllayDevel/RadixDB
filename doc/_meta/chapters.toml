@@ -1,4 +1,4 @@
-target_version = "1.2"
+target_version = "1.2.4"
 locales = ["en", "ru"]
 
 [[chapters]]
@@ -396,6 +396,18 @@ tests = ["npm run test:clients", "npm run build", "npm run test:browser"]
 verified_commit = "40b1b3d13e050afa2666a0414b7215d5ac1452c0"
 reviewer = "Codex"
 legacy_paths = ["docs/en/orm.md", "docs/ru/orm.md"]
+
+[[chapters]]
+id = "clients-application-sdk"
+path = "clients/application-sdk.md"
+order = 38.5
+status = "verified"
+feature_status = "implemented"
+sources = ["crates/radixdb-app-sdk", "crates/radixdb-client", "crates/radixdb-orm"]
+tests = ["cargo test -p radixdb-app-sdk", "npm run test:clients", "npm run build", "npm run test:browser"]
+verified_commit = "0920519bc31056ec56a1ec651430c42f7811075b"
+reviewer = "Codex"
+legacy_paths = []
 
 [[chapters]]
 id = "programming-pl-sql"

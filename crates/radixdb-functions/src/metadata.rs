@@ -18,6 +18,7 @@ pub enum FunctionDataType {
     String,
     Boolean,
     Timestamp,
+    CivilTimestamp,
     Date,
     Time,
     DateTime,
@@ -149,9 +150,9 @@ impl FunctionDataType {
             Self::Float => matches!(value, Value::Integer(_) | Value::Float(_)),
             Self::String => matches!(value, Value::Text(_)),
             Self::Boolean => matches!(value, Value::Boolean(_)),
-            Self::Timestamp | Self::DateTime | Self::Time => {
-                matches!(value, Value::Timestamp(_))
-            }
+            Self::Timestamp | Self::DateTime => matches!(value, Value::Timestamp(_)),
+            Self::CivilTimestamp => value.data_type() == DataType::CivilTimestamp,
+            Self::Time => value.data_type() == DataType::Time,
             Self::Date => value.data_type() == DataType::Date,
             Self::Json => value.data_type() == DataType::Json,
             Self::Vector => value.data_type() == DataType::Vector,

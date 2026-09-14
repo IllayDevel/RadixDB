@@ -211,10 +211,27 @@ impl CompactionPublication {
         let limits = FanoutBuildLimits::default();
         let column_count = u32::try_from(self.columns.len())
             .map_err(|_| Error::internal("DATA column count exceeds u32"))?;
-        let row_group_rows = limits
-            .planned_row_group_rows(row_count, column_count)
-            .map_err(format_error)?;
-        let row_group_count = row_count.div_ceil(u64::from(row_group_rows));
+        let row_group_count = {
+            let source = super::CompactionSealRowSource::new_spooled_range(
+                row_refs,
+                range.clone(),
+                volumes,
+                mappings,
+                cache,
+            );
+            let mut planner = crate::v6::RowGroupPlanner::new(limits, row_count, column_count)
+                .map_err(format_error)?;
+            for row in super::CompactionArtifactRows::new(source, self.columns.len()) {
+                let row = row.map_err(format_error)?;
+                planner.admit(row.values()).map_err(format_error)?;
+            }
+            if planner.row_count() != row_count {
+                return Err(Error::internal(
+                    "compaction row-group planning source count differs from DATA row count",
+                ));
+            }
+            planner.group_count().map_err(format_error)?
+        };
         let segment_id = SegmentId::new();
         let artifact_id = ArtifactId::new();
         let header = DataArtifactHeader::new(
@@ -229,8 +246,7 @@ impl CompactionPublication {
             self.max_transaction_id,
             row_count,
             column_count,
-            u32::try_from(row_group_count)
-                .map_err(|_| Error::internal("DATA row-group count exceeds u32"))?,
+            row_group_count,
             SegmentKind::Rows,
             self.created_unix_ns,
         )
@@ -729,10 +745,12 @@ impl MVCCEngine {
         let limits = FanoutBuildLimits::default();
         let column_count = u32::try_from(columns.len())
             .map_err(|_| Error::internal("DATA column count exceeds u32"))?;
-        let row_group_rows = limits
-            .planned_row_group_rows(row_count, column_count)
+        let source_rows = normalized_source_rows(rows.into_vec(), &schema)
+            .collect::<crate::v6::FormatResult<Vec<_>>>()
             .map_err(format_error)?;
-        let row_group_count = row_count.div_ceil(u64::from(row_group_rows));
+        let row_group_count =
+            crate::v6::planned_row_group_count(limits, row_count, column_count, &source_rows)
+                .map_err(format_error)?;
         let transaction_high_water = self.persistence().map_or(1, |persistence| {
             persistence.transaction_high_water().max(1) as u64
         });
@@ -747,8 +765,7 @@ impl MVCCEngine {
             transaction_high_water,
             row_count,
             column_count,
-            u32::try_from(row_group_count)
-                .map_err(|_| Error::internal("DATA row-group count exceeds u32"))?,
+            row_group_count,
             SegmentKind::Rows,
             now,
         )
@@ -768,7 +785,6 @@ impl MVCCEngine {
         let relative_text = relative
             .to_str()
             .ok_or_else(|| Error::internal("canonical DATA path is not UTF-8"))?;
-        let source_rows = rows.into_vec();
         let accelerators = table_accelerators(logical.as_ref(), table_id)?;
         let (data_reference, index_reference) = if let Some(accelerators) = accelerators {
             let index_artifact_id = ArtifactId::new();
@@ -788,7 +804,6 @@ impl MVCCEngine {
                 staging.path(),
             )
             .map_err(format_error)?;
-            let normalized_schema = schema.clone();
             let written = staging
                 .write_generation_file(StagedMemberRole::Index, index_relative_text, |index_file| {
                     staging.write_generation_file(
@@ -797,7 +812,7 @@ impl MVCCEngine {
                         |data_file| {
                             write_artifact_pair(
                                 &request,
-                                normalized_source_rows(source_rows, &normalized_schema),
+                                source_rows.into_iter().map(Ok),
                                 data_file,
                                 index_file,
                             )
@@ -815,14 +830,9 @@ impl MVCCEngine {
         } else {
             let request = DataArtifactBuildRequest::new(header, columns, policies, codec, limits)
                 .map_err(format_error)?;
-            let normalized_schema = schema.clone();
             let written = staging
                 .write_generation_file(StagedMemberRole::Data, relative_text, |file| {
-                    write_data_artifact(
-                        &request,
-                        normalized_source_rows(source_rows, &normalized_schema),
-                        file,
-                    )
+                    write_data_artifact(&request, source_rows.into_iter().map(Ok), file)
                 })
                 .map_err(format_error)?;
             (written.data_reference(), None)

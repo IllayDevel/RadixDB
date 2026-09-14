@@ -459,6 +459,7 @@ fn privilege_kind(token: &Token) -> Option<ObjectPrivilegeSyntax> {
         "UPDATE" => ObjectPrivilegeSyntax::Update,
         "DELETE" => ObjectPrivilegeSyntax::Delete,
         "EXECUTE" => ObjectPrivilegeSyntax::Execute,
+        "DESCRIBE" => ObjectPrivilegeSyntax::Describe,
         _ => return None,
     })
 }

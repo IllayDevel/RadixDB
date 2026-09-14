@@ -419,6 +419,21 @@ impl SegmentedTable {
         row: &Row,
         check_primary_key: bool,
     ) -> Result<()> {
+        self.check_segment_constraints_with_snapshot_mode_skipping(
+            snapshot,
+            row,
+            check_primary_key,
+            &FxHashSet::default(),
+        )
+    }
+
+    pub(super) fn check_segment_constraints_with_snapshot_mode_skipping(
+        &self,
+        snapshot: &crate::volume::manifest::ColdSnapshot,
+        row: &Row,
+        check_primary_key: bool,
+        checked_unique_indexes: &FxHashSet<String>,
+    ) -> Result<()> {
         let schema = self.hot.schema();
 
         // 1. PK constraint: binary search on sorted INT column
@@ -449,6 +464,9 @@ impl SegmentedTable {
             return Ok(());
         }
         for index in self.hot.get_unique_non_pk_indexes() {
+            if checked_unique_indexes.contains(index.name()) {
+                continue;
+            }
             if index.partial_predicate().is_some() {
                 let Some(values) = self.cold_index_values_for_row(index.as_ref(), row)? else {
                     continue;
@@ -509,6 +527,107 @@ impl SegmentedTable {
             }
         }
         Ok(())
+    }
+
+    /// Check every full UNIQUE key in one cold posting pass per index.
+    /// Returning the index names tells the caller exactly which generic
+    /// per-row checks are redundant. Partial indexes and volumes without
+    /// complete persisted posting coverage retain their established fallback.
+    pub(super) fn check_full_unique_batch_with_snapshot(
+        &self,
+        snapshot: &crate::volume::manifest::ColdSnapshot,
+        rows: &[Row],
+    ) -> Result<FxHashSet<String>> {
+        let schema = self.hot.schema();
+        let mut checked = FxHashSet::default();
+
+        for index in self.hot.get_unique_non_pk_indexes() {
+            if index.partial_predicate().is_some() {
+                continue;
+            }
+            let column_names = index.column_names();
+            if column_names.is_empty() {
+                continue;
+            }
+            let columns = column_names
+                .iter()
+                .map(|column_name| schema.find_column(column_name))
+                .collect::<Option<Vec<_>>>();
+            let Some(columns) = columns else {
+                continue;
+            };
+            let column_indices = columns
+                .iter()
+                .map(|(column_index, _)| *column_index)
+                .collect::<Vec<_>>();
+
+            let mut requested = FxHashSet::default();
+            let mut keys = Vec::with_capacity(rows.len());
+            let mut canonical = true;
+            for row in rows {
+                let key = columns
+                    .iter()
+                    .map(|(column_index, column)| {
+                        row.get(*column_index)
+                            .map(|value| value.coerce_to_type(column.data_type))
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let Some(key) = key else {
+                    canonical = false;
+                    break;
+                };
+                if !Self::unique_key_has_null(&key) && requested.insert(key.clone()) {
+                    keys.push(key);
+                }
+            }
+            if !canonical {
+                continue;
+            }
+
+            let Some(candidate_row_ids) = self
+                .segment_mgr
+                .find_candidate_row_ids_by_exact_index_keys_with_snapshot(
+                    snapshot,
+                    &column_indices,
+                    &keys,
+                    self.snapshot_seq,
+                    Some(COLD_INDEX_CURSOR_CANDIDATE_LIMIT),
+                )?
+            else {
+                continue;
+            };
+
+            if !candidate_row_ids.is_empty() {
+                let candidate_rows = self.collect_rows_by_ids_grouped_unfenced(
+                    &candidate_row_ids,
+                    Some(&column_indices),
+                )?;
+                for (row_id, row) in candidate_rows {
+                    let actual = columns
+                        .iter()
+                        .enumerate()
+                        .map(|(projected_index, (_, column))| {
+                            row.get(projected_index)
+                                .map(|value| value.coerce_to_type(column.data_type))
+                        })
+                        .collect::<Option<Vec<_>>>();
+                    let Some(actual) = actual else {
+                        continue;
+                    };
+                    if requested.contains(&actual) {
+                        return Err(Self::unique_constraint_error(
+                            index.as_ref(),
+                            &actual,
+                            row_id,
+                        ));
+                    }
+                }
+            }
+
+            checked.insert(index.name().to_string());
+        }
+
+        Ok(checked)
     }
 
     /// Check a complete INSERT batch against cold INTEGER PRIMARY KEY rows by

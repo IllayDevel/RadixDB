@@ -925,6 +925,48 @@ fn test_mul() {
 }
 
 #[test]
+fn test_exact_decimal_add_subtract_and_multiply() {
+    let mut vm = ExprVM::new();
+    let row = Row::new();
+    let ctx = ExecuteContext::new(&row);
+
+    let subtract = Program::new(vec![
+        Op::LoadConst(Value::try_decimal(25_750, 5, 3).unwrap()),
+        Op::LoadConst(Value::try_decimal(8_250, 4, 3).unwrap()),
+        Op::Sub,
+        Op::Return,
+    ]);
+    assert_eq!(
+        vm.execute(&subtract, &ctx).unwrap().as_decimal_parts(),
+        Some((17_500, 5, 3))
+    );
+
+    let add_mixed_scale = Program::new(vec![
+        Op::LoadConst(Value::try_decimal(125, 3, 2).unwrap()),
+        Op::LoadConst(Value::try_decimal(5, 1, 0).unwrap()),
+        Op::Add,
+        Op::Return,
+    ]);
+    assert_eq!(
+        vm.execute(&add_mixed_scale, &ctx)
+            .unwrap()
+            .as_decimal_parts(),
+        Some((625, 3, 2))
+    );
+
+    let multiply = Program::new(vec![
+        Op::LoadConst(Value::try_decimal(17_500, 5, 3).unwrap()),
+        Op::LoadConst(Value::try_decimal(12_345, 5, 2).unwrap()),
+        Op::Mul,
+        Op::Return,
+    ]);
+    assert_eq!(
+        vm.execute(&multiply, &ctx).unwrap().as_decimal_parts(),
+        Some((216_037_500, 9, 5))
+    );
+}
+
+#[test]
 fn test_div() {
     let mut vm = ExprVM::new();
     let program = Program::new(vec![

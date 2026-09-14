@@ -605,6 +605,8 @@ fn typed_value_matches(value: &TypedValue, data_type: DataType) -> bool {
             | (TypedValue::Text(_), DataType::Text)
             | (TypedValue::Boolean(_), DataType::Boolean)
             | (TypedValue::Timestamp(_), DataType::Timestamp)
+            | (TypedValue::CivilTimestamp(_), DataType::CivilTimestamp)
+            | (TypedValue::Time(_), DataType::Time)
             | (TypedValue::Date(_), DataType::Date)
             | (TypedValue::Json(_), DataType::Json)
             | (TypedValue::Uuid(_), DataType::Uuid)
@@ -734,6 +736,12 @@ fn core_to_typed(value: &Value) -> Option<TypedValue> {
                     .checked_add_signed(chrono::Duration::days(i64::from(days)))
                     .map(|date| TypedValue::Date(date.format("%Y-%m-%d").to_string()))
             }),
+            DataType::CivilTimestamp => value.as_civil_timestamp().map(|timestamp| {
+                TypedValue::CivilTimestamp(timestamp.format("%Y-%m-%d %H:%M:%S%.f").to_string())
+            }),
+            DataType::Time => value
+                .as_time()
+                .map(|time| TypedValue::Time(time.format("%H:%M:%S%.f").to_string())),
             DataType::Bytes => value.as_bytes_value().map(|bytes| {
                 TypedValue::Bytes(base64::engine::general_purpose::STANDARD.encode(bytes))
             }),

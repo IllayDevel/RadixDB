@@ -6,7 +6,9 @@ use radixdb_core::{DataType, Value};
 use crate::byte_limiter::{InFlightByteLimiter, InFlightBytePermit};
 
 use super::super::{DataBloomConfig, DataColumnSpec, DataValueEncoding, FormatError, FormatResult};
-use super::model::{limit_data, limit_index, FanoutBuildLimits, MAX_SORT_RUN_DESCRIPTOR_SLOTS};
+use super::model::{
+    limit_data, limit_index, FanoutBuildLimits, SourceRow, MAX_SORT_RUN_DESCRIPTOR_SLOTS,
+};
 
 static RESIDENT_GOVERNOR: OnceLock<InFlightByteLimiter> = OnceLock::new();
 static SPILL_GOVERNOR: OnceLock<SharedByteGovernor> = OnceLock::new();
@@ -29,7 +31,6 @@ pub(super) fn acquire_sort_run_descriptors(count: usize) -> FormatResult<InFligh
 pub(super) struct PublicationBuildBudget {
     _resident_permit: InFlightBytePermit,
     _spill_permit: Option<SharedBytePermit>,
-    variable_group_bytes: u64,
     data_metadata_bytes: u64,
     rebuild_projection_bytes: u64,
     data_block_bytes: u64,
@@ -46,7 +47,6 @@ impl PublicationBuildBudget {
             limits,
             accelerator_count,
             limits.resident_byte_budget() / 4,
-            limits.row_group_variable_byte_budget(),
             limits.resident_byte_budget() * 3 / 8,
         )
     }
@@ -63,7 +63,6 @@ impl PublicationBuildBudget {
             accelerator_count,
             limits.resident_byte_budget() * 3 / 4,
             0,
-            0,
         )
     }
 
@@ -71,7 +70,6 @@ impl PublicationBuildBudget {
         limits: FanoutBuildLimits,
         accelerator_count: usize,
         index_total: u64,
-        variable_group_bytes: u64,
         data_block_bytes: u64,
     ) -> FormatResult<Self> {
         let requested = usize::try_from(limits.resident_byte_budget()).map_err(|_| {
@@ -111,17 +109,12 @@ impl PublicationBuildBudget {
         Ok(Self {
             _resident_permit: resident_permit,
             _spill_permit: spill_permit,
-            variable_group_bytes,
             data_metadata_bytes: limits.resident_byte_budget() / 8,
             rebuild_projection_bytes: limits.resident_byte_budget() / 8,
             data_block_bytes,
             accelerator_resident_bytes,
             spill: SpillBudget::new(limits.spill_byte_budget()),
         })
-    }
-
-    pub(super) const fn variable_group_bytes(&self) -> u64 {
-        self.variable_group_bytes
     }
 
     pub(super) const fn accelerator_resident_bytes(&self) -> u64 {
@@ -400,9 +393,124 @@ pub(super) fn value_payload_bytes(values: &[Value]) -> FormatResult<u64> {
     })
 }
 
+/// Deterministically plans row-group boundaries against both the row-count
+/// corridor and the retained variable-payload corridor. The DATA header owns
+/// the exact resulting group count, so the same planner is used once before
+/// publication and again while streaming rows into the reserved directories.
+pub(crate) struct RowGroupPlanner {
+    row_capacity: usize,
+    variable_byte_limit: u64,
+    current_rows: usize,
+    current_variable_bytes: u64,
+    row_count: u64,
+    completed_groups: u32,
+}
+
+impl RowGroupPlanner {
+    pub(crate) fn new(
+        limits: FanoutBuildLimits,
+        row_count: u64,
+        column_count: u32,
+    ) -> FormatResult<Self> {
+        let row_capacity = usize::try_from(limits.planned_row_group_rows(row_count, column_count)?)
+            .map_err(|_| {
+                super::model::invalid_data("fanout row-group capacity does not fit usize")
+            })?;
+        Ok(Self {
+            row_capacity,
+            variable_byte_limit: limits.row_group_variable_byte_budget(),
+            current_rows: 0,
+            current_variable_bytes: 0,
+            row_count: 0,
+            completed_groups: 0,
+        })
+    }
+
+    /// Admit one row. `true` means the preceding non-empty group must be
+    /// emitted before the caller appends this row to its buffers.
+    pub(crate) fn admit(&mut self, values: &[Value]) -> FormatResult<bool> {
+        let row_bytes = value_payload_bytes(values)?;
+        if row_bytes > self.variable_byte_limit {
+            return Err(limit_data(
+                "row-group variable resident bytes",
+                row_bytes,
+                self.variable_byte_limit,
+            ));
+        }
+        let combined_bytes = self
+            .current_variable_bytes
+            .checked_add(row_bytes)
+            .ok_or_else(|| {
+                limit_data(
+                    "row-group variable resident bytes",
+                    u64::MAX,
+                    self.variable_byte_limit,
+                )
+            })?;
+        let start_next = self.current_rows == self.row_capacity
+            || (self.current_rows != 0 && combined_bytes > self.variable_byte_limit);
+        if start_next {
+            self.completed_groups = self
+                .completed_groups
+                .checked_add(1)
+                .ok_or_else(|| super::model::invalid_data("row-group count overflows"))?;
+            self.current_rows = 0;
+            self.current_variable_bytes = 0;
+        }
+        self.current_rows += 1;
+        self.current_variable_bytes = self
+            .current_variable_bytes
+            .checked_add(row_bytes)
+            .ok_or_else(|| {
+                limit_data(
+                    "row-group variable resident bytes",
+                    u64::MAX,
+                    self.variable_byte_limit,
+                )
+            })?;
+        self.row_count = self
+            .row_count
+            .checked_add(1)
+            .ok_or_else(|| super::model::invalid_data("source row count overflows"))?;
+        Ok(start_next)
+    }
+
+    pub(crate) fn row_count(&self) -> u64 {
+        self.row_count
+    }
+
+    pub(crate) fn group_count(&self) -> FormatResult<u32> {
+        self.completed_groups
+            .checked_add(u32::from(self.current_rows != 0))
+            .ok_or_else(|| super::model::invalid_data("row-group count overflows"))
+    }
+}
+
+pub(crate) fn planned_row_group_count(
+    limits: FanoutBuildLimits,
+    row_count: u64,
+    column_count: u32,
+    rows: &[SourceRow],
+) -> FormatResult<u32> {
+    let mut planner = RowGroupPlanner::new(limits, row_count, column_count)?;
+    for row in rows {
+        planner.admit(row.values())?;
+    }
+    if planner.row_count() != row_count {
+        return Err(super::model::invalid_data(
+            "row-group planning source count differs from DATA row count",
+        ));
+    }
+    planner.group_count()
+}
+
 fn fixed_width(data_type: DataType, parameter_1: u32) -> Option<u64> {
     match data_type {
-        DataType::Integer | DataType::Float | DataType::Timestamp => Some(8),
+        DataType::Integer
+        | DataType::Float
+        | DataType::Timestamp
+        | DataType::CivilTimestamp
+        | DataType::Time => Some(8),
         DataType::Boolean => Some(1),
         DataType::Uuid => Some(16),
         DataType::Decimal => Some(18),

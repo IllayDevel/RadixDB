@@ -65,7 +65,11 @@ pub fn estimated_schema_column_width(data_type: DataType, vector_dimensions: u16
         DataType::Null => 1,
         DataType::Boolean => 1,
         DataType::Date => 4,
-        DataType::Integer | DataType::Float | DataType::Timestamp => 8,
+        DataType::Integer
+        | DataType::Float
+        | DataType::Timestamp
+        | DataType::CivilTimestamp
+        | DataType::Time => 8,
         DataType::Uuid => 16,
         DataType::Decimal => 24,
         DataType::Text | DataType::Json | DataType::Bytes => 32,

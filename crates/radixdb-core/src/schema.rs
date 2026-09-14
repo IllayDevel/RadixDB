@@ -92,6 +92,14 @@ pub struct SchemaColumn {
 
     /// Declared scale for DECIMAL columns. This is zero when precision is zero.
     pub decimal_scale: u8,
+
+    /// Whether an `f64` column was declared as SQL `DOUBLE PRECISION` rather
+    /// than the legacy `FLOAT` identity. Physical storage is unchanged.
+    pub double_precision: bool,
+
+    /// Maximum number of Unicode scalar values for `TEXT(n)` columns.
+    /// Zero denotes unbounded `TEXT`; storage remains variable-length UTF-8.
+    pub text_max_chars: u32,
 }
 
 impl SchemaColumn {
@@ -121,6 +129,8 @@ impl SchemaColumn {
             vector_dimensions: 0,
             decimal_precision: 0,
             decimal_scale: 0,
+            double_precision: false,
+            text_max_chars: 0,
         }
     }
 
@@ -135,6 +145,18 @@ impl SchemaColumn {
     pub fn with_decimal_parameters(mut self, precision: u8, scale: u8) -> Self {
         self.decimal_precision = precision;
         self.decimal_scale = scale;
+        self
+    }
+
+    /// Set the logical `TEXT(n)` character limit without changing storage.
+    pub fn with_text_max_chars(mut self, max_chars: u32) -> Self {
+        self.text_max_chars = max_chars;
+        self
+    }
+
+    /// Preserve the SQL `DOUBLE PRECISION` identity over the shared f64 codec.
+    pub fn with_double_precision(mut self, double_precision: bool) -> Self {
+        self.double_precision = double_precision;
         self
     }
 
@@ -164,6 +186,10 @@ impl SchemaColumn {
             format!("VECTOR({})", self.vector_dimensions)
         } else if self.data_type == DataType::Decimal && self.decimal_precision > 0 {
             format!("DECIMAL({},{})", self.decimal_precision, self.decimal_scale)
+        } else if self.data_type == DataType::Float && self.double_precision {
+            "DOUBLE PRECISION".to_owned()
+        } else if self.data_type == DataType::Text && self.text_max_chars > 0 {
+            format!("TEXT({})", self.text_max_chars)
         } else {
             self.data_type.to_string()
         }
@@ -176,6 +202,8 @@ impl SchemaColumn {
             && self.vector_dimensions == other.vector_dimensions
             && self.decimal_precision == other.decimal_precision
             && self.decimal_scale == other.decimal_scale
+            && self.double_precision == other.double_precision
+            && self.text_max_chars == other.text_max_chars
     }
 
     /// Validate value-level modifiers that are not represented by [`DataType`].
@@ -192,6 +220,21 @@ impl SchemaColumn {
                 )));
             }
             return Ok(());
+        }
+        if self.data_type == DataType::Text && self.text_max_chars > 0 {
+            let text = value.as_str().ok_or_else(|| {
+                Error::Type(format!(
+                    "value for column '{}' is not a valid TEXT payload",
+                    self.name
+                ))
+            })?;
+            let actual = text.chars().count();
+            if actual > self.text_max_chars as usize {
+                return Err(Error::Type(format!(
+                    "TEXT value for column '{}' has {} characters, exceeding declared limit {}",
+                    self.name, actual, self.text_max_chars
+                )));
+            }
         }
         if self.data_type != DataType::Decimal || self.decimal_precision == 0 {
             return Ok(());
@@ -259,6 +302,8 @@ impl SchemaColumn {
             vector_dimensions: 0,
             decimal_precision: 0,
             decimal_scale: 0,
+            double_precision: false,
+            text_max_chars: 0,
         }
     }
 
@@ -293,6 +338,8 @@ impl SchemaColumn {
             vector_dimensions: 0,
             decimal_precision: 0,
             decimal_scale: 0,
+            double_precision: false,
+            text_max_chars: 0,
         }
     }
 
@@ -636,12 +683,9 @@ impl Schema {
             columns.iter().map(|c| c.name.clone()).collect(),
         ));
 
+        let primary_key_indices = ordered_primary_key_indices(&columns, &[]);
         let pk_column_index_cache = OnceLock::new();
-        let pk_idx = columns
-            .iter()
-            .enumerate()
-            .find(|(_, col)| col.primary_key && col.data_type == DataType::Integer)
-            .map(|(i, _)| i);
+        let pk_idx = single_integer_primary_key_index(&columns, &primary_key_indices);
         let _ = pk_column_index_cache.set(pk_idx);
 
         let column_index_map_cache = OnceLock::new();
@@ -654,14 +698,7 @@ impl Schema {
         );
 
         let pk_indices_cache = OnceLock::new();
-        let _ = pk_indices_cache.set(Arc::new(
-            columns
-                .iter()
-                .enumerate()
-                .filter(|(_, c)| c.primary_key)
-                .map(|(i, _)| i)
-                .collect(),
-        ));
+        let _ = pk_indices_cache.set(Arc::new(primary_key_indices));
 
         let column_names_lower_cache = OnceLock::new();
         let _ = column_names_lower_cache.set(CompactArc::new(
@@ -741,12 +778,9 @@ impl Schema {
             columns.iter().map(|c| c.name.clone()).collect(),
         ));
 
+        let primary_key_indices = ordered_primary_key_indices(&columns, &[]);
         let pk_column_index_cache = OnceLock::new();
-        let pk_idx = columns
-            .iter()
-            .enumerate()
-            .find(|(_, col)| col.primary_key && col.data_type == DataType::Integer)
-            .map(|(i, _)| i);
+        let pk_idx = single_integer_primary_key_index(&columns, &primary_key_indices);
         let _ = pk_column_index_cache.set(pk_idx);
 
         let column_index_map_cache = OnceLock::new();
@@ -759,14 +793,7 @@ impl Schema {
         );
 
         let pk_indices_cache = OnceLock::new();
-        let _ = pk_indices_cache.set(Arc::new(
-            columns
-                .iter()
-                .enumerate()
-                .filter(|(_, c)| c.primary_key)
-                .map(|(i, _)| i)
-                .collect(),
-        ));
+        let _ = pk_indices_cache.set(Arc::new(primary_key_indices));
 
         let column_names_lower_cache = OnceLock::new();
         let _ = column_names_lower_cache.set(CompactArc::new(
@@ -878,8 +905,13 @@ impl Schema {
             return self.validate_constraint_catalog_complete();
         }
 
-        if let Some(primary_key) = self.primary_key_columns().first() {
-            self.register_primary_key_constraint(vec![primary_key.name.clone()])?;
+        let primary_key_columns = self
+            .primary_key_columns()
+            .into_iter()
+            .map(|column| column.name.clone())
+            .collect::<Vec<_>>();
+        if !primary_key_columns.is_empty() {
+            self.register_primary_key_constraint(primary_key_columns)?;
         }
         for column in self.columns.clone() {
             if let Some(expression) = column.check_expr {
@@ -943,6 +975,7 @@ impl Schema {
         self.constraints = constraints;
         self.next_constraint_id = next_constraint_id;
         self.next_check_ordinal = next_check_ordinal;
+        self.rebuild_caches();
         self.validate_constraint_catalog_complete()?;
         Ok(())
     }
@@ -951,7 +984,7 @@ impl Schema {
     pub fn register_primary_key_constraint(&mut self, columns: Vec<String>) -> Result<String> {
         let canonical_columns = self.resolve_constraint_columns(columns)?;
         let base = format!("pk_{}", self.table_name_lower);
-        self.register_constraint(
+        let name = self.register_constraint(
             base,
             "primary_key",
             &canonical_columns,
@@ -959,7 +992,9 @@ impl Schema {
             SchemaConstraintKind::PrimaryKey {
                 columns: canonical_columns.clone(),
             },
-        )
+        )?;
+        self.rebuild_caches();
+        Ok(name)
     }
 
     #[doc(hidden)]
@@ -1075,12 +1110,21 @@ impl Schema {
                 "constraint must reference at least one column".to_string(),
             ));
         }
+        let mut seen = StringSet::default();
         columns
             .into_iter()
             .map(|column| {
-                self.get_column_by_name(&column)
+                let resolved = self
+                    .get_column_by_name(&column)
                     .map(|resolved| resolved.name.clone())
-                    .ok_or(Error::ColumnNotFound(column))
+                    .ok_or(Error::ColumnNotFound(column))?;
+                if !seen.insert(resolved.to_lowercase()) {
+                    return Err(Error::InvalidArgument(format!(
+                        "constraint references column '{}' more than once",
+                        resolved
+                    )));
+                }
+                Ok(resolved)
             })
             .collect()
     }
@@ -1256,29 +1300,21 @@ impl Schema {
     #[inline]
     pub fn primary_key_indices(&self) -> &[usize] {
         self.pk_indices_cache.get_or_init(|| {
-            Arc::new(
-                self.columns
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, c)| c.primary_key)
-                    .map(|(i, _)| i)
-                    .collect(),
-            )
+            Arc::new(ordered_primary_key_indices(
+                &self.columns,
+                &self.constraints,
+            ))
         })
     }
 
     /// Get the single primary key column index (cached for performance)
-    /// Returns None if there's no PK or if PK is not an integer type
+    /// Returns None unless the table has exactly one INTEGER primary-key column.
     /// OPTIMIZATION: Cached to avoid iteration on every INSERT
     #[inline]
     pub fn pk_column_index(&self) -> Option<usize> {
         *self.pk_column_index_cache.get_or_init(|| {
-            for (i, col) in self.columns.iter().enumerate() {
-                if col.primary_key && col.data_type == DataType::Integer {
-                    return Some(i);
-                }
-            }
-            None
+            let indices = ordered_primary_key_indices(&self.columns, &self.constraints);
+            single_integer_primary_key_index(&self.columns, &indices)
         })
     }
 
@@ -1363,10 +1399,19 @@ impl Schema {
             }
             match &constraint.kind {
                 SchemaConstraintKind::PrimaryKey { columns } => {
-                    if columns.len() != 1
-                        || self
-                            .get_column_by_name(&columns[0])
-                            .is_none_or(|column| !column.primary_key)
+                    let primary_key_columns = self
+                        .columns
+                        .iter()
+                        .filter(|column| column.primary_key)
+                        .map(|column| column.name.as_str())
+                        .collect::<Vec<_>>();
+                    if columns.is_empty()
+                        || columns.len() != primary_key_columns.len()
+                        || columns.iter().any(|catalog| {
+                            !primary_key_columns
+                                .iter()
+                                .any(|owner| catalog.eq_ignore_ascii_case(owner))
+                        })
                     {
                         return Err(Error::InvalidArgument(format!(
                             "constraint '{}' does not match the PRIMARY KEY owner",
@@ -1567,7 +1612,6 @@ impl Schema {
             ));
         }
         let mut seen = StringSet::default();
-        let mut primary_keys = 0usize;
         for (index, column) in self.columns.iter().enumerate() {
             if column.id != index
                 || column.name.is_empty()
@@ -1604,6 +1648,8 @@ impl Schema {
                     || column.vector_dimensions != 0
                     || column.decimal_precision != 0
                     || column.decimal_scale != 0
+                    || column.double_precision
+                    || column.text_max_chars != 0
                 {
                     return Err(Error::InvalidArgument(format!(
                         "external column '{}' carries inconsistent built-in metadata",
@@ -1638,15 +1684,21 @@ impl Schema {
                     column.name
                 )));
             }
+            if column.data_type != DataType::Text && column.text_max_chars != 0 {
+                return Err(Error::InvalidArgument(format!(
+                    "non-TEXT column '{}' carries a TEXT character limit",
+                    column.name
+                )));
+            }
+            if column.data_type != DataType::Float && column.double_precision {
+                return Err(Error::InvalidArgument(format!(
+                    "non-FLOAT column '{}' carries a DOUBLE PRECISION identity",
+                    column.name
+                )));
+            }
             if let Some(default_value) = &column.default_value {
                 column.validate_declared_value(default_value)?;
             }
-            primary_keys += usize::from(column.primary_key);
-        }
-        if primary_keys > 1 {
-            return Err(Error::NotSupported(
-                "schemas support exactly one PRIMARY KEY column".to_string(),
-            ));
         }
         self.validate_foreign_key_invariants()?;
         self.validate_constraint_catalog()
@@ -1684,12 +1736,8 @@ impl Schema {
 
         // Rebuild PK cache
         self.pk_column_index_cache = OnceLock::new();
-        let pk_idx = self
-            .columns
-            .iter()
-            .enumerate()
-            .find(|(_, col)| col.primary_key && col.data_type == DataType::Integer)
-            .map(|(i, _)| i);
+        let primary_key_indices = ordered_primary_key_indices(&self.columns, &self.constraints);
+        let pk_idx = single_integer_primary_key_index(&self.columns, &primary_key_indices);
         let _ = self.pk_column_index_cache.set(pk_idx);
 
         // Rebuild column index map cache
@@ -1704,14 +1752,7 @@ impl Schema {
 
         // Rebuild primary key indices cache
         self.pk_indices_cache = OnceLock::new();
-        let _ = self.pk_indices_cache.set(Arc::new(
-            self.columns
-                .iter()
-                .enumerate()
-                .filter(|(_, c)| c.primary_key)
-                .map(|(i, _)| i)
-                .collect(),
-        ));
+        let _ = self.pk_indices_cache.set(Arc::new(primary_key_indices));
 
         // Rebuild lowercase column names cache
         self.column_names_lower_cache = OnceLock::new();
@@ -1893,6 +1934,44 @@ fn normalize_columns(columns: &mut [SchemaColumn]) {
     }
 }
 
+fn ordered_primary_key_indices(
+    columns: &[SchemaColumn],
+    constraints: &[SchemaConstraint],
+) -> Vec<usize> {
+    if let Some(key_columns) = constraints
+        .iter()
+        .find_map(|constraint| match &constraint.kind {
+            SchemaConstraintKind::PrimaryKey { columns } => Some(columns),
+            _ => None,
+        })
+    {
+        return key_columns
+            .iter()
+            .filter_map(|key_column| {
+                columns
+                    .iter()
+                    .position(|column| column.name.eq_ignore_ascii_case(key_column))
+            })
+            .collect();
+    }
+    columns
+        .iter()
+        .enumerate()
+        .filter(|(_, column)| column.primary_key)
+        .map(|(index, _)| index)
+        .collect()
+}
+
+fn single_integer_primary_key_index(
+    columns: &[SchemaColumn],
+    primary_key_indices: &[usize],
+) -> Option<usize> {
+    let [index] = primary_key_indices else {
+        return None;
+    };
+    (columns[*index].data_type == DataType::Integer).then_some(*index)
+}
+
 /// Produce the one canonical automatic constraint name used by both the
 /// runtime schema and the durable catalog binder.
 ///
@@ -1944,17 +2023,38 @@ pub fn generated_constraint_name(
 impl fmt::Display for Schema {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "CREATE TABLE {} (", self.table_name)?;
+        let primary_key_indices = self.primary_key_indices();
+        let composite_primary_key = primary_key_indices.len() > 1;
         for (i, col) in self.columns.iter().enumerate() {
             if i > 0 {
                 write!(f, ", ")?;
             }
-            write!(f, "{}", col)?;
+            if composite_primary_key && col.primary_key {
+                let mut display_column = col.clone();
+                display_column.primary_key = false;
+                write!(f, "{}", display_column)?;
+            } else {
+                write!(f, "{}", col)?;
+            }
         }
         for (i, check) in self.table_checks.iter().enumerate() {
             if !self.columns.is_empty() || i > 0 {
                 write!(f, ", ")?;
             }
             write!(f, "CHECK ({})", check)?;
+        }
+        if composite_primary_key {
+            if !self.columns.is_empty() || !self.table_checks.is_empty() {
+                write!(f, ", ")?;
+            }
+            write!(f, "PRIMARY KEY (")?;
+            for (position, index) in primary_key_indices.iter().enumerate() {
+                if position > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", self.columns[*index].name)?;
+            }
+            write!(f, ")")?;
         }
         write!(f, ")")
     }
@@ -2062,6 +2162,22 @@ impl SchemaBuilder {
         if let Some(col) = self.columns.last_mut() {
             col.decimal_precision = precision;
             col.decimal_scale = scale;
+        }
+        self
+    }
+
+    /// Set the logical `TEXT(n)` character limit on the last added column.
+    pub fn set_last_text_max_chars(mut self, max_chars: u32) -> Self {
+        if let Some(col) = self.columns.last_mut() {
+            col.text_max_chars = max_chars;
+        }
+        self
+    }
+
+    /// Mark the last f64-backed column as SQL `DOUBLE PRECISION`.
+    pub fn set_last_double_precision(mut self, double_precision: bool) -> Self {
+        if let Some(col) = self.columns.last_mut() {
+            col.double_precision = double_precision;
         }
         self
     }
@@ -2248,6 +2364,32 @@ mod tests {
 
         let pk_indices = schema.primary_key_indices();
         assert_eq!(pk_indices, vec![0]);
+    }
+
+    #[test]
+    fn composite_primary_key_preserves_declared_order_and_disables_row_id_fast_path() {
+        let mut schema = SchemaBuilder::new("membership")
+            .column("group_id", DataType::Text, false, true)
+            .column("user_id", DataType::Text, false, true)
+            .add_nullable("payload", DataType::Text)
+            .build();
+
+        schema
+            .register_primary_key_constraint(vec!["user_id".to_string(), "group_id".to_string()])
+            .unwrap();
+
+        assert_eq!(schema.primary_key_indices(), &[1, 0]);
+        assert_eq!(schema.pk_column_index(), None);
+        assert_eq!(
+            schema.to_string(),
+            "CREATE TABLE membership (group_id TEXT NOT NULL, user_id TEXT NOT NULL, payload TEXT, PRIMARY KEY (user_id, group_id))"
+        );
+        schema.validate_structural_invariants().unwrap();
+
+        let mut mismatched = schema.clone();
+        mismatched.columns[0].primary_key = false;
+        mismatched.rebuild_caches();
+        assert!(mismatched.validate_structural_invariants().is_err());
     }
 
     #[test]
@@ -2571,5 +2713,21 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("VECTOR dimensions"));
+
+        let mut stale_double = SchemaBuilder::new("stale_double")
+            .add("value", DataType::Text)
+            .build();
+        stale_double.columns[0].double_precision = true;
+        assert!(stale_double
+            .validate_structural_invariants()
+            .unwrap_err()
+            .to_string()
+            .contains("DOUBLE PRECISION"));
+
+        let double = SchemaBuilder::new("double")
+            .add("value", DataType::Float)
+            .set_last_double_precision(true)
+            .build();
+        assert_eq!(double.columns[0].formatted_data_type(), "DOUBLE PRECISION");
     }
 }

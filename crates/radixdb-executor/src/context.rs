@@ -38,7 +38,7 @@ const SEMI_JOIN_CACHE_SIZE: usize = 256;
 use crate::hash_table::{JoinHashState, JoinHashTable, JoinMemoryOwner, JoinMemoryReservation};
 use radixdb_core::ParamVec;
 use radixdb_core::{CompactArc, StringMap};
-use radixdb_core::{Result, Row, Value, ValueMap, ValueSet};
+use radixdb_core::{DataType, Result, Row, SessionTimeZone, Value, ValueMap, ValueSet};
 use radixdb_procedural::BudgetOwner;
 
 /// Request-local bridge used by expression bytecode for durable SQL
@@ -99,6 +99,7 @@ pub(crate) fn is_system_context_name(name: &str) -> bool {
             | "CURRENT_JOB_ID"
             | "CURRENT_JOB_ATTEMPT"
             | "CURRENT_JOB_SCHEDULED_AT"
+            | "CURRENT_TIME_ZONE"
     )
 }
 
@@ -1342,9 +1343,39 @@ impl ExecutionContext {
         self.session.session_vars.get(name)
     }
 
+    /// Return the validated connection-local time-zone snapshot carried by
+    /// this request. Stateless embedded contexts deliberately default to UTC.
+    pub(crate) fn session_time_zone(&self) -> Result<SessionTimeZone> {
+        match self.get_session_var("timezone") {
+            Some(Value::Text(value)) => SessionTimeZone::parse(value),
+            Some(_) => Err(radixdb_core::Error::internal(
+                "session timezone has a non-text internal value",
+            )),
+            None => Ok(SessionTimeZone::default()),
+        }
+    }
+
+    /// Apply context-sensitive SQL input coercion at a write boundary.
+    pub(crate) fn try_coerce_value_to_type(
+        &self,
+        value: &Value,
+        target_type: DataType,
+    ) -> Result<Value> {
+        if let (Value::Text(text), DataType::Timestamp) = (value, target_type) {
+            return Ok(Value::Timestamp(
+                self.session_time_zone()?.parse_instant(text)?,
+            ));
+        }
+        value.try_coerce_to_type(target_type)
+    }
+
     /// Set a session variable
     pub fn set_session_var(&mut self, name: impl Into<String>, value: Value) {
-        Arc::make_mut(&mut self.session.session_vars).insert(name.into(), value);
+        let name = name.into();
+        if name.eq_ignore_ascii_case("timezone") {
+            self.set_system_context_value("CURRENT_TIME_ZONE", value.clone());
+        }
+        Arc::make_mut(&mut self.session.session_vars).insert(name, value);
     }
 
     /// Get the query timeout in milliseconds
@@ -1861,9 +1892,7 @@ impl ExecutionContextBuilder {
 
     /// Set a session variable
     pub fn session_var(mut self, name: impl Into<String>, value: Value) -> Self {
-        let mut variables = (*self.ctx.session.session_vars).clone();
-        variables.insert(name.into(), value);
-        self.ctx.session.session_vars = Arc::new(variables);
+        self.ctx.set_session_var(name, value);
         self
     }
 

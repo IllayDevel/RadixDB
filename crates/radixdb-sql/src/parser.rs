@@ -306,6 +306,31 @@ impl Parser {
         Some(Identifier::new(token, value))
     }
 
+    /// Flatten a parsed catalog object path into the legacy relation carrier.
+    pub(crate) fn relation_identifier_from_object_name(name: &ObjectName) -> Identifier {
+        Identifier::new(
+            name.components[0].token.clone(),
+            name.components
+                .iter()
+                .map(|component| component.value.as_str())
+                .collect::<Vec<_>>()
+                .join("."),
+        )
+    }
+
+    pub(crate) fn reject_unsupported_qualified_alter(
+        &mut self,
+        is_qualified: bool,
+        operation: AlterTableOperation,
+    ) -> bool {
+        if is_qualified && operation != AlterTableOperation::AddConstraint {
+            self.add_error("qualified ALTER TABLE supports only OWNER or ADD CONSTRAINT".into());
+            true
+        } else {
+            false
+        }
+    }
+
     /// Check if a keyword is truly reserved and cannot be used as an identifier
     /// Note: Some keywords like LEFT, RIGHT, FIRST, LAST are handled specially in
     /// parse_keyword_prefix() where they can be functions or identifiers.

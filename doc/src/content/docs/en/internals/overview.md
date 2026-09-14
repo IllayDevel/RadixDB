@@ -1,9 +1,9 @@
 ---
 title: Architecture overview
-description: Crate ownership, request path and state lifetimes in RadixDB 1.2.
+description: Crate ownership, request path and state lifetimes in RadixDB 1.2.4.
 ---
 
-This chapter is a map of the implemented RadixDB 1.2 architecture. It explains
+This chapter is a map of the implemented RadixDB 1.2.4 architecture. It explains
 where a request and its state live; it does not define a second Rust, storage or
 wire contract.
 

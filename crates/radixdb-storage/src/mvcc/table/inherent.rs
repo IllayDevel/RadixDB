@@ -95,6 +95,8 @@ impl MVCCTable {
             DataType::Integer
             | DataType::Float
             | DataType::Timestamp
+            | DataType::CivilTimestamp
+            | DataType::Time
             | DataType::Uuid
             | DataType::Decimal
             | DataType::Date => IndexType::BTree,

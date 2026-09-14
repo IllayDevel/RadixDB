@@ -109,7 +109,7 @@ cd /opt/radixdb
 Успешный результат имеет следующий вид:
 
 ```text
-ready version=1.1.0 protocol=17 state=Ready
+ready version=1.2.4 protocol=17 state=Ready
 ```
 
 Он подтверждает listener, handshake, authentication, lifecycle сервера и

@@ -401,11 +401,6 @@ impl EngineOperations {
         if schema.table_name.is_empty() {
             return Err(Error::internal("schema missing table name"));
         }
-        if schema.primary_key_indices().len() > 1 {
-            return Err(Error::NotSupported(
-                "ALTER TABLE supports exactly one PRIMARY KEY column".to_string(),
-            ));
-        }
         let mut seen_names = FxHashSet::default();
         for column in &schema.columns {
             if column.name.is_empty() {
@@ -551,6 +546,106 @@ impl EngineOperations {
                 })
                 .collect();
 
+        // A seal may advance after statement-time validation but before this
+        // commit fence. Revalidate full UNIQUE domains in one persisted-posting
+        // lookup per index, including composite keys. The exact candidate path
+        // is only accepted when every cold segment proves complete coverage;
+        // older or schema-evolved segments retain the established row-at-a-time
+        // fallback.
+        let mut batch_checked_unique_indexes = FxHashSet::default();
+        for (index_ordinal, (col_indices, col_names, _)) in unique_indexes.iter().enumerate() {
+            if col_indices.is_empty() {
+                continue;
+            }
+            let mut requested = FxHashSet::default();
+            let mut keys = Vec::with_capacity(local.len());
+            let mut canonical = true;
+            for (row_id, versions) in local.iter() {
+                let Some(version) = versions.last() else {
+                    continue;
+                };
+                if version.is_deleted()
+                    || !store
+                        .write_set_ref()
+                        .and_then(|write_set| write_set.get(row_id))
+                        .is_some_and(|entry| {
+                            entry.observation
+                                == crate::mvcc::version_store::WriteObservation::Absent
+                        })
+                {
+                    continue;
+                }
+                let key = col_indices
+                    .iter()
+                    .map(|&col_index| {
+                        version
+                            .data
+                            .get(col_index)
+                            .map(|value| value.coerce_to_type(schema.columns[col_index].data_type))
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let Some(key) = key else {
+                    canonical = false;
+                    break;
+                };
+                if !key.iter().any(Value::is_null) && requested.insert(key.clone()) {
+                    keys.push(key);
+                }
+            }
+
+            if !canonical {
+                continue;
+            }
+            if keys.is_empty() {
+                batch_checked_unique_indexes.insert(index_ordinal);
+                continue;
+            }
+            let Some(candidate_row_ids) = mgr
+                .find_candidate_row_ids_by_exact_index_keys_with_snapshot(
+                    &cold_snapshot,
+                    col_indices,
+                    &keys,
+                    None,
+                    Some(keys.len()),
+                )?
+            else {
+                continue;
+            };
+
+            for cold_row_id in candidate_row_ids {
+                if mgr.is_pending_tombstone(txn_id, cold_row_id) {
+                    continue;
+                }
+                let Some(cold_row) = mgr.get_cold_row_normalized(cold_row_id, schema)? else {
+                    continue;
+                };
+                let actual = col_indices
+                    .iter()
+                    .map(|&col_index| {
+                        cold_row
+                            .get(col_index)
+                            .map(|value| value.coerce_to_type(schema.columns[col_index].data_type))
+                    })
+                    .collect::<Option<Vec<_>>>();
+                let Some(actual) = actual else {
+                    continue;
+                };
+                if requested.contains(&actual) {
+                    return Err(radixdb_core::Error::UniqueConstraint {
+                        index: col_names.join("_"),
+                        column: col_names.join(", "),
+                        value: actual
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        row_id: cold_row_id,
+                    });
+                }
+            }
+            batch_checked_unique_indexes.insert(index_ordinal);
+        }
+
         for (row_id, versions) in local.iter() {
             let Some(version) = versions.last() else {
                 continue;
@@ -592,7 +687,12 @@ impl EngineOperations {
                     }
                 }
                 // UNIQUE constraint checks against cold
-                for (col_indices, col_names, defaults) in &unique_indexes {
+                for (index_ordinal, (col_indices, col_names, defaults)) in
+                    unique_indexes.iter().enumerate()
+                {
+                    if batch_checked_unique_indexes.contains(&index_ordinal) {
+                        continue;
+                    }
                     let coerced: Vec<radixdb_core::Value> = col_indices
                         .iter()
                         .filter_map(|&idx| {
@@ -763,7 +863,9 @@ impl EngineOperations {
             .schema()
             .find_column(column_name)
             .ok_or_else(|| Error::ColumnNotFound(column_name.to_string()))?;
-        if column.primary_key && column.data_type == DataType::Integer {
+        if table.schema().pk_column_index() == Some(column.id)
+            && column.data_type == DataType::Integer
+        {
             if let Value::Integer(row_id) = value {
                 let mut matches = [false];
                 // Commit preflight serializes writers but deliberately leaves

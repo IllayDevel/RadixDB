@@ -1,6 +1,6 @@
 ---
 title: Access Control
-description: Manage principals, roles, ownership and object or column privileges in RadixDB 1.2.
+description: Manage principals, roles, ownership and object or column privileges in RadixDB 1.2.4.
 ---
 
 RadixDB authorization is catalog-based and deny-by-default. Each non-bootstrap
@@ -121,7 +121,7 @@ that includes grant option. A grantor can revoke only its own provenance path.
 
 ## Missing policy features
 
-RadixDB 1.2 does not implement row-level security or `CREATE POLICY`. It also
+RadixDB 1.2.4 does not implement row-level security or `CREATE POLICY`. It also
 has no `PUBLIC` grants, default privileges, explicit deny, `SET ROLE` or public
 SQL command for listing effective grants. Enforce row predicates in reviewed
 views or application queries, but do not describe that as RLS.

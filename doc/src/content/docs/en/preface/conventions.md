@@ -26,7 +26,7 @@ A database used by one exercise is not a backup of another database.
 
 The heading identifies the documentation target. Build details distinguish
 that target from the application manifest and the source revision. An explicit
-limitation means the supported 1.2 behavior is narrower than the surrounding
+limitation means the supported 1.2.4 behavior is narrower than the surrounding
 feature; behavior described only in a plan is not part of the user contract.
 
 Limits are qualified as implementation limits, configuration limits or measured

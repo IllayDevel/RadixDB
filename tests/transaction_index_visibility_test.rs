@@ -291,7 +291,7 @@ fn coherent_indexed_membership_winner_survives_wal_checkpoint_and_snapshot_resto
                 id INTEGER PRIMARY KEY,
                 conversation_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
-                left_at TIMESTAMP
+                left_at TIMESTAMPTZ
             )",
             (),
         )

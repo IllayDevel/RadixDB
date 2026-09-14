@@ -1014,10 +1014,14 @@ impl ScalarFunction for TypeOfFunction {
             Value::Float(_) => "FLOAT",
             Value::Text(_) => "TEXT",
             Value::Boolean(_) => "BOOLEAN",
-            Value::Timestamp(_) => "TIMESTAMP",
+            Value::Timestamp(_) => "TIMESTAMPTZ",
             Value::Extension(data) if data.first() == Some(&(DataType::Json as u8)) => "JSON",
             Value::Extension(data) if data.first() == Some(&(DataType::Vector as u8)) => "VECTOR",
             Value::Extension(data) if data.first() == Some(&(DataType::Uuid as u8)) => "UUID",
+            Value::Extension(data) if data.first() == Some(&(DataType::CivilTimestamp as u8)) => {
+                "TIMESTAMP"
+            }
+            Value::Extension(data) if data.first() == Some(&(DataType::Time as u8)) => "TIME",
             Value::Extension(_) => "EXTENSION",
         };
 

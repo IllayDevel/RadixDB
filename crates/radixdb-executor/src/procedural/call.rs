@@ -605,7 +605,7 @@ fn external_candidate(
         } else if value.data_type() == declared.data_type().logical_type() {
         } else if matches!(
             (value.data_type(), declared.data_type().logical_type()),
-            (DataType::Integer, DataType::Decimal) | (DataType::Date, DataType::Timestamp)
+            (DataType::Integer, DataType::Decimal) | (DataType::Date, DataType::CivilTimestamp)
         ) {
             cost = cost.saturating_add(1);
         } else {

@@ -100,6 +100,19 @@ impl fmt::Display for SetStatement {
     }
 }
 
+/// SHOW a connection-local variable.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ShowVariableStatement {
+    pub token: Token,
+    pub name: Identifier,
+}
+
+impl fmt::Display for ShowVariableStatement {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "SHOW {}", self.name)
+    }
+}
+
 /// PRAGMA statement
 #[derive(Debug, Clone, PartialEq)]
 pub struct PragmaStatement {

@@ -115,6 +115,16 @@ impl Parser {
         } else {
             object_name.to_string().into()
         };
+        if rendered == "DOUBLE"
+            && matches!(
+                self.peek_token.token_type,
+                TokenType::Identifier | TokenType::Keyword
+            )
+            && self.peek_token.literal.eq_ignore_ascii_case("PRECISION")
+        {
+            self.next_token();
+            rendered.push_str(" PRECISION");
+        }
         if self.peek_token_is_punctuator("(") {
             self.next_token();
             rendered.push('(');

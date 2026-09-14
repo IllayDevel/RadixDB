@@ -17,13 +17,13 @@ function fixture() {
   writeFileSync(path.join(repo, 'Cargo.toml'), '[workspace.package]\nversion = "1.1.0"\n');
   writeFileSync(path.join(repo, 'source.rs'), '// fixture source\n');
   writeFileSync(path.join(root, '_meta/publication.toml'), [
-    'version = "1.1"',
+    'version = "1.1.0"',
     'channel = "development"',
     'application_manifest = "../Cargo.toml"',
     '',
   ].join('\n'));
   writeFileSync(path.join(root, '_meta/chapters.toml'), [
-    'target_version = "1.1"',
+    'target_version = "1.1.0"',
     'locales = ["en", "ru"]',
     '',
     '[[chapters]]',

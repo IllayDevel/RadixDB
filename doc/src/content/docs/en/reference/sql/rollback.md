@@ -37,7 +37,7 @@ rollback-capable in the verified TCP contract.
 ## Errors and limitations
 
 A plain rollback without a transaction, or a TO form without the named live
-savepoint, fails. Embedded, TCP and the 1.2 CLI route `ROLLBACK TO` through the
+savepoint, fails. Embedded, TCP and the 1.2.4 CLI route `ROLLBACK TO` through the
 active connection-local transaction.
 
 ## Privileges

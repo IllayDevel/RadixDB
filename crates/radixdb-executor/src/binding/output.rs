@@ -913,6 +913,7 @@ pub trait OutputBindingExt: OutputBindingHost {
             FunctionDataType::Timestamp | FunctionDataType::Time | FunctionDataType::DateTime => {
                 Some(DataType::Timestamp)
             }
+            FunctionDataType::CivilTimestamp => Some(DataType::CivilTimestamp),
             FunctionDataType::Date => Some(DataType::Date),
             FunctionDataType::Json => Some(DataType::Json),
             FunctionDataType::Vector => Some(DataType::Vector),

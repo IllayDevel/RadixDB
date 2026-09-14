@@ -169,6 +169,7 @@ pub enum ObjectPrivilegeSyntax {
     Update,
     Delete,
     Execute,
+    Describe,
 }
 
 impl fmt::Display for ObjectPrivilegeSyntax {
@@ -182,6 +183,7 @@ impl fmt::Display for ObjectPrivilegeSyntax {
             Self::Update => "UPDATE",
             Self::Delete => "DELETE",
             Self::Execute => "EXECUTE",
+            Self::Describe => "DESCRIBE",
         })
     }
 }

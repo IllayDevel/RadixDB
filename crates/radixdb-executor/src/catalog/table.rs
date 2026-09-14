@@ -359,10 +359,56 @@ pub(super) fn require_table<'a>(
 pub(crate) fn bind_catalog_type(type_name: &str) -> Result<CatalogDataType> {
     let data_type = parse_data_type(type_name)?;
     match data_type {
+        DataType::Float => bind_float(type_name),
         DataType::Decimal => bind_decimal(type_name),
         DataType::Vector => bind_vector(type_name),
+        DataType::Text => bind_text(type_name),
         _ => CatalogDataType::scalar(data_type).map_err(catalog_argument),
     }
+}
+
+fn bind_float(type_name: &str) -> Result<CatalogDataType> {
+    let canonical = type_name
+        .split_whitespace()
+        .map(str::to_ascii_uppercase)
+        .collect::<Vec<_>>()
+        .join(" ");
+    match canonical.as_str() {
+        "DOUBLE" | "DOUBLE PRECISION" => {
+            CatalogDataType::double_precision().map_err(catalog_argument)
+        }
+        "FLOAT" | "REAL" => CatalogDataType::scalar(DataType::Float).map_err(catalog_argument),
+        _ => Err(Error::InvalidArgument(format!(
+            "invalid floating-point type declaration '{type_name}'"
+        ))),
+    }
+}
+
+fn bind_text(type_name: &str) -> Result<CatalogDataType> {
+    let upper = type_name.trim().to_ascii_uppercase();
+    let base = upper.split('(').next().unwrap_or(&upper);
+    if matches!(
+        upper.as_str(),
+        "TEXT" | "VARCHAR" | "CHAR" | "STRING" | "CLOB"
+    ) {
+        return CatalogDataType::text(0).map_err(catalog_argument);
+    }
+    let parameters = upper
+        .strip_prefix(base)
+        .and_then(|value| value.strip_prefix('('))
+        .and_then(|value| value.strip_suffix(')'))
+        .ok_or_else(|| {
+            Error::InvalidArgument(format!("invalid {base} type declaration '{type_name}'"))
+        })?;
+    let max_chars = parameters.trim().parse::<u32>().map_err(|_| {
+        Error::InvalidArgument(format!("invalid {base} character limit '{parameters}'"))
+    })?;
+    if max_chars == 0 {
+        return Err(Error::InvalidArgument(format!(
+            "{base} character limit must be greater than zero"
+        )));
+    }
+    CatalogDataType::text(max_chars).map_err(catalog_argument)
 }
 
 pub(crate) fn bind_catalog_type_in_generation(

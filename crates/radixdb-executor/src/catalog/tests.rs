@@ -90,6 +90,97 @@ fn create_table_binds_to_one_typed_atomic_mutation_set() {
 }
 
 #[test]
+fn bounded_text_uses_catalog_typemod_without_a_new_physical_type() {
+    let source = empty_catalog();
+    let mut transaction = DdlTransaction::begin(&source);
+    transaction
+        .stage_sql(
+            "CREATE TABLE text_shapes (\
+                id INTEGER PRIMARY KEY, \
+                bounded TEXT(255), \
+                varchar_alias VARCHAR(32), \
+                plain TEXT\
+            )",
+        )
+        .unwrap();
+
+    let table = transaction.table("text_shapes").unwrap();
+    for (name, expected_limit) in [("bounded", 255), ("varchar_alias", 32), ("plain", 0)] {
+        let column = table.column(name).unwrap();
+        let CatalogPayload::Column(payload) = column.payload() else {
+            panic!("{name} must be a column")
+        };
+        assert_eq!(
+            payload.data_type().logical_type(),
+            radixdb_core::DataType::Text
+        );
+        assert_eq!(payload.data_type().parameter_1(), expected_limit);
+        assert_eq!(payload.data_type().parameter_2(), 0);
+    }
+
+    let mutation = transaction.commit().unwrap().unwrap();
+    let committed = CatalogGeneration::new(source.meta(), mutation.apply(&source).unwrap());
+    let bytes = encode_catalog_pack(committed.meta(), committed.graph()).unwrap();
+    let reopened = CatalogGeneration::from_pack(decode_catalog_pack(&bytes).unwrap());
+    let bounded = super::TableCatalog::load(&reopened, "text_shapes")
+        .unwrap()
+        .column("bounded")
+        .unwrap();
+    let CatalogPayload::Column(payload) = bounded.payload() else {
+        panic!("bounded must reopen as a column")
+    };
+    assert_eq!(payload.data_type().parameter_1(), 255);
+}
+
+#[test]
+fn double_precision_uses_a_catalog_identity_over_the_float_codec() {
+    let source = empty_catalog();
+    let mut transaction = DdlTransaction::begin(&source);
+    transaction
+        .stage_sql(
+            "CREATE TABLE float_shapes (\
+                id INTEGER PRIMARY KEY, \
+                legacy FLOAT, \
+                short_alias DOUBLE, \
+                canonical DOUBLE PRECISION, \
+                real_alias REAL\
+            )",
+        )
+        .unwrap();
+
+    let table = transaction.table("float_shapes").unwrap();
+    for (name, expected_double) in [
+        ("legacy", false),
+        ("short_alias", true),
+        ("canonical", true),
+        ("real_alias", false),
+    ] {
+        let column = table.column(name).unwrap();
+        let CatalogPayload::Column(payload) = column.payload() else {
+            panic!("{name} must be a column")
+        };
+        assert_eq!(
+            payload.data_type().logical_type(),
+            radixdb_core::DataType::Float
+        );
+        assert_eq!(payload.data_type().is_double_precision(), expected_double);
+    }
+
+    let mutation = transaction.commit().unwrap().unwrap();
+    let committed = CatalogGeneration::new(source.meta(), mutation.apply(&source).unwrap());
+    let bytes = encode_catalog_pack(committed.meta(), committed.graph()).unwrap();
+    let reopened = CatalogGeneration::from_pack(decode_catalog_pack(&bytes).unwrap());
+    let canonical = super::TableCatalog::load(&reopened, "float_shapes")
+        .unwrap()
+        .column("canonical")
+        .unwrap();
+    let CatalogPayload::Column(payload) = canonical.payload() else {
+        panic!("canonical must reopen as a column")
+    };
+    assert!(payload.data_type().is_double_precision());
+}
+
+#[test]
 fn staged_statements_share_private_visibility_and_commit_once() {
     let source = empty_catalog();
     let first_table = object_id(20);

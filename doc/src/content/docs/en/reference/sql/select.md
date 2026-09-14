@@ -1,6 +1,6 @@
 ---
 title: SELECT
-description: Read, join, group and order rows in RadixDB 1.2.
+description: Read, join, group and order rows in RadixDB 1.2.4.
 ---
 
 `SELECT` produces a row set from expressions, relations and supported derived

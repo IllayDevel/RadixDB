@@ -137,6 +137,33 @@ fn test_parse_update() {
 }
 
 #[test]
+fn parses_postgresql_session_time_zone_control() {
+    for sql in [
+        "SET TIME ZONE 'Asia/Barnaul'",
+        "SET TIME ZONE TO '+07:00'",
+        "SET TIMEZONE = 'UTC'",
+        "SET TIME_ZONE TO 'UTC'",
+    ] {
+        let statement = parse_stmt(sql).unwrap_or_else(|| panic!("failed to parse {sql}"));
+        let Statement::Set(statement) = statement else {
+            panic!("expected SET for {sql}");
+        };
+        assert!(matches!(
+            statement.name.value.to_uppercase().as_str(),
+            "TIME ZONE" | "TIMEZONE" | "TIME_ZONE"
+        ));
+        assert!(matches!(statement.value, Expression::StringLiteral(_)));
+    }
+
+    let statement = parse_stmt("SHOW TIME ZONE").unwrap();
+    let Statement::ShowVariable(statement) = statement else {
+        panic!("expected SHOW variable");
+    };
+    assert_eq!(statement.name.value, "TIME ZONE");
+    assert_eq!(statement.to_string(), "SHOW TIME ZONE");
+}
+
+#[test]
 fn write_targets_reject_navigation_syntax_with_stable_code() {
     for sql in [
         "UPDATE users SET profile.name = 'Bob' WHERE id = 1",
@@ -189,6 +216,7 @@ fn test_parse_create_table_with_parameterized_type_aliases() {
         "CREATE TABLE typed (
             id INT PRIMARY KEY AUTO_INCREMENT,
             name VARCHAR(255) NOT NULL,
+            ratio DOUBLE PRECISION,
             amount DECIMAL(10, 2),
             score NUMERIC(12),
             embedding VECTOR(3),
@@ -210,6 +238,7 @@ fn test_parse_create_table_with_parameterized_type_aliases() {
                 vec![
                     "INT",
                     "VARCHAR(255)",
+                    "DOUBLE PRECISION",
                     "DECIMAL(10,2)",
                     "NUMERIC(12)",
                     "VECTOR(3)",
@@ -220,6 +249,41 @@ fn test_parse_create_table_with_parameterized_type_aliases() {
         }
         _ => panic!("expected CreateTableStatement"),
     }
+}
+
+#[test]
+fn test_parse_create_table_preserves_temporal_type_semantics() {
+    let stmt = parse_stmt(
+        "CREATE TABLE temporal_values (
+            instant_short TIMESTAMPTZ,
+            instant_long TIMESTAMP WITH TIME ZONE,
+            civil_short TIMESTAMP,
+            civil_long TIMESTAMP WITHOUT TIME ZONE,
+            clock_short TIME,
+            clock_long TIME WITHOUT TIME ZONE
+        )",
+    )
+    .unwrap();
+
+    let Statement::CreateTable(create) = stmt else {
+        panic!("expected CreateTableStatement");
+    };
+    let data_types: Vec<&str> = create
+        .columns
+        .iter()
+        .map(|column| column.data_type.as_str())
+        .collect();
+    assert_eq!(
+        data_types,
+        vec![
+            "TIMESTAMPTZ",
+            "TIMESTAMP WITH TIME ZONE",
+            "TIMESTAMP",
+            "TIMESTAMP WITHOUT TIME ZONE",
+            "TIME",
+            "TIME WITHOUT TIME ZONE",
+        ]
+    );
 }
 
 #[test]
@@ -255,6 +319,19 @@ fn r4_l05_messenger_contracts_parse_alter_table_create_equivalent_constraints() 
             Some("ALTER")
         );
     }
+
+    let Statement::AlterTable(statement) = parse_stmt(
+        "ALTER TABLE application.children ADD CONSTRAINT FOREIGN KEY (parent_id) REFERENCES application.parents(id)",
+    )
+    .unwrap()
+    else {
+        panic!("expected qualified ALTER TABLE ADD CONSTRAINT");
+    };
+    assert_eq!(statement.table_name.value(), "application.children");
+    assert!(matches!(
+        statement.table_constraint,
+        Some(TableConstraint::ForeignKey(_))
+    ));
 
     let Statement::AlterTable(statement) =
         parse_stmt("ALTER TABLE messages ADD COLUMN reply_to UUID REFERENCES messages(id)")

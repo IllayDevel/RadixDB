@@ -63,7 +63,7 @@ for (const locale of ['en', 'ru']) {
     locale === 'ru' ? '11 870,421' : '11,870.421',
   ]) assert(benchmark.includes(marker), `${locale} benchmark is missing ${marker}`);
   for (const marker of [
-    '1.2',
+    '1.2.4',
     'protocol 17',
     'Argon2id',
     'CONNECT',

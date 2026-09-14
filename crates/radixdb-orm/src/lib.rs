@@ -22,8 +22,10 @@ pub use radixdb_core::{
     canonical_fingerprint, ColumnDescriptor, ConstraintDefinition, ConstraintDescriptor,
     DataTypeDescriptor, DatabaseDescriptor, DescriptorEnvelope, DescriptorError, DescriptorKind,
     EditorKind, ForeignKeyActionDescriptor, FormFieldDescriptor, IndexDescriptor,
-    ReferenceSelector, ResultColumnDescriptor, TableDescriptor, TableFormDescriptor,
-    ViewDescriptor, SCHEMA_DESCRIPTOR_VERSION,
+    ProcedureDescriptor, ReferenceSelector, ResultColumnDescriptor, RoutineArgumentDescriptor,
+    RoutineArgumentModeDescriptor, RoutineResourcePolicyDescriptor, RoutineResultColumnDescriptor,
+    RoutineResultDescriptor, RoutineSecurityDescriptor, RoutineVolatilityDescriptor,
+    TableDescriptor, TableFormDescriptor, ViewDescriptor, SCHEMA_DESCRIPTOR_VERSION,
 };
 pub use record::*;
 pub use session::*;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::{api::ServerColumnData, DataType};
 
 #[test]
 fn compaction_backpressure_keeps_its_retryable_protocol_identity() {
@@ -143,6 +144,7 @@ fn cursor_open_publishes_bound_type_and_nullability() {
         column_batch_v1: false,
         build_identity_v1: false,
         external_value_v1: false,
+        time_zone: SessionTimeZone::default(),
     };
     let config = test_config(tempfile::tempdir().unwrap().path().join("server-data"));
     let cancellation = ServerCancellation::new();
@@ -212,6 +214,7 @@ fn r3_l02_batch_b_protocol_begin_rejects_an_existing_sql_transaction_owner() {
         column_batch_v1: false,
         build_identity_v1: false,
         external_value_v1: false,
+        time_zone: SessionTimeZone::default(),
     };
 
     assert!(matches!(
@@ -275,6 +278,7 @@ fn r3_l02_batch_b_sql_begin_rejects_an_existing_protocol_transaction_owner() {
         column_batch_v1: false,
         build_identity_v1: false,
         external_value_v1: false,
+        time_zone: SessionTimeZone::default(),
     };
     assert!(matches!(
         begin_transaction(
@@ -601,6 +605,7 @@ fn typed_columns_preserve_wire_value_semantics_without_row_adapter() {
     assert_eq!(
         column_data_to_wire_column(ServerColumnData::TimestampNanos {
             values: vec![-1, 1_999_999],
+            data_type: DataType::Timestamp,
             nulls: vec![false, false],
         })
         .unwrap(),
@@ -917,6 +922,7 @@ fn selecting_database_that_is_opening_returns_retryable_error() {
         column_batch_v1: false,
         build_identity_v1: false,
         external_value_v1: false,
+        time_zone: SessionTimeZone::default(),
     });
     let mut max_frame_bytes = DEFAULT_MAX_FRAME_BYTES;
 
@@ -962,6 +968,7 @@ fn server_status_reports_opening_database_without_blocking() {
         column_batch_v1: false,
         build_identity_v1: true,
         external_value_v1: false,
+        time_zone: SessionTimeZone::default(),
     });
     let mut max_frame_bytes = DEFAULT_MAX_FRAME_BYTES;
 
@@ -1454,6 +1461,7 @@ fn column_batch_protocol_boundary_does_not_materialize_rows_for_supported_typed_
         column_batch_v1: true,
         build_identity_v1: false,
         external_value_v1: false,
+        time_zone: SessionTimeZone::default(),
     };
     let config = test_config(dir.path().join("server-data"));
 
@@ -1551,6 +1559,7 @@ fn legacy_row_batch_uses_typed_storage_without_value_materialization() {
         column_batch_v1: true,
         build_identity_v1: false,
         external_value_v1: false,
+        time_zone: SessionTimeZone::default(),
     };
     let mut config = test_config(dir.path().join("server-data"));
     config.cursor_batch_max_rows = 16;
@@ -1646,6 +1655,7 @@ fn close_cursor_drops_a_pending_column_batch() {
         column_batch_v1: true,
         build_identity_v1: false,
         external_value_v1: false,
+        time_zone: SessionTimeZone::default(),
     };
 
     assert!(matches!(

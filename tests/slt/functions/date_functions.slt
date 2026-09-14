@@ -1,7 +1,7 @@
 # Date/Time function tests
 
 statement ok
-CREATE TABLE date_test (id INTEGER PRIMARY KEY, ts TIMESTAMP)
+CREATE TABLE date_test (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ)
 
 statement ok
 INSERT INTO date_test VALUES (1, '2024-06-15T10:30:00Z'), (2, '2024-01-01T00:00:00Z'), (3, '2024-12-31T23:59:59Z')

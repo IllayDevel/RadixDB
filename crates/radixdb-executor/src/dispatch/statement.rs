@@ -53,6 +53,11 @@ pub trait StatementDispatchHost: MutationHost {
         statement: &SetStatement,
         context: &ExecutionContext,
     ) -> Result<Box<dyn QueryResult>>;
+    fn dispatch_show_variable(
+        &self,
+        statement: &ShowVariableStatement,
+        context: &ExecutionContext,
+    ) -> Result<Box<dyn QueryResult>>;
     fn dispatch_show_tables(
         &self,
         statement: &ShowTablesStatement,
@@ -306,6 +311,7 @@ fn route_statement<H: StatementDispatchHost + ?Sized>(
         Statement::Savepoint(value) => host.execute_savepoint(value, context),
         Statement::ReleaseSavepoint(value) => host.execute_release_savepoint(value, context),
         Statement::Set(value) => host.dispatch_set(value, context),
+        Statement::ShowVariable(value) => host.dispatch_show_variable(value, context),
         Statement::ShowTables(value) => host.dispatch_show_tables(value, context),
         Statement::ShowViews(value) => host.dispatch_show_views(value, context),
         Statement::ShowCreateTable(value) => host.dispatch_show_create_table(value, context),

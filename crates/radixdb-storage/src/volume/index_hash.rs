@@ -65,16 +65,9 @@ impl PersistedIndexHasher {
                 _ => 0.0,
             })),
             DataType::Timestamp => {
+                // Preserve the v1.0 persisted hash contract exactly.
                 self.mix(&[3]);
-                let nanos = match value {
-                    Value::Timestamp(value) => value.timestamp_nanos_opt().unwrap_or_else(|| {
-                        value
-                            .timestamp()
-                            .wrapping_mul(1_000_000_000)
-                            .wrapping_add(value.timestamp_subsec_nanos() as i64)
-                    }),
-                    _ => 0,
-                };
+                let nanos = value.artifact_temporal_nanos().unwrap_or(0);
                 self.mix(&nanos.to_le_bytes());
             }
             DataType::Boolean => self.add_storage_value(&Value::Boolean(match value {

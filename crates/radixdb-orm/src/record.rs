@@ -1036,10 +1036,18 @@ pub(crate) fn typed_value_matches(value: &TypedValue, expected: &DataTypeDescrip
     matches!(
         (value, expected),
         (TypedValue::Integer(_), DataTypeDescriptor::Integer)
-            | (TypedValue::Float(_), DataTypeDescriptor::Float)
-            | (TypedValue::Text(_), DataTypeDescriptor::Text)
+            | (
+                TypedValue::Float(_),
+                DataTypeDescriptor::Float | DataTypeDescriptor::DoublePrecision
+            )
+            | (TypedValue::Text(_), DataTypeDescriptor::Text { .. })
             | (TypedValue::Boolean(_), DataTypeDescriptor::Boolean)
             | (TypedValue::Timestamp(_), DataTypeDescriptor::Timestamp)
+            | (
+                TypedValue::CivilTimestamp(_),
+                DataTypeDescriptor::CivilTimestamp
+            )
+            | (TypedValue::Time(_), DataTypeDescriptor::Time)
             | (TypedValue::Date(_), DataTypeDescriptor::Date)
             | (TypedValue::Json(_), DataTypeDescriptor::Json)
             | (TypedValue::Uuid(_), DataTypeDescriptor::Uuid)
@@ -1078,7 +1086,10 @@ impl GeneratedValue for f64 {
         expected: &DataTypeDescriptor,
     ) -> Result<Self, GeneratedValueDecodeError> {
         match (value, expected) {
-            (TypedValue::Float(value), DataTypeDescriptor::Float) => Ok(value.as_f64()),
+            (
+                TypedValue::Float(value),
+                DataTypeDescriptor::Float | DataTypeDescriptor::DoublePrecision,
+            ) => Ok(value.as_f64()),
             _ => Err(GeneratedValueDecodeError),
         }
     }
@@ -1130,8 +1141,10 @@ impl GeneratedValue for String {
         expected: &DataTypeDescriptor,
     ) -> Result<Self, GeneratedValueDecodeError> {
         match (value, expected) {
-            (TypedValue::Text(value), DataTypeDescriptor::Text)
+            (TypedValue::Text(value), DataTypeDescriptor::Text { .. })
             | (TypedValue::Timestamp(value), DataTypeDescriptor::Timestamp)
+            | (TypedValue::CivilTimestamp(value), DataTypeDescriptor::CivilTimestamp)
+            | (TypedValue::Time(value), DataTypeDescriptor::Time)
             | (TypedValue::Date(value), DataTypeDescriptor::Date)
             | (TypedValue::Uuid(value), DataTypeDescriptor::Uuid)
             | (TypedValue::Bytes(value), DataTypeDescriptor::Bytes)
@@ -1264,7 +1277,7 @@ mod tests {
                 ColumnDescriptor {
                     ordinal: 1,
                     name: "name".to_string(),
-                    data_type: DataTypeDescriptor::Text,
+                    data_type: DataTypeDescriptor::Text { max_chars: None },
                     nullable: true,
                     auto_increment: false,
                     default_expression: None,
@@ -1273,7 +1286,7 @@ mod tests {
                 ColumnDescriptor {
                     ordinal: 2,
                     name: "note".to_string(),
-                    data_type: DataTypeDescriptor::Text,
+                    data_type: DataTypeDescriptor::Text { max_chars: None },
                     nullable: true,
                     auto_increment: false,
                     default_expression: None,
@@ -1471,7 +1484,7 @@ mod tests {
         let department_name = TypedColumn::<String, DepartmentEntity>::new(
             "departments",
             "name",
-            DataTypeDescriptor::Text,
+            DataTypeDescriptor::Text { max_chars: None },
             false,
         );
 

@@ -70,9 +70,11 @@ impl CastExpr {
             DataType::Timestamp => cast_to_timestamp(value),
             DataType::Json => cast_to_json(value),
             DataType::Uuid => cast_to_uuid(value),
-            DataType::Decimal | DataType::Date | DataType::Bytes => {
-                value.try_coerce_to_type(self.target_type)
-            }
+            DataType::Decimal
+            | DataType::Date
+            | DataType::Bytes
+            | DataType::CivilTimestamp
+            | DataType::Time => value.try_coerce_to_type(self.target_type),
             DataType::Vector => Err(radixdb_core::Error::type_conversion(
                 format!("{:?}", value),
                 "VECTOR",

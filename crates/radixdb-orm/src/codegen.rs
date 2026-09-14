@@ -191,7 +191,7 @@ fn render_table(
     }
     writeln!(
         output,
-        "    pub fn new() -> {record} {{ {record}::default() }}"
+        "    #[allow(clippy::new_ret_no_self)]\n    pub fn new() -> {record} {{ {record}::default() }}"
     )
     .unwrap();
     writeln!(output, "    pub fn table() -> Relation {{ Relation::Table {{ name: {:?}.to_string(), alias: None }} }}", table.name).unwrap();
@@ -451,14 +451,16 @@ fn reference_keys(table: &TableDescriptor) -> Vec<(&str, bool)> {
 fn rust_type(data_type: &DataTypeDescriptor) -> &'static str {
     match data_type {
         DataTypeDescriptor::Integer => "i64",
-        DataTypeDescriptor::Float => "f64",
+        DataTypeDescriptor::Float | DataTypeDescriptor::DoublePrecision => "f64",
         DataTypeDescriptor::Boolean => "bool",
         DataTypeDescriptor::Json => "serde_json::Value",
         DataTypeDescriptor::Bytes => "String",
         DataTypeDescriptor::Vector { .. } => "Vec<f32>",
         DataTypeDescriptor::Null
-        | DataTypeDescriptor::Text
+        | DataTypeDescriptor::Text { .. }
         | DataTypeDescriptor::Timestamp
+        | DataTypeDescriptor::CivilTimestamp
+        | DataTypeDescriptor::Time
         | DataTypeDescriptor::Date
         | DataTypeDescriptor::Uuid
         | DataTypeDescriptor::Decimal { .. } => "String",
@@ -470,9 +472,14 @@ fn rust_data_type(data_type: &DataTypeDescriptor) -> String {
         DataTypeDescriptor::Null => "DataTypeDescriptor::Null".to_string(),
         DataTypeDescriptor::Integer => "DataTypeDescriptor::Integer".to_string(),
         DataTypeDescriptor::Float => "DataTypeDescriptor::Float".to_string(),
-        DataTypeDescriptor::Text => "DataTypeDescriptor::Text".to_string(),
+        DataTypeDescriptor::DoublePrecision => "DataTypeDescriptor::DoublePrecision".to_string(),
+        DataTypeDescriptor::Text { max_chars } => {
+            format!("DataTypeDescriptor::Text {{ max_chars: {max_chars:?} }}")
+        }
         DataTypeDescriptor::Boolean => "DataTypeDescriptor::Boolean".to_string(),
         DataTypeDescriptor::Timestamp => "DataTypeDescriptor::Timestamp".to_string(),
+        DataTypeDescriptor::CivilTimestamp => "DataTypeDescriptor::CivilTimestamp".to_string(),
+        DataTypeDescriptor::Time => "DataTypeDescriptor::Time".to_string(),
         DataTypeDescriptor::Date => "DataTypeDescriptor::Date".to_string(),
         DataTypeDescriptor::Json => "DataTypeDescriptor::Json".to_string(),
         DataTypeDescriptor::Uuid => "DataTypeDescriptor::Uuid".to_string(),
@@ -489,10 +496,16 @@ fn rust_data_type(data_type: &DataTypeDescriptor) -> String {
 fn typed_value_expression(value: &str, data_type: &DataTypeDescriptor) -> String {
     match data_type {
         DataTypeDescriptor::Integer => format!("TypedValue::Integer(*{value})"),
-        DataTypeDescriptor::Float => format!("TypedValue::Float((*{value}).into())"),
-        DataTypeDescriptor::Text => format!("TypedValue::Text({value}.clone())"),
+        DataTypeDescriptor::Float | DataTypeDescriptor::DoublePrecision => {
+            format!("TypedValue::Float((*{value}).into())")
+        }
+        DataTypeDescriptor::Text { .. } => format!("TypedValue::Text({value}.clone())"),
         DataTypeDescriptor::Boolean => format!("TypedValue::Boolean(*{value})"),
         DataTypeDescriptor::Timestamp => format!("TypedValue::Timestamp({value}.clone())"),
+        DataTypeDescriptor::CivilTimestamp => {
+            format!("TypedValue::CivilTimestamp({value}.clone())")
+        }
+        DataTypeDescriptor::Time => format!("TypedValue::Time({value}.clone())"),
         DataTypeDescriptor::Date => format!("TypedValue::Date({value}.clone())"),
         DataTypeDescriptor::Json => format!("TypedValue::Json({value}.clone())"),
         DataTypeDescriptor::Uuid => format!("TypedValue::Uuid({value}.clone())"),
@@ -506,10 +519,16 @@ fn typed_value_expression(value: &str, data_type: &DataTypeDescriptor) -> String
 fn owned_typed_value_expression(value: &str, data_type: &DataTypeDescriptor) -> String {
     match data_type {
         DataTypeDescriptor::Integer => format!("TypedValue::Integer({value})"),
-        DataTypeDescriptor::Float => format!("TypedValue::Float({value}.into())"),
-        DataTypeDescriptor::Text => format!("TypedValue::Text({value})"),
+        DataTypeDescriptor::Float | DataTypeDescriptor::DoublePrecision => {
+            format!("TypedValue::Float({value}.into())")
+        }
+        DataTypeDescriptor::Text { .. } => format!("TypedValue::Text({value})"),
         DataTypeDescriptor::Boolean => format!("TypedValue::Boolean({value})"),
         DataTypeDescriptor::Timestamp => format!("TypedValue::Timestamp({value})"),
+        DataTypeDescriptor::CivilTimestamp => {
+            format!("TypedValue::CivilTimestamp({value})")
+        }
+        DataTypeDescriptor::Time => format!("TypedValue::Time({value})"),
         DataTypeDescriptor::Date => format!("TypedValue::Date({value})"),
         DataTypeDescriptor::Json => format!("TypedValue::Json({value})"),
         DataTypeDescriptor::Uuid => format!("TypedValue::Uuid({value})"),
@@ -641,6 +660,7 @@ mod tests {
             fingerprint: String::new(),
             tables: vec![table],
             views: Vec::new(),
+            procedures: Vec::new(),
             extensions: BTreeMap::new(),
         };
         database.refresh_fingerprint().unwrap();
@@ -731,6 +751,7 @@ mod tests {
                 fingerprint: String::new(),
                 tables: vec![target, source],
                 views: Vec::new(),
+                procedures: Vec::new(),
                 extensions: BTreeMap::new(),
             };
             database.refresh_fingerprint().unwrap();
@@ -780,7 +801,7 @@ mod tests {
         ));
 
         let wrong_type = descriptor(
-            DataTypeDescriptor::Text,
+            DataTypeDescriptor::Text { max_chars: None },
             false,
             ConstraintDefinition::PrimaryKey {
                 columns: vec!["id".to_string()],
@@ -826,6 +847,15 @@ mod tests {
                     name: "fio_id".to_string(),
                     data_type: DataTypeDescriptor::Integer,
                     nullable: true,
+                    auto_increment: false,
+                    default_expression: None,
+                    extensions: BTreeMap::new(),
+                },
+                ColumnDescriptor {
+                    ordinal: 3,
+                    name: "measurement".to_string(),
+                    data_type: DataTypeDescriptor::DoublePrecision,
+                    nullable: false,
                     auto_increment: false,
                     default_expression: None,
                     extensions: BTreeMap::new(),
@@ -887,6 +917,7 @@ mod tests {
             fingerprint: String::new(),
             tables: vec![fio, table],
             views: Vec::new(),
+            procedures: Vec::new(),
             extensions: BTreeMap::new(),
         };
         database.refresh_fingerprint().unwrap();

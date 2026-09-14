@@ -35,6 +35,7 @@
         "fingerprint": { "$ref": "#/$defs/fingerprint" },
         "tables": { "type": "array", "items": { "$ref": "#/$defs/table" } },
         "views": { "type": "array", "items": { "$ref": "#/$defs/view" } },
+        "procedures": { "type": "array", "items": { "$ref": "#/$defs/procedure" } },
         "extensions": { "$ref": "#/$defs/extensions" }
       },
       "additionalProperties": false
@@ -75,6 +76,7 @@
         { "$ref": "#/$defs/unitTypeNull" },
         { "$ref": "#/$defs/unitTypeInteger" },
         { "$ref": "#/$defs/unitTypeFloat" },
+        { "$ref": "#/$defs/unitTypeDoublePrecision" },
         { "$ref": "#/$defs/unitTypeText" },
         { "$ref": "#/$defs/unitTypeBoolean" },
         { "$ref": "#/$defs/unitTypeTimestamp" },
@@ -89,7 +91,8 @@
     "unitTypeNull": { "type": "object", "required": ["type"], "properties": { "type": { "const": "null" } }, "additionalProperties": false },
     "unitTypeInteger": { "type": "object", "required": ["type"], "properties": { "type": { "const": "integer" } }, "additionalProperties": false },
     "unitTypeFloat": { "type": "object", "required": ["type"], "properties": { "type": { "const": "float" } }, "additionalProperties": false },
-    "unitTypeText": { "type": "object", "required": ["type"], "properties": { "type": { "const": "text" } }, "additionalProperties": false },
+    "unitTypeDoublePrecision": { "type": "object", "required": ["type"], "properties": { "type": { "const": "double_precision" } }, "additionalProperties": false },
+    "unitTypeText": { "type": "object", "required": ["type"], "properties": { "type": { "const": "text" }, "max_chars": { "type": "integer", "minimum": 1, "maximum": 4294967295 } }, "additionalProperties": false },
     "unitTypeBoolean": { "type": "object", "required": ["type"], "properties": { "type": { "const": "boolean" } }, "additionalProperties": false },
     "unitTypeTimestamp": { "type": "object", "required": ["type"], "properties": { "type": { "const": "timestamp" } }, "additionalProperties": false },
     "unitTypeDate": { "type": "object", "required": ["type"], "properties": { "type": { "const": "date" } }, "additionalProperties": false },
@@ -206,6 +209,93 @@
         "name": { "type": "string" },
         "data_type": { "$ref": "#/$defs/dataType" },
         "nullable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "procedure": {
+      "type": "object",
+      "required": ["catalog_id", "name", "definition_revision", "fingerprint", "source_sha256", "language", "language_version", "compiler_abi", "runtime_abi", "security", "volatility", "arguments", "result", "resource_policy"],
+      "properties": {
+        "catalog_id": { "type": "string", "format": "uuid" },
+        "name": { "$ref": "#/$defs/identifier" },
+        "definition_revision": { "type": "integer", "minimum": 1 },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "source_sha256": { "$ref": "#/$defs/fingerprint" },
+        "language": { "const": "radix_pl" },
+        "language_version": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "compiler_abi": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "runtime_abi": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "security": { "enum": ["invoker", "definer"] },
+        "volatility": { "enum": ["immutable", "stable", "volatile"] },
+        "arguments": { "type": "array", "items": { "$ref": "#/$defs/routineArgument" } },
+        "result": { "$ref": "#/$defs/routineResult" },
+        "resource_policy": { "$ref": "#/$defs/routineResourcePolicy" }
+      },
+      "additionalProperties": false
+    },
+    "routineArgument": {
+      "type": "object",
+      "required": ["ordinal", "name", "mode", "sql_type", "data_type", "nullable", "default_expression"],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "name": { "$ref": "#/$defs/identifier" },
+        "mode": { "enum": ["in", "out", "in_out"] },
+        "sql_type": { "$ref": "#/$defs/identifier" },
+        "data_type": { "oneOf": [{ "$ref": "#/$defs/dataType" }, { "type": "null" }] },
+        "nullable": { "type": "boolean" },
+        "default_expression": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "routineResult": {
+      "oneOf": [
+        { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "void" } }, "additionalProperties": false },
+        {
+          "type": "object",
+          "required": ["kind", "sql_type", "data_type", "nullable"],
+          "properties": {
+            "kind": { "const": "scalar" },
+            "sql_type": { "$ref": "#/$defs/identifier" },
+            "data_type": { "oneOf": [{ "$ref": "#/$defs/dataType" }, { "type": "null" }] },
+            "nullable": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "columns"],
+          "properties": {
+            "kind": { "const": "table" },
+            "columns": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/routineResultColumn" } }
+          },
+          "additionalProperties": false
+        },
+        { "type": "object", "required": ["kind"], "properties": { "kind": { "const": "trigger" } }, "additionalProperties": false }
+      ]
+    },
+    "routineResultColumn": {
+      "type": "object",
+      "required": ["ordinal", "name", "sql_type", "data_type", "nullable"],
+      "properties": {
+        "ordinal": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "name": { "$ref": "#/$defs/identifier" },
+        "sql_type": { "$ref": "#/$defs/identifier" },
+        "data_type": { "oneOf": [{ "$ref": "#/$defs/dataType" }, { "type": "null" }] },
+        "nullable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "routineResourcePolicy": {
+      "type": "object",
+      "required": ["instructions", "heap_bytes", "frames", "sql_statements", "rows", "result_bytes", "deadline_ms"],
+      "properties": {
+        "instructions": { "type": "integer", "minimum": 1 },
+        "heap_bytes": { "type": "integer", "minimum": 1 },
+        "frames": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+        "sql_statements": { "type": "integer", "minimum": 1 },
+        "rows": { "type": "integer", "minimum": 1 },
+        "result_bytes": { "type": "integer", "minimum": 1 },
+        "deadline_ms": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },

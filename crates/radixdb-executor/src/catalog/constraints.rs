@@ -354,23 +354,23 @@ fn bind_primary_key(
     } else {
         return Ok(Vec::new());
     };
-    if resolved.len() != 1 {
-        return Err(Error::NotSupported(
-            "composite PRIMARY KEY is not supported by the current RadixDB SQL contract".to_owned(),
+    if resolved.is_empty() {
+        return Err(Error::InvalidArgument(
+            "PRIMARY KEY must contain at least one column".to_owned(),
         ));
     }
-    let column = columns
-        .iter()
-        .find(|column| column.id == resolved[0])
-        .expect("resolved primary-key column exists");
-    if !matches!(
-        column.data_type.logical_type(),
-        DataType::Integer | DataType::Uuid
-    ) {
-        return Err(Error::InvalidArgument(format!(
-            "PRIMARY KEY column '{}' must be INTEGER or UUID",
-            column.name.display().as_str()
-        )));
+    for column_id in &resolved {
+        let column = columns
+            .iter()
+            .find(|column| column.id == *column_id)
+            .expect("resolved primary-key column exists");
+        if column.data_type.is_external() || !column.data_type.logical_type().supports_primary_key()
+        {
+            return Err(Error::InvalidArgument(format!(
+                "PRIMARY KEY column '{}' must use an orderable built-in scalar type",
+                column.name.display().as_str()
+            )));
+        }
     }
     Ok(resolved)
 }
@@ -838,6 +838,12 @@ fn validate_check_expressions(
                 column.data_type.parameter_1() as u8,
                 column.data_type.parameter_2() as u8,
             );
+        }
+        if column.data_type.is_double_precision() {
+            builder = builder.set_last_double_precision(true);
+        }
+        if column.data_type.logical_type() == DataType::Text {
+            builder = builder.set_last_text_max_chars(column.data_type.parameter_1());
         }
     }
     for check in columns.iter().flat_map(|column| &column.checks) {

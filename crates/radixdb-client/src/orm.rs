@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
 use base64::Engine as _;
-use chrono::{DateTime, NaiveDate};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use radixdb_orm::{
     CatalogOperation, ColumnDescriptor, ConstraintDescriptor, DatabaseDescriptor,
     DescriptorEnvelope, DescriptorError, DescriptorKind, IndexDescriptor, IrDocument, RenderError,
@@ -234,7 +234,11 @@ fn fetch_one_typed_record<S: Read + Write>(
         .collect()
 }
 
-fn wire_value_to_typed(
+/// Decode one protocol scalar into the stable ORM value domain.
+///
+/// Generated application SDKs use this at typed procedure boundaries; engine
+/// and catalog internals remain unreachable.
+pub fn wire_value_to_typed(
     value: &WireValue,
     declared: &radixdb_orm::DataTypeDescriptor,
 ) -> Result<TypedValue, OrmClientError> {
@@ -288,6 +292,18 @@ fn wire_value_to_typed(
                 OrmClientError::InvalidValue("invalid TIMESTAMP result".to_string())
             })?;
             TypedValue::Timestamp(timestamp.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true))
+        }
+        WireValue::CivilTimestampNanos {
+            nanos_since_civil_epoch,
+        } => {
+            let timestamp = DateTime::from_timestamp_nanos(*nanos_since_civil_epoch).naive_utc();
+            TypedValue::CivilTimestamp(timestamp.format("%Y-%m-%d %H:%M:%S%.f").to_string())
+        }
+        WireValue::TimeNanos {
+            nanos_since_midnight,
+        } => {
+            let time = time_from_nanos(*nanos_since_midnight)?;
+            TypedValue::Time(time.format("%H:%M:%S%.f").to_string())
         }
         WireValue::Json(value) => TypedValue::Json(
             serde_json::from_str(value)
@@ -730,7 +746,12 @@ fn fetch_cursor_text<S: Read + Write>(
     }
 }
 
-pub(crate) fn typed_value_to_wire(value: &TypedValue) -> Result<WireValue, OrmClientError> {
+/// Encode one stable ORM value for a bound protocol parameter.
+///
+/// The conversion validates UUID, date, timestamp, decimal and byte syntax so
+/// generated application calls cannot smuggle textual values as another SQL
+/// type.
+pub fn typed_value_to_wire(value: &TypedValue) -> Result<WireValue, OrmClientError> {
     Ok(match value {
         TypedValue::Null(_) => WireValue::Null,
         TypedValue::Integer(value) => WireValue::Int(*value),
@@ -746,6 +767,27 @@ pub(crate) fn typed_value_to_wire(value: &TypedValue) -> Result<WireValue, OrmCl
             })?;
             WireValue::TimestampNanos {
                 nanos_since_unix_epoch_utc: nanos,
+            }
+        }
+        TypedValue::CivilTimestamp(value) => {
+            let timestamp = parse_civil_timestamp(value)?;
+            let nanos_since_civil_epoch =
+                timestamp.and_utc().timestamp_nanos_opt().ok_or_else(|| {
+                    OrmClientError::InvalidValue(
+                        "civil timestamp is outside i64 nanoseconds".to_string(),
+                    )
+                })?;
+            WireValue::CivilTimestampNanos {
+                nanos_since_civil_epoch,
+            }
+        }
+        TypedValue::Time(value) => {
+            let time = NaiveTime::parse_from_str(value, "%H:%M:%S%.f").map_err(|error| {
+                OrmClientError::InvalidValue(format!("invalid civil time: {error}"))
+            })?;
+            WireValue::TimeNanos {
+                nanos_since_midnight: i64::from(time.num_seconds_from_midnight()) * 1_000_000_000
+                    + i64::from(time.nanosecond()),
             }
         }
         TypedValue::Date(value) => {
@@ -794,6 +836,26 @@ pub(crate) fn typed_value_to_wire(value: &TypedValue) -> Result<WireValue, OrmCl
                 .collect(),
         ),
     })
+}
+
+fn parse_civil_timestamp(value: &str) -> Result<NaiveDateTime, OrmClientError> {
+    ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S%.f"]
+        .into_iter()
+        .find_map(|format| NaiveDateTime::parse_from_str(value, format).ok())
+        .ok_or_else(|| OrmClientError::InvalidValue(format!("invalid civil timestamp: {value}")))
+}
+
+fn time_from_nanos(nanos: i64) -> Result<NaiveTime, OrmClientError> {
+    if !(0..86_400_000_000_000_i64).contains(&nanos) {
+        return Err(OrmClientError::InvalidValue(
+            "TIME nanoseconds are outside one civil day".to_string(),
+        ));
+    }
+    NaiveTime::from_num_seconds_from_midnight_opt(
+        (nanos / 1_000_000_000) as u32,
+        (nanos % 1_000_000_000) as u32,
+    )
+    .ok_or_else(|| OrmClientError::InvalidValue("invalid TIME value".to_string()))
 }
 
 #[cfg(feature = "tokio")]

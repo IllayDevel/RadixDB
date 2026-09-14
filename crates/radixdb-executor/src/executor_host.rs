@@ -412,6 +412,14 @@ impl StatementDispatchHost for Executor {
         self.execute_set(statement, context)
     }
 
+    fn dispatch_show_variable(
+        &self,
+        statement: &ShowVariableStatement,
+        context: &ExecutionContext,
+    ) -> Result<Box<dyn QueryResult>> {
+        self.execute_show_variable(statement, context)
+    }
+
     fn dispatch_show_tables(
         &self,
         statement: &ShowTablesStatement,

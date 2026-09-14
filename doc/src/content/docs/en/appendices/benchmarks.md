@@ -1,6 +1,6 @@
 ---
 title: Benchmarks
-description: Reproducible performance and reliability evidence for the RadixDB 1.2 documentation line.
+description: Reproducible performance and reliability evidence for the RadixDB 1.2.4 documentation line.
 ---
 
 Benchmark results describe one binary, dataset and machine. They are not a
@@ -17,7 +17,7 @@ process memory and excludes file data held only by the operating-system cache.
 | --- | --- | --- | --- | --- | --- |
 | BENCH-01 | Cross-engine 100M performance and footprint | `b648b2d3ea323cf5eb10417ab09d5eb3d5d01ecc` | 2026-09-06 | AMD Ryzen 9 7950X; Apacer AS2280Q4U 2 TB NVMe; Btrfs; Linux `7.1.3-201.fc44.x86_64` | [100M comparative report](../../../evidence/performance/CA_80_7_100M_COMPARATIVE_REPORT.md) |
 | BENCH-02 | Final 1.1 query-regression gate | `12ef5963` performance code tip | 2026-09-08 | The preserved 100M NVMe/Btrfs database | [1.1 validation report](../../../evidence/performance/RADIXDB_1_1_100M_VALIDATION.md) |
-| BENCH-03 | Current 1.2 100M verification | `23bf35df011aae6816d77578be96074b02bc363c` | 2026-09-09 | Canonical NVMe run on device `nvme1n1` | [1.2 validation report](../../../evidence/performance/RADIXDB_1_2_100M_VALIDATION.md) |
+| BENCH-03 | Current 1.2.4 100M verification | `23bf35df011aae6816d77578be96074b02bc363c` | 2026-09-09 | Canonical NVMe run on device `nvme1n1` | [1.2.4 validation report](../../../evidence/performance/RADIXDB_1_2_100M_VALIDATION.md) |
 | SOAK-01 | Six-hour correctness and recovery under constrained hardware | `dd0bf75c9176bceb70ce8f1d2a07057610ec381b` | 2026-09-07 | Intel Celeron 847, 1.10 GHz; 2 logical CPUs; 1.76 GiB RAM; Toshiba MQ01ABD050 5400 rpm HDD; ext4 | [Six-hour acceptance report](../../../evidence/reliability/CA_90_3_6H_ACCEPTANCE_REPORT.md) |
 
 The first two entries are NVMe performance evidence. `SOAK-01` is a reliability
@@ -88,15 +88,15 @@ Peak RSS was 563,662,848, 566,497,280 and 551,399,424 bytes. These measurements
 belong to `12ef5963`; later correctness hardening is not presented as the same
 benchmark binary.
 
-## Current 1.2 verification
+## Current 1.2.4 verification
 
-The current 1.2 source baseline reran the canonical 100-million-row NVMe check.
+The current 1.2.4 source baseline reran the canonical 100-million-row NVMe check.
 It preserved checksum `100000000:49734600639880`, reported no storage or
 resource errors, and completed the measured run in 11,870.421 ms. The cold
 database-selection phase took 523.413 ms. Peak RSS was 565.97 MiB, final RSS
 was 343.04 MiB, and the allocated database size was 1.83 GiB.
 
-This run verifies the current source after the 1.2 server, security and
+This run verifies the current source after the 1.2.4 server, security and
 reliability changes. It is not substituted into the earlier PostgreSQL table:
 that comparison belongs to a different RadixDB binary and measurement date.
 

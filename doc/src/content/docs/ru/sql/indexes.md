@@ -70,7 +70,7 @@ ranges. RadixDB по-прежнему владеет MVCC visibility, index page
 execution, publication и recovery. Если planner-support descriptor требует
 recheck, исходный predicate всегда вычисляется после candidate scan.
 
-SDK 1.2 поддерживает external B-tree, hash и bitmap classes. Authoring external
+SDK 1.2.4 поддерживает external B-tree, hash и bitmap classes. Authoring external
 HNSW зарезервирован, но отклоняется. Недоступность exact plugin package переводит
 database с его objects в restricted diagnostic mode вместо чтения index keys
 другим codec. См. [«Команды native extensions»](../../reference/sql/extensions/).

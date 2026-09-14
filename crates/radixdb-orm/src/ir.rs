@@ -179,7 +179,12 @@ pub enum TypedValue {
     Float(FloatValue),
     Text(String),
     Boolean(bool),
+    /// UTC instant in canonical RFC 3339 form.
     Timestamp(String),
+    /// Civil date and time without an offset.
+    CivilTimestamp(String),
+    /// Civil time of day without an offset.
+    Time(String),
     Date(String),
     Json(serde_json::Value),
     Uuid(String),
@@ -234,9 +239,11 @@ impl TypedValue {
             Self::Null(data_type) => data_type.clone(),
             Self::Integer(_) => DataTypeDescriptor::Integer,
             Self::Float(_) => DataTypeDescriptor::Float,
-            Self::Text(_) => DataTypeDescriptor::Text,
+            Self::Text(_) => DataTypeDescriptor::Text { max_chars: None },
             Self::Boolean(_) => DataTypeDescriptor::Boolean,
             Self::Timestamp(_) => DataTypeDescriptor::Timestamp,
+            Self::CivilTimestamp(_) => DataTypeDescriptor::CivilTimestamp,
+            Self::Time(_) => DataTypeDescriptor::Time,
             Self::Date(_) => DataTypeDescriptor::Date,
             Self::Json(_) => DataTypeDescriptor::Json,
             Self::Uuid(_) => DataTypeDescriptor::Uuid,

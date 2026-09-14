@@ -1087,7 +1087,7 @@
               }
             }
           },
-          "sql": "CREATE TABLE \"all_types\" (\"integer_value\" INTEGER, \"float_value\" FLOAT, \"decimal_value\" DECIMAL(38,10), \"text_value\" TEXT, \"boolean_value\" BOOLEAN, \"timestamp_value\" TIMESTAMP, \"date_value\" DATE, \"json_value\" JSON, \"uuid_value\" UUID, \"bytes_value\" BYTES, \"embedding\" VECTOR(768))",
+          "sql": "CREATE TABLE \"all_types\" (\"integer_value\" INTEGER, \"float_value\" FLOAT, \"decimal_value\" DECIMAL(38,10), \"text_value\" TEXT, \"boolean_value\" BOOLEAN, \"timestamp_value\" TIMESTAMPTZ, \"date_value\" DATE, \"json_value\" JSON, \"uuid_value\" UUID, \"bytes_value\" BYTES, \"embedding\" VECTOR(768))",
           "parameters": []
         }
       ],

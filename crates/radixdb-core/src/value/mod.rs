@@ -22,7 +22,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike, Utc};
 use uuid::Uuid;
 
 use super::error::{Error, Result};
@@ -32,6 +32,8 @@ use crate::{CompactArc, SmartString};
 const EXTERNAL_VALUE_MARKER: u8 = 0xff;
 const EXTERNAL_VALUE_HEADER_BYTES: usize = 1 + 16 + 4;
 pub const MAX_EXTERNAL_VALUE_BYTES: usize = 16 * 1024 * 1024;
+const NANOS_PER_SECOND: i64 = 1_000_000_000;
+const NANOS_PER_DAY: i64 = 86_400 * NANOS_PER_SECOND;
 
 /// Borrowed view of the canonical payload carried by an external value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +59,10 @@ const TIMESTAMP_FORMATS: &[&str] = &[
     "%Y-%m-%dT%H:%M:%S%:z",    // RFC3339
     "%Y-%m-%dT%H:%M:%S%.fZ",   // RFC3339 UTC with fractional seconds
     "%Y-%m-%dT%H:%M:%SZ",      // RFC3339 UTC
+    "%Y-%m-%d %H:%M:%S%.f%:z", // SQL-style with fractional seconds and offset
+    "%Y-%m-%d %H:%M:%S%:z",    // SQL-style with offset
+    "%Y-%m-%d %H:%M:%S%.fZ",   // SQL-style UTC with fractional seconds
+    "%Y-%m-%d %H:%M:%SZ",      // SQL-style UTC
     "%Y-%m-%dT%H:%M:%S%.f",    // ISO with fractional seconds, no timezone
     "%Y-%m-%dT%H:%M:%S",       // ISO without timezone
     "%Y-%m-%d %H:%M:%S%.f",    // SQL-style with fractional seconds
@@ -72,6 +78,14 @@ const TIME_FORMATS: &[&str] = &[
     "%H:%M:%S%.f", // High precision
     "%H:%M:%S",    // Standard
     "%H:%M",       // Hours and minutes only
+];
+
+const CIVIL_TIMESTAMP_FORMATS: &[&str] = &[
+    "%Y-%m-%dT%H:%M:%S%.f",
+    "%Y-%m-%dT%H:%M:%S",
+    "%Y-%m-%d %H:%M:%S%.f",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y/%m/%d %H:%M:%S",
 ];
 
 /// A runtime value with type information
@@ -176,6 +190,55 @@ impl Value {
     /// Create a timestamp value
     pub fn timestamp(value: DateTime<Utc>) -> Self {
         Value::Timestamp(value)
+    }
+
+    /// Create a civil TIMESTAMP WITHOUT TIME ZONE value.
+    pub fn civil_timestamp(value: NaiveDateTime) -> Result<Self> {
+        let nanos = value.and_utc().timestamp_nanos_opt().ok_or_else(|| {
+            Error::invalid_argument("civil timestamp is outside the persisted i64 nanosecond range")
+        })?;
+        Ok(Self::temporal_extension(DataType::CivilTimestamp, nanos))
+    }
+
+    /// Create a TIME WITHOUT TIME ZONE value.
+    pub fn time(value: NaiveTime) -> Self {
+        let nanos = i64::from(value.num_seconds_from_midnight()) * NANOS_PER_SECOND
+            + i64::from(value.nanosecond());
+        Self::temporal_extension(DataType::Time, nanos)
+    }
+
+    /// Rebuild one temporal value from its canonical physical i64 payload.
+    #[doc(hidden)]
+    pub fn from_temporal_nanos(data_type: DataType, nanos: i64) -> Result<Self> {
+        match data_type {
+            DataType::Timestamp => datetime_from_epoch_nanos(nanos)
+                .map(Value::Timestamp)
+                .ok_or_else(|| Error::invalid_argument("TIMESTAMPTZ nanoseconds are out of range")),
+            DataType::CivilTimestamp => {
+                let value = datetime_from_epoch_nanos(nanos)
+                    .map(|value| value.naive_utc())
+                    .ok_or_else(|| {
+                        Error::invalid_argument("TIMESTAMP nanoseconds are out of range")
+                    })?;
+                Self::civil_timestamp(value)
+            }
+            DataType::Time if (0..NANOS_PER_DAY).contains(&nanos) => {
+                Ok(Self::temporal_extension(DataType::Time, nanos))
+            }
+            DataType::Time => Err(Error::invalid_argument(
+                "TIME nanoseconds must be inside one civil day",
+            )),
+            _ => Err(Error::invalid_argument(format!(
+                "data type {data_type} is not a temporal i64 type"
+            ))),
+        }
+    }
+
+    fn temporal_extension(data_type: DataType, nanos: i64) -> Self {
+        let mut data = Vec::with_capacity(9);
+        data.push(data_type as u8);
+        data.extend_from_slice(&nanos.to_le_bytes());
+        Value::Extension(CompactArc::from(data))
     }
 
     /// Create a validated JSON value.
@@ -440,6 +503,22 @@ impl Value {
                 }
             }
             DataType::Bytes => {}
+            DataType::CivilTimestamp => {
+                let nanos = temporal_payload_nanos(payload, "TIMESTAMP")?;
+                if datetime_from_epoch_nanos(nanos).is_none() {
+                    return Err(Error::invalid_argument(
+                        "TIMESTAMP payload is outside the supported civil range",
+                    ));
+                }
+            }
+            DataType::Time => {
+                let nanos = temporal_payload_nanos(payload, "TIME")?;
+                if !(0..NANOS_PER_DAY).contains(&nanos) {
+                    return Err(Error::invalid_argument(
+                        "TIME payload must be inside one civil day",
+                    ));
+                }
+            }
             _ => {
                 return Err(Error::invalid_argument(format!(
                     "data type {tag} is not a valid extension payload tag"
@@ -568,6 +647,12 @@ impl Value {
             Value::Extension(data) if data.first() == Some(&(DataType::Date as u8)) => self
                 .as_date_days()
                 .and_then(format_date_days_since_unix_epoch),
+            Value::Extension(data) if data.first() == Some(&(DataType::CivilTimestamp as u8)) => {
+                self.as_civil_timestamp().map(format_civil_timestamp)
+            }
+            Value::Extension(data) if data.first() == Some(&(DataType::Time as u8)) => {
+                self.as_time().map(format_time)
+            }
             Value::Extension(data) if data.first() == Some(&(DataType::Bytes as u8)) => {
                 Some(format_bytes_hex(&data[1..]))
             }
@@ -619,6 +704,48 @@ impl Value {
     pub fn artifact_timestamp_nanos(&self) -> Option<i64> {
         match self {
             Value::Timestamp(timestamp) => timestamp.timestamp_nanos_opt(),
+            _ => None,
+        }
+    }
+
+    /// Extract a civil TIMESTAMP WITHOUT TIME ZONE value.
+    pub fn as_civil_timestamp(&self) -> Option<NaiveDateTime> {
+        let nanos = self.as_temporal_nanos(DataType::CivilTimestamp)?;
+        datetime_from_epoch_nanos(nanos).map(|value| value.naive_utc())
+    }
+
+    /// Extract a TIME WITHOUT TIME ZONE value.
+    pub fn as_time(&self) -> Option<NaiveTime> {
+        let nanos = self.as_temporal_nanos(DataType::Time)?;
+        let seconds = u32::try_from(nanos / NANOS_PER_SECOND).ok()?;
+        let subsecond = u32::try_from(nanos % NANOS_PER_SECOND).ok()?;
+        NaiveTime::from_num_seconds_from_midnight_opt(seconds, subsecond)
+    }
+
+    /// Return the shared persisted i64 representation for all temporal types.
+    #[doc(hidden)]
+    pub fn artifact_temporal_nanos(&self) -> Option<i64> {
+        match self {
+            Value::Timestamp(timestamp) => timestamp.timestamp_nanos_opt(),
+            Value::Extension(data)
+                if matches!(
+                    data.first().and_then(|tag| DataType::from_u8(*tag)),
+                    Some(DataType::CivilTimestamp | DataType::Time)
+                ) && data.len() == 9 =>
+            {
+                Some(i64::from_le_bytes(data[1..9].try_into().ok()?))
+            }
+            _ => None,
+        }
+    }
+
+    fn as_temporal_nanos(&self, expected: DataType) -> Option<i64> {
+        match self {
+            Value::Extension(data)
+                if data.first() == Some(&(expected as u8)) && data.len() == 9 =>
+            {
+                Some(i64::from_le_bytes(data[1..9].try_into().ok()?))
+            }
             _ => None,
         }
     }
@@ -794,6 +921,18 @@ impl Value {
                         _ => Err(Error::IncomparableTypes),
                     };
                 }
+                if matches!(
+                    a.first().and_then(|tag| DataType::from_u8(*tag)),
+                    Some(DataType::CivilTimestamp | DataType::Time)
+                ) {
+                    return match (
+                        self.artifact_temporal_nanos(),
+                        other.artifact_temporal_nanos(),
+                    ) {
+                        (Some(left), Some(right)) => Ok(left.cmp(&right)),
+                        _ => Err(Error::IncomparableTypes),
+                    };
+                }
                 if a.first() == Some(&(DataType::Bytes as u8)) {
                     return Ok(a[1..].cmp(&b[1..]));
                 }
@@ -870,6 +1009,36 @@ impl Value {
                         } else if let Some(s) = v.downcast_ref::<String>() {
                             parse_timestamp(s)
                                 .map(Value::Timestamp)
+                                .unwrap_or(Value::Null(data_type))
+                        } else {
+                            Value::Null(data_type)
+                        }
+                    }
+                    DataType::CivilTimestamp => {
+                        if let Some(&value) = v.downcast_ref::<NaiveDateTime>() {
+                            Value::civil_timestamp(value)?
+                        } else if let Some(s) = v.downcast_ref::<String>() {
+                            parse_civil_timestamp(s)
+                                .and_then(Value::civil_timestamp)
+                                .unwrap_or(Value::Null(data_type))
+                        } else if let Some(&s) = v.downcast_ref::<&str>() {
+                            parse_civil_timestamp(s)
+                                .and_then(Value::civil_timestamp)
+                                .unwrap_or(Value::Null(data_type))
+                        } else {
+                            Value::Null(data_type)
+                        }
+                    }
+                    DataType::Time => {
+                        if let Some(&value) = v.downcast_ref::<NaiveTime>() {
+                            Value::time(value)
+                        } else if let Some(s) = v.downcast_ref::<String>() {
+                            parse_time(s)
+                                .map(Value::time)
+                                .unwrap_or(Value::Null(data_type))
+                        } else if let Some(&s) = v.downcast_ref::<&str>() {
+                            parse_time(s)
+                                .map(Value::time)
                                 .unwrap_or(Value::Null(data_type))
                         } else {
                             Value::Null(data_type)
@@ -1024,6 +1193,16 @@ impl Value {
                             .map(Value::Integer)
                             .unwrap_or(Value::Null(target_type))
                     }
+                    Value::Extension(data)
+                        if matches!(
+                            data.first().and_then(|tag| DataType::from_u8(*tag)),
+                            Some(DataType::CivilTimestamp | DataType::Time)
+                        ) =>
+                    {
+                        self.as_string()
+                            .map(|value| Value::Text(SmartString::from_string(value)))
+                            .unwrap_or(Value::Null(target_type))
+                    }
                     _ => Value::Null(target_type),
                 }
             }
@@ -1070,6 +1249,16 @@ impl Value {
                             .unwrap_or(Value::Null(target_type))
                     }
                     Value::Extension(data) if data.first() == Some(&(DataType::Decimal as u8)) => {
+                        self.as_string()
+                            .map(|value| Value::Text(SmartString::from_string(value)))
+                            .unwrap_or(Value::Null(target_type))
+                    }
+                    Value::Extension(data)
+                        if matches!(
+                            data.first().and_then(|tag| DataType::from_u8(*tag)),
+                            Some(DataType::CivilTimestamp | DataType::Time)
+                        ) =>
+                    {
                         self.as_string()
                             .map(|value| Value::Text(SmartString::from_string(value)))
                             .unwrap_or(Value::Null(target_type))
@@ -1140,6 +1329,30 @@ impl Value {
                     _ => Value::Null(target_type),
                 }
             }
+            DataType::CivilTimestamp => match self {
+                Value::Text(value) => parse_civil_timestamp(value)
+                    .and_then(Value::civil_timestamp)
+                    .unwrap_or(Value::Null(target_type)),
+                Value::Extension(data)
+                    if data.first() == Some(&(DataType::Date as u8)) && data.len() == 5 =>
+                {
+                    self.as_date_days()
+                        .and_then(civil_midnight_from_epoch_days)
+                        .and_then(|value| Value::civil_timestamp(value).ok())
+                        .unwrap_or(Value::Null(target_type))
+                }
+                Value::Integer(nanos) => Value::from_temporal_nanos(target_type, *nanos)
+                    .unwrap_or(Value::Null(target_type)),
+                _ => Value::Null(target_type),
+            },
+            DataType::Time => match self {
+                Value::Text(value) => parse_time(value)
+                    .map(Value::time)
+                    .unwrap_or(Value::Null(target_type)),
+                Value::Integer(nanos) => Value::from_temporal_nanos(target_type, *nanos)
+                    .unwrap_or(Value::Null(target_type)),
+                _ => Value::Null(target_type),
+            },
             DataType::Json => {
                 // Convert to JSON
                 match self {
@@ -1225,17 +1438,16 @@ impl Value {
                 Value::Text(s) => parse_date_days_since_unix_epoch(s.as_str())
                     .map(Value::date)
                     .unwrap_or(Value::Null(target_type)),
-                Value::Timestamp(timestamp) => {
-                    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1)
-                        .expect("Unix epoch is a valid calendar date");
-                    i32::try_from(
-                        timestamp
-                            .date_naive()
-                            .signed_duration_since(epoch)
-                            .num_days(),
-                    )
+                Value::Timestamp(timestamp) => date_days_since_unix_epoch(timestamp.date_naive())
                     .map(Value::date)
-                    .unwrap_or(Value::Null(target_type))
+                    .unwrap_or(Value::Null(target_type)),
+                Value::Extension(data)
+                    if data.first() == Some(&(DataType::CivilTimestamp as u8)) =>
+                {
+                    self.as_civil_timestamp()
+                        .and_then(|timestamp| date_days_since_unix_epoch(timestamp.date()))
+                        .map(Value::date)
+                        .unwrap_or(Value::Null(target_type))
                 }
                 _ => Value::Null(target_type),
             },
@@ -1308,6 +1520,16 @@ impl Value {
                         .map(Value::Integer)
                         .unwrap_or(Value::Null(target_type))
                 }
+                Value::Extension(ref data)
+                    if matches!(
+                        data.first().and_then(|tag| DataType::from_u8(*tag)),
+                        Some(DataType::CivilTimestamp | DataType::Time)
+                    ) =>
+                {
+                    self.as_string()
+                        .map(|value| Value::Text(SmartString::from_string(value)))
+                        .unwrap_or(Value::Null(target_type))
+                }
                 _ => Value::Null(target_type),
             },
             DataType::Float => match &self {
@@ -1352,6 +1574,16 @@ impl Value {
                         .map(|value| Value::Text(SmartString::from_string(value)))
                         .unwrap_or(Value::Null(target_type))
                 }
+                Value::Extension(ref data)
+                    if matches!(
+                        data.first().and_then(|tag| DataType::from_u8(*tag)),
+                        Some(DataType::CivilTimestamp | DataType::Time)
+                    ) =>
+                {
+                    self.as_string()
+                        .map(|value| Value::Text(SmartString::from_string(value)))
+                        .unwrap_or(Value::Null(target_type))
+                }
                 Value::Extension(_) | Value::Null(_) => Value::Null(target_type),
             },
             DataType::Boolean => match &self {
@@ -1388,6 +1620,22 @@ impl Value {
                     .unwrap_or(Value::Null(target_type)),
                 Value::Integer(nanos) => datetime_from_epoch_nanos(nanos)
                     .map(Value::Timestamp)
+                    .unwrap_or(Value::Null(target_type)),
+                _ => Value::Null(target_type),
+            },
+            DataType::CivilTimestamp => match self {
+                Value::Text(value) => parse_civil_timestamp(&value)
+                    .and_then(Value::civil_timestamp)
+                    .unwrap_or(Value::Null(target_type)),
+                Value::Integer(nanos) => Value::from_temporal_nanos(target_type, nanos)
+                    .unwrap_or(Value::Null(target_type)),
+                _ => Value::Null(target_type),
+            },
+            DataType::Time => match self {
+                Value::Text(value) => parse_time(&value)
+                    .map(Value::time)
+                    .unwrap_or(Value::Null(target_type)),
+                Value::Integer(nanos) => Value::from_temporal_nanos(target_type, nanos)
                     .unwrap_or(Value::Null(target_type)),
                 _ => Value::Null(target_type),
             },
@@ -1469,6 +1717,17 @@ impl Value {
                 Value::Text(s) => parse_date_days_since_unix_epoch(s.as_str())
                     .map(Value::date)
                     .unwrap_or(Value::Null(target_type)),
+                Value::Timestamp(timestamp) => date_days_since_unix_epoch(timestamp.date_naive())
+                    .map(Value::date)
+                    .unwrap_or(Value::Null(target_type)),
+                Value::Extension(ref data)
+                    if data.first() == Some(&(DataType::CivilTimestamp as u8)) =>
+                {
+                    self.as_civil_timestamp()
+                        .and_then(|timestamp| date_days_since_unix_epoch(timestamp.date()))
+                        .map(Value::date)
+                        .unwrap_or(Value::Null(target_type))
+                }
                 _ => Value::Null(target_type),
             },
             DataType::Bytes => match self {
@@ -1527,6 +1786,16 @@ impl fmt::Display for Value {
                     {
                         Some(date) => write!(f, "{}", date),
                         None => write!(f, "<invalid-date>"),
+                    }
+                } else if tag == DataType::CivilTimestamp as u8 {
+                    match self.as_civil_timestamp() {
+                        Some(value) => write!(f, "{}", format_civil_timestamp(value)),
+                        None => write!(f, "<invalid-timestamp>"),
+                    }
+                } else if tag == DataType::Time as u8 {
+                    match self.as_time() {
+                        Some(value) => write!(f, "{}", format_time(value)),
+                        None => write!(f, "<invalid-time>"),
                     }
                 } else if tag == DataType::Bytes as u8 {
                     write!(f, "{}", format_bytes_hex(&data[1..]))
@@ -1816,7 +2085,24 @@ impl Ord for Value {
             (Value::Text(a), Value::Text(b)) => a.cmp(b),
             (Value::Boolean(a), Value::Boolean(b)) => a.cmp(b),
             (Value::Timestamp(a), Value::Timestamp(b)) => a.cmp(b),
-            (Value::Extension(a), Value::Extension(b)) => a.cmp(b),
+            (Value::Extension(a), Value::Extension(b)) => {
+                if a.first() == b.first()
+                    && matches!(
+                        a.first().and_then(|tag| DataType::from_u8(*tag)),
+                        Some(DataType::CivilTimestamp | DataType::Time)
+                    )
+                {
+                    match (
+                        self.artifact_temporal_nanos(),
+                        other.artifact_temporal_nanos(),
+                    ) {
+                        (Some(left), Some(right)) => left.cmp(&right),
+                        _ => a.cmp(b),
+                    }
+                } else {
+                    a.cmp(b)
+                }
+            }
             _ => Ordering::Equal, // Should not reach here
         }
     }
@@ -1954,6 +2240,59 @@ pub fn parse_timestamp(s: &str) -> Result<DateTime<Utc>> {
     }
 
     Err(Error::parse(format!("invalid timestamp format: {}", s)))
+}
+
+/// Parse a civil timestamp without accepting or applying a time-zone offset.
+pub fn parse_civil_timestamp(s: &str) -> Result<NaiveDateTime> {
+    let s = s.trim();
+    for format in CIVIL_TIMESTAMP_FORMATS {
+        if let Ok(value) = NaiveDateTime::parse_from_str(s, format) {
+            return Ok(value);
+        }
+    }
+    if let Ok(date) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        return date
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| Error::parse(format!("invalid civil timestamp: {s}")));
+    }
+    Err(Error::parse(format!("invalid civil timestamp format: {s}")))
+}
+
+/// Parse a civil time of day without accepting a time-zone offset.
+pub fn parse_time(s: &str) -> Result<NaiveTime> {
+    let s = s.trim();
+    for format in TIME_FORMATS {
+        if let Ok(value) = NaiveTime::parse_from_str(s, format) {
+            return Ok(value);
+        }
+    }
+    Err(Error::parse(format!("invalid time format: {s}")))
+}
+
+fn temporal_payload_nanos(payload: &[u8], sql_type: &str) -> Result<i64> {
+    let bytes: [u8; 8] = payload.try_into().map_err(|_| {
+        Error::invalid_argument(format!("{sql_type} payload must contain exactly 8 bytes"))
+    })?;
+    Ok(i64::from_le_bytes(bytes))
+}
+
+fn civil_midnight_from_epoch_days(days: i32) -> Option<NaiveDateTime> {
+    NaiveDate::from_ymd_opt(1970, 1, 1)?
+        .checked_add_signed(chrono::Duration::days(i64::from(days)))?
+        .and_hms_opt(0, 0, 0)
+}
+
+fn date_days_since_unix_epoch(date: NaiveDate) -> Option<i32> {
+    let epoch = NaiveDate::from_ymd_opt(1970, 1, 1)?;
+    i32::try_from(date.signed_duration_since(epoch).num_days()).ok()
+}
+
+fn format_civil_timestamp(value: NaiveDateTime) -> String {
+    value.format("%Y-%m-%d %H:%M:%S%.f").to_string()
+}
+
+fn format_time(value: NaiveTime) -> String {
+    value.format("%H:%M:%S%.f").to_string()
 }
 
 /// Format a float value consistently

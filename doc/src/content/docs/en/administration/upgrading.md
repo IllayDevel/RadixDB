@@ -38,7 +38,7 @@ it does not update an existing catalog binding. A database pinned to the old
 version then opens in restricted diagnostic mode if the old exact package is no
 longer active.
 
-RadixDB 1.2 has no `ALTER EXTENSION UPDATE`, hot reload or automatic codec
+RadixDB 1.2.4 has no `ALTER EXTENSION UPDATE`, hot reload or automatic codec
 migration. Keep the old package available for rollback and perform an explicit
 logical or application migration into separately verified objects when an
 extension changes identity or codec. The compatibility report emitted by
@@ -53,7 +53,7 @@ must not exist.
 
 ```sh
 OLD_BUNDLE=/srv/radixdb-releases/old
-NEW_BUNDLE=/srv/radixdb-releases/1.2
+NEW_BUNDLE=/srv/radixdb-releases/1.2.4
 OLD_ROOT=/opt/radixdb/data/databases/app
 NEW_ROOT=/opt/radixdb/data/databases/app-v11
 DUMP=/srv/radixdb-migrations/app-v11.sql
@@ -73,7 +73,7 @@ Before the maintenance window:
 3. Validate the candidate configuration and client protocol in an isolated
    service.
 4. Estimate space for the dump, the new physical root and rollback retention.
-5. Define an application write stop. RadixDB 1.2 does not provide replication,
+5. Define an application write stop. RadixDB 1.2.4 does not provide replication,
    online logical catch-up or automatic failover for this transition.
 
 ## Export through the old engine

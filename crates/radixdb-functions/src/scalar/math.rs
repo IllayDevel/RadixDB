@@ -102,9 +102,6 @@ impl ScalarFunction for RoundFunction {
             return Ok(Value::null_unknown());
         }
 
-        let num = value_to_f64(&args[0])
-            .ok_or_else(|| Error::invalid_argument("ROUND first argument must be a number"))?;
-
         // Default to 0 decimal places if not specified
         let places = if args.len() == 2 && !args[1].is_null() {
             value_to_i64(&args[1])
@@ -114,12 +111,89 @@ impl ScalarFunction for RoundFunction {
             0
         };
 
+        if let Some((unscaled, _, scale)) = args[0].as_decimal_parts() {
+            return round_decimal(unscaled, scale, places);
+        }
+
+        let num = value_to_f64(&args[0])
+            .ok_or_else(|| Error::invalid_argument("ROUND first argument must be a number"))?;
+
         // Round to specified decimal places
         let shift = 10_f64.powi(places);
         let rounded = (num * shift).round() / shift;
 
         Ok(Value::Float(rounded))
     }
+}
+
+fn round_decimal(unscaled: i128, scale: u8, places: i32) -> Result<Value> {
+    if places >= i32::from(scale) {
+        let precision = decimal_precision(unscaled, scale)?;
+        return Value::try_decimal(unscaled, precision, scale);
+    }
+
+    let (divisor_exponent, result_scale, restore_exponent) = if places >= 0 {
+        (i32::from(scale) - places, places as u8, 0_u32)
+    } else {
+        let restore = places.unsigned_abs();
+        (
+            i32::from(scale)
+                .checked_add(i32::try_from(restore).unwrap_or(i32::MAX))
+                .ok_or_else(|| Error::Type("DECIMAL ROUND scale overflow".to_string()))?,
+            0,
+            restore,
+        )
+    };
+    let divisor_exponent = u32::try_from(divisor_exponent)
+        .map_err(|_| Error::Type("DECIMAL ROUND scale overflow".to_string()))?;
+    if divisor_exponent > 38 {
+        return Value::try_decimal(0, 1, result_scale);
+    }
+    let divisor = 10_i128
+        .checked_pow(divisor_exponent)
+        .ok_or_else(|| Error::Type("DECIMAL ROUND scale overflow".to_string()))?;
+    let quotient = unscaled / divisor;
+    let remainder = unscaled % divisor;
+    let rounded = if remainder.unsigned_abs() >= (divisor as u128) / 2 {
+        quotient
+            .checked_add(if unscaled.is_negative() { -1 } else { 1 })
+            .ok_or_else(|| Error::Type("DECIMAL ROUND overflow".to_string()))?
+    } else {
+        quotient
+    };
+    let restored = if restore_exponent == 0 {
+        rounded
+    } else if restore_exponent > 38 {
+        0
+    } else {
+        rounded
+            .checked_mul(
+                10_i128
+                    .checked_pow(restore_exponent)
+                    .ok_or_else(|| Error::Type("DECIMAL ROUND overflow".to_string()))?,
+            )
+            .ok_or_else(|| Error::Type("DECIMAL ROUND overflow".to_string()))?
+    };
+    let precision = decimal_precision(restored, result_scale)?;
+    Value::try_decimal(restored, precision, result_scale)
+}
+
+fn decimal_precision(unscaled: i128, scale: u8) -> Result<u8> {
+    let mut magnitude = unscaled.unsigned_abs();
+    let mut digits = 1_u8;
+    while magnitude >= 10 {
+        magnitude /= 10;
+        digits = digits
+            .checked_add(1)
+            .ok_or_else(|| Error::Type("DECIMAL precision overflow".to_string()))?;
+    }
+    let precision = digits.max(scale).max(1);
+    if precision > 38 {
+        return Err(Error::Type(
+            "DECIMAL value exceeds precision 38".to_string(),
+        ));
+    }
+    Ok(precision)
 }
 
 // ============================================================================
@@ -988,6 +1062,29 @@ mod tests {
             f.evaluate(&[Value::Float(1234.5678), Value::Integer(0)])
                 .unwrap(),
             Value::Float(1235.0)
+        );
+    }
+
+    #[test]
+    fn test_round_decimal_is_exact_and_preserves_decimal_type() {
+        let f = RoundFunction;
+        assert_eq!(
+            f.evaluate(&[
+                Value::try_decimal(216_037_500, 9, 5).unwrap(),
+                Value::Integer(2),
+            ])
+            .unwrap()
+            .as_decimal_parts(),
+            Some((216_038, 6, 2))
+        );
+        assert_eq!(
+            f.evaluate(&[
+                Value::try_decimal(-216_035, 6, 3).unwrap(),
+                Value::Integer(2),
+            ])
+            .unwrap()
+            .as_decimal_parts(),
+            Some((-21_604, 5, 2))
         );
     }
 

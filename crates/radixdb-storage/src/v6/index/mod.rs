@@ -53,10 +53,12 @@ pub(crate) use ordered::{
     scan_ordered_non_null_index_from_source, visit_ordered_index_pages_from_sorted,
 };
 pub use ordered::{
-    decode_ordered_index_page, encode_ordered_index_pages, scan_ordered_index,
-    scan_ordered_index_from_source, IndexScanDirection, OrderedIndexBound, OrderedIndexEntry,
-    OrderedIndexKey, OrderedIndexPage, OrderedIndexPageEntry, OrderedPageBuildLimits,
-    DEFAULT_ORDERED_PAGE_BYTES, DEFAULT_ORDERED_PAGE_ENTRIES, MAX_ORDERED_PAGE_DECODE_BYTES,
+    decode_ordered_index_page, encode_ordered_index_pages,
+    lookup_unique_ordered_index_keys_from_source, lookup_unique_ordered_index_values_from_source,
+    scan_ordered_index, scan_ordered_index_from_source, IndexScanDirection, OrderedIndexBound,
+    OrderedIndexEntry, OrderedIndexKey, OrderedIndexPage, OrderedIndexPageEntry,
+    OrderedPageBuildLimits, DEFAULT_ORDERED_PAGE_BYTES, DEFAULT_ORDERED_PAGE_ENTRIES,
+    MAX_ORDERED_PAGE_DECODE_BYTES,
 };
 pub(crate) use posting::PostingFragmentState;
 pub use source::{

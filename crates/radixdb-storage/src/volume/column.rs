@@ -43,10 +43,15 @@ pub enum ColumnData {
     /// Used for FLOAT/DOUBLE columns.
     Float64 { values: Vec<f64>, nulls: Vec<bool> },
 
-    /// Timestamps stored as nanoseconds since Unix epoch.
-    /// Preserves sub-second precision while enabling integer comparison
-    /// and binary search without chrono overhead.
-    TimestampNanos { values: Vec<i64>, nulls: Vec<bool> },
+    /// Temporal values stored as signed nanoseconds.
+    ///
+    /// `data_type` distinguishes UTC instants, civil timestamps and times of
+    /// day while all three share the same fixed-width physical representation.
+    TimestampNanos {
+        values: Vec<i64>,
+        data_type: DataType,
+        nulls: Vec<bool>,
+    },
 
     /// Booleans stored as bytes with null bitmap.
     Boolean { values: Vec<bool>, nulls: Vec<bool> },
@@ -177,7 +182,7 @@ impl ColumnData {
                     nulls,
                 })
             }
-            DataType::Timestamp => {
+            DataType::Timestamp | DataType::CivilTimestamp | DataType::Time => {
                 let mut decoded = Vec::with_capacity(values.len());
                 for value in values {
                     match value {
@@ -185,11 +190,9 @@ impl ColumnData {
                             decoded.push(0);
                             nulls.push(true);
                         }
-                        Value::Timestamp(value) => {
-                            let nanos = value.timestamp_nanos_opt().ok_or_else(|| {
-                                Error::invalid_argument(
-                                    "physical timestamp is outside the exact nanosecond range",
-                                )
+                        value if value.data_type() == data_type => {
+                            let nanos = value.artifact_temporal_nanos().ok_or_else(|| {
+                                Error::invalid_argument("temporal value has invalid i64 payload")
                             })?;
                             decoded.push(nanos);
                             nulls.push(false);
@@ -199,6 +202,7 @@ impl ColumnData {
                 }
                 Ok(Self::TimestampNanos {
                     values: decoded,
+                    data_type,
                     nulls,
                 })
             }
@@ -314,9 +318,15 @@ impl ColumnData {
         match column {
             crate::v6::DecodedColumn::Int64 { values, nulls } => Self::Int64 { values, nulls },
             crate::v6::DecodedColumn::Float64 { values, nulls } => Self::Float64 { values, nulls },
-            crate::v6::DecodedColumn::TimestampNanos { values, nulls } => {
-                Self::TimestampNanos { values, nulls }
-            }
+            crate::v6::DecodedColumn::TimestampNanos {
+                values,
+                data_type,
+                nulls,
+            } => Self::TimestampNanos {
+                values,
+                data_type,
+                nulls,
+            },
             crate::v6::DecodedColumn::Boolean { values, nulls } => Self::Boolean { values, nulls },
             crate::v6::DecodedColumn::Text {
                 ids,
@@ -367,7 +377,7 @@ impl ColumnData {
             ColumnData::Float64 { values, nulls } => {
                 values.capacity() * size_of::<f64>() + Self::bool_vec_allocation_bytes(nulls)
             }
-            ColumnData::TimestampNanos { values, nulls } => {
+            ColumnData::TimestampNanos { values, nulls, .. } => {
                 values.capacity() * size_of::<i64>() + Self::bool_vec_allocation_bytes(nulls)
             }
             ColumnData::Boolean { values, nulls } => {
@@ -492,7 +502,11 @@ impl ColumnData {
                     }
                 }
             }
-            ColumnData::TimestampNanos { values, nulls } => {
+            ColumnData::TimestampNanos {
+                values,
+                data_type,
+                nulls,
+            } => {
                 let mut min_val = i64::MAX;
                 let mut max_val = i64::MIN;
                 let mut has_value = false;
@@ -511,24 +525,20 @@ impl ColumnData {
                     }
                 }
                 if has_value {
-                    let to_ts = |nanos: i64| -> Value {
-                        let secs = nanos.div_euclid(1_000_000_000);
-                        let sub = nanos.rem_euclid(1_000_000_000) as u32;
-                        match chrono::TimeZone::timestamp_opt(&chrono::Utc, secs, sub) {
-                            chrono::LocalResult::Single(dt) => Value::Timestamp(dt),
-                            _ => Value::Null(DataType::Timestamp),
-                        }
+                    let to_temporal = |nanos: i64| {
+                        Value::from_temporal_nanos(*data_type, nanos)
+                            .unwrap_or(Value::Null(*data_type))
                     };
                     ZoneMap {
-                        min: to_ts(min_val),
-                        max: to_ts(max_val),
+                        min: to_temporal(min_val),
+                        max: to_temporal(max_val),
                         null_count,
                         row_count,
                     }
                 } else {
                     ZoneMap {
-                        min: Value::Null(DataType::Timestamp),
-                        max: Value::Null(DataType::Timestamp),
+                        min: Value::Null(*data_type),
+                        max: Value::Null(*data_type),
                         null_count,
                         row_count,
                     }
@@ -655,7 +665,7 @@ impl ColumnData {
         match self {
             ColumnData::Int64 { .. } => DataType::Integer,
             ColumnData::Float64 { .. } => DataType::Float,
-            ColumnData::TimestampNanos { .. } => DataType::Timestamp,
+            ColumnData::TimestampNanos { data_type, .. } => *data_type,
             ColumnData::Boolean { .. } => DataType::Boolean,
             ColumnData::Dictionary { .. } => DataType::Text,
             ColumnData::Bytes { ext_type, .. } => *ext_type,
@@ -703,14 +713,28 @@ impl ColumnData {
                 values: vec![*value; row_count],
                 nulls: vec![false; row_count],
             }),
-            Value::Null(DataType::Timestamp) => Some(ColumnData::TimestampNanos {
-                values: vec![0; row_count],
-                nulls: vec![true; row_count],
-            }),
-            Value::Timestamp(value) => {
-                let nanos = Value::Timestamp(*value).artifact_timestamp_nanos()?;
+            Value::Null(data_type)
+                if matches!(
+                    data_type,
+                    DataType::Timestamp | DataType::CivilTimestamp | DataType::Time
+                ) =>
+            {
+                Some(ColumnData::TimestampNanos {
+                    values: vec![0; row_count],
+                    data_type: *data_type,
+                    nulls: vec![true; row_count],
+                })
+            }
+            value
+                if matches!(
+                    value.data_type(),
+                    DataType::Timestamp | DataType::CivilTimestamp | DataType::Time
+                ) =>
+            {
+                let nanos = value.artifact_temporal_nanos()?;
                 Some(ColumnData::TimestampNanos {
                     values: vec![nanos; row_count],
+                    data_type: value.data_type(),
                     nulls: vec![false; row_count],
                 })
             }
@@ -782,8 +806,13 @@ impl ColumnData {
                 values: values[start..end].to_vec(),
                 nulls: nulls[start..end].to_vec(),
             },
-            ColumnData::TimestampNanos { values, nulls } => ColumnData::TimestampNanos {
+            ColumnData::TimestampNanos {
+                values,
+                data_type,
+                nulls,
+            } => ColumnData::TimestampNanos {
                 values: values[start..end].to_vec(),
+                data_type: *data_type,
                 nulls: nulls[start..end].to_vec(),
             },
             ColumnData::Boolean { values, nulls } => ColumnData::Boolean {
@@ -860,8 +889,13 @@ impl ColumnData {
                 values: indices.iter().map(|&idx| values[idx]).collect(),
                 nulls: indices.iter().map(|&idx| nulls[idx]).collect(),
             },
-            ColumnData::TimestampNanos { values, nulls } => ColumnData::TimestampNanos {
+            ColumnData::TimestampNanos {
+                values,
+                data_type,
+                nulls,
+            } => ColumnData::TimestampNanos {
                 values: indices.iter().map(|&idx| values[idx]).collect(),
+                data_type: *data_type,
                 nulls: indices.iter().map(|&idx| nulls[idx]).collect(),
             },
             ColumnData::Boolean { values, nulls } => ColumnData::Boolean {
@@ -955,17 +989,16 @@ impl ColumnData {
                     Value::Float(values[idx])
                 }
             }
-            ColumnData::TimestampNanos { values, nulls } => {
+            ColumnData::TimestampNanos {
+                values,
+                data_type,
+                nulls,
+            } => {
                 if nulls[idx] {
-                    Value::Null(DataType::Timestamp)
+                    Value::Null(*data_type)
                 } else {
-                    let nanos = values[idx];
-                    let secs = nanos.div_euclid(1_000_000_000);
-                    let sub_nanos = nanos.rem_euclid(1_000_000_000) as u32;
-                    match chrono::TimeZone::timestamp_opt(&chrono::Utc, secs, sub_nanos) {
-                        chrono::LocalResult::Single(dt) => Value::Timestamp(dt),
-                        _ => Value::Null(DataType::Timestamp),
-                    }
+                    Value::from_temporal_nanos(*data_type, values[idx])
+                        .unwrap_or(Value::Null(*data_type))
                 }
             }
             ColumnData::Boolean { values, nulls } => {
@@ -1168,7 +1201,12 @@ impl ColumnBloomFilter {
     pub fn supports_bloom_creation(data_type: DataType) -> bool {
         matches!(
             data_type,
-            DataType::Integer | DataType::Timestamp | DataType::Boolean | DataType::Text
+            DataType::Integer
+                | DataType::Timestamp
+                | DataType::CivilTimestamp
+                | DataType::Time
+                | DataType::Boolean
+                | DataType::Text
         )
     }
 
@@ -1182,13 +1220,16 @@ impl ColumnBloomFilter {
     /// use a bloom negative to prune a volume.
     #[inline]
     pub fn supports_definitive_pruning(data_type: DataType, probe: &Value) -> bool {
-        matches!(
-            (data_type, probe),
-            (DataType::Integer, Value::Integer(_))
-                | (DataType::Timestamp, Value::Timestamp(_))
-                | (DataType::Boolean, Value::Boolean(_))
-                | (DataType::Text, Value::Text(_))
-        )
+        probe.data_type() == data_type
+            && matches!(
+                (data_type, probe),
+                (DataType::Integer, Value::Integer(_))
+                    | (DataType::Timestamp, Value::Timestamp(_))
+                    | (DataType::CivilTimestamp, Value::Extension(_))
+                    | (DataType::Time, Value::Extension(_))
+                    | (DataType::Boolean, Value::Boolean(_))
+                    | (DataType::Text, Value::Text(_))
+            )
     }
 
     /// Estimate in-memory size of this bloom filter in bytes.
@@ -1856,6 +1897,7 @@ mod tests {
     fn test_binary_search() {
         let col = ColumnData::TimestampNanos {
             values: vec![100, 200, 300, 400, 500],
+            data_type: DataType::Timestamp,
             nulls: vec![false; 5],
         };
         assert_eq!(col.binary_search_ge(250), 2); // first >= 250 is index 2 (300)

@@ -142,7 +142,7 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "radixdb-plugin-abi",
  "radixdb-plugin-macros",
@@ -151,11 +151,11 @@ dependencies = [
 
 [[package]]
 name = "radixdb-plugin-abi"
-version = "1.1.0"
+version = "1.2.4"
 
 [[package]]
 name = "radixdb-plugin-macros"
-version = "1.1.0"
+version = "1.2.4"
 dependencies = [
  "proc-macro2",
  "quote",

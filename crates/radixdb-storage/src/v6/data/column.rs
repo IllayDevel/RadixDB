@@ -89,6 +89,7 @@ pub(crate) enum DecodedColumn {
     },
     TimestampNanos {
         values: Vec<i64>,
+        data_type: DataType,
         nulls: Vec<bool>,
     },
     Boolean {
@@ -151,14 +152,19 @@ impl DecodedColumn {
                     }
                 })
                 .collect(),
-            Self::TimestampNanos { values, nulls } => values
+            Self::TimestampNanos {
+                values,
+                data_type,
+                nulls,
+            } => values
                 .into_iter()
                 .zip(nulls)
                 .map(|(value, is_null)| {
                     if is_null {
-                        Value::null(DataType::Timestamp)
+                        Value::null(data_type)
                     } else {
-                        Value::timestamp(chrono::DateTime::from_timestamp_nanos(value))
+                        Value::from_temporal_nanos(data_type, value)
+                            .expect("validated temporal payload")
                     }
                 })
                 .collect(),
@@ -736,13 +742,18 @@ fn decode_fixed_values(
                 .collect(),
             nulls,
         }),
-        DataType::Timestamp => Ok(DecodedColumn::TimestampNanos {
-            values: bytes
-                .chunks_exact(8)
-                .map(|chunk| i64::from_le_bytes(chunk.try_into().expect("checked TIMESTAMP width")))
-                .collect(),
-            nulls,
-        }),
+        DataType::Timestamp | DataType::CivilTimestamp | DataType::Time => {
+            Ok(DecodedColumn::TimestampNanos {
+                values: bytes
+                    .chunks_exact(8)
+                    .map(|chunk| {
+                        i64::from_le_bytes(chunk.try_into().expect("checked temporal width"))
+                    })
+                    .collect(),
+                data_type,
+                nulls,
+            })
+        }
         DataType::Boolean => {
             if bytes
                 .iter()
@@ -1103,7 +1114,11 @@ fn validity_bytes(count: usize) -> usize {
 
 fn fixed_width(data_type: DataType, parameter_1: u32) -> Option<usize> {
     match data_type {
-        DataType::Integer | DataType::Float | DataType::Timestamp => Some(8),
+        DataType::Integer
+        | DataType::Float
+        | DataType::Timestamp
+        | DataType::CivilTimestamp
+        | DataType::Time => Some(8),
         DataType::Boolean => Some(1),
         DataType::Date => Some(4),
         DataType::Uuid => Some(16),
@@ -1219,15 +1234,14 @@ fn append_non_null_representation(
             Value::Boolean(value) => output.push(u8::from(*value)),
             _ => return Err(invalid("BOOLEAN value has wrong representation")),
         },
-        DataType::Timestamp => match value {
-            Value::Timestamp(value) => output.extend_from_slice(
+        DataType::Timestamp | DataType::CivilTimestamp | DataType::Time => output
+            .extend_from_slice(
                 &value
-                    .timestamp_nanos_opt()
-                    .ok_or_else(|| invalid("TIMESTAMP is outside i64 nanoseconds"))?
+                    .artifact_temporal_nanos()
+                    .filter(|_| value.data_type() == data_type)
+                    .ok_or_else(|| invalid("temporal value has wrong representation"))?
                     .to_le_bytes(),
             ),
-            _ => return Err(invalid("TIMESTAMP value has wrong representation")),
-        },
         DataType::Json => output.extend_from_slice(
             value
                 .as_json()
@@ -1302,10 +1316,12 @@ fn decode_non_null(data_type: DataType, bytes: &[u8], column: DataColumn) -> For
                 .to_owned(),
         ),
         DataType::Boolean if bytes.len() == 1 && bytes[0] <= 1 => Value::boolean(bytes[0] == 1),
-        DataType::Timestamp if bytes.len() == 8 => {
-            Value::timestamp(chrono::DateTime::from_timestamp_nanos(i64::from_le_bytes(
-                bytes.try_into().expect("checked TIMESTAMP width"),
-            )))
+        DataType::Timestamp | DataType::CivilTimestamp | DataType::Time if bytes.len() == 8 => {
+            Value::from_temporal_nanos(
+                data_type,
+                i64::from_le_bytes(bytes.try_into().expect("checked temporal width")),
+            )
+            .map_err(|_| invalid("temporal value is outside its logical range"))?
         }
         DataType::Json => Value::try_json(
             std::str::from_utf8(bytes)

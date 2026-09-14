@@ -44,7 +44,7 @@ use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, Utc};
 use radixdb_core::SmartString;
 use radixdb_core::{Result, Value};
 
@@ -183,6 +183,19 @@ impl ToParam for Arc<str> {
 impl ToParam for DateTime<Utc> {
     fn to_param(&self) -> Value {
         Value::Timestamp(*self)
+    }
+}
+
+impl ToParam for NaiveDateTime {
+    fn to_param(&self) -> Value {
+        Value::civil_timestamp(*self)
+            .expect("chrono civil timestamp must fit the SQL nanosecond domain")
+    }
+}
+
+impl ToParam for NaiveTime {
+    fn to_param(&self) -> Value {
+        Value::time(*self)
     }
 }
 

@@ -42,11 +42,14 @@ macro_rules! segmented_table_mutation_methods {
                     let primary_key_elapsed = primary_key_started.elapsed();
                     let constraint_result: Result<()> = (|| {
                         let primary_key_checked = primary_key_result?;
+                        let checked_unique_indexes =
+                            self.check_full_unique_batch_with_snapshot(&snapshot, &rows)?;
                         for row in &rows {
-                            self.check_segment_constraints_with_snapshot_mode(
+                            self.check_segment_constraints_with_snapshot_mode_skipping(
                                 &snapshot,
                                 row,
                                 !primary_key_checked,
+                                &checked_unique_indexes,
                             )?;
                         }
                         Ok(())
@@ -86,12 +89,7 @@ macro_rules! segmented_table_mutation_methods {
                 );
                 let mut count = self.hot.update(where_expr, setter)?;
 
-                let has_int_pk = self
-                    .hot
-                    .schema()
-                    .columns
-                    .iter()
-                    .any(|c| c.primary_key && c.data_type == DataType::Integer);
+                let has_int_pk = self.hot.schema().pk_column_index().is_some();
 
                 let mut hot_skip: FxHashSet<i64> =
                     FxHashSet::with_capacity_and_hasher(10_000, Default::default());
@@ -211,10 +209,7 @@ macro_rules! segmented_table_mutation_methods {
                 let mut count = 0i32;
                 let mut hot_ids = Vec::new();
                 let schema = self.hot.schema().clone();
-                let has_int_pk = schema
-                    .columns
-                    .iter()
-                    .any(|c| c.primary_key && c.data_type == DataType::Integer);
+                let has_int_pk = schema.pk_column_index().is_some();
 
                 for &row_id in row_ids {
                     if let Some((_seg_id, cold, idx)) = self.find_segment_row_for_read(row_id) {

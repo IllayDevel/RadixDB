@@ -61,7 +61,7 @@ export default defineConfig({
       { label: 'Tutorial', translations: { ru: 'Учебник' }, items: ['getting-started', 'first-database', 'relationships', 'transactions', 'server-connection'].map(name => ({ slug: `tutorial/${name}` })) },
       { label: 'SQL language', translations: { ru: 'Язык SQL' }, items: ['syntax', 'types', 'expressions', 'ddl', 'dml', 'indexes', 'queries', 'transactions', 'navigable-references'].map(name => ({ slug: `sql/${name}` })) },
       { label: 'Administration', translations: { ru: 'Администрирование' }, items: ['installation', 'server', 'configuration', 'extensions', 'storage', 'memory', 'backup-restore', 'upgrading', 'monitoring', 'troubleshooting', 'authentication', 'access-control'].map(name => ({ slug: `administration/${name}` })) },
-      { label: 'Client interfaces', translations: { ru: 'Клиентские интерфейсы' }, items: ['overview', 'embedded-rust', 'rust-client', 'orm'].map(name => ({ slug: `clients/${name}` })) },
+      { label: 'Client interfaces', translations: { ru: 'Клиентские интерфейсы' }, items: ['overview', 'embedded-rust', 'rust-client', 'orm', 'application-sdk'].map(name => ({ slug: `clients/${name}` })) },
       { label: 'Server programming', translations: { ru: 'Серверное программирование' }, items: ['pl-sql', 'routines', 'triggers', 'jobs', 'routine-security', 'native-extensions'].map(name => ({ slug: `programming/${name}` })) },
       { label: 'Reference', translations: { ru: 'Справочник' }, items: [
         { label: 'SQL commands', translations: { ru: 'Команды SQL' }, items: [

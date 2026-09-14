@@ -154,7 +154,8 @@ fn parent_row_exists(
     })?;
 
     let parent = engine.get_table_for_txn(txn_id, parent_table)?;
-    if ref_col.primary_key && ref_col.data_type == DataType::Integer {
+    if parent_schema.pk_column_index() == Some(ref_col.id) && ref_col.data_type == DataType::Integer
+    {
         if let Value::Integer(row_id) = value {
             let mut matches = [false];
             let hits = parent.probe_visible_row_ids(&[*row_id], &mut matches)?;

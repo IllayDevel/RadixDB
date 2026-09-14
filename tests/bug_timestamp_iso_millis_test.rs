@@ -22,7 +22,7 @@ fn test_timestamp_iso_millis_z() {
     let db = Database::open("memory://ts_millis_z").unwrap();
 
     db.execute(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMP NOT NULL)",
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ NOT NULL)",
         (),
     )
     .unwrap();
@@ -45,7 +45,7 @@ fn test_timestamp_iso_millis_no_tz() {
     let db = Database::open("memory://ts_millis_no_tz").unwrap();
 
     db.execute(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMP NOT NULL)",
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ NOT NULL)",
         (),
     )
     .unwrap();
@@ -68,7 +68,7 @@ fn test_timestamp_iso_micros_z() {
     let db = Database::open("memory://ts_micros_z").unwrap();
 
     db.execute(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMP NOT NULL)",
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ NOT NULL)",
         (),
     )
     .unwrap();
@@ -90,7 +90,7 @@ fn test_timestamp_all_formats_roundtrip() {
     let db = Database::open("memory://ts_all_formats").unwrap();
 
     db.execute(
-        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMP NOT NULL)",
+        "CREATE TABLE events (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ NOT NULL)",
         (),
     )
     .unwrap();

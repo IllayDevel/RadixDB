@@ -793,6 +793,52 @@ fn variable_row_group_payload_is_checked_before_retention() {
 }
 
 #[test]
+fn variable_row_group_payload_starts_a_new_bounded_group() {
+    let limits = FanoutBuildLimits::default()
+        .with_resource_budgets(4 * 1024 * 1024, 2 * 1024 * 1024)
+        .unwrap();
+    let column = DataColumnSpec::new(
+        object_id(0x91),
+        CatalogDataType::scalar(DataType::Text).unwrap(),
+        false,
+    );
+    let header = DataArtifactHeader::new(
+        ArtifactId::from_bytes([0x92; 16]).unwrap(),
+        DatabaseId::from_bytes([0x93; 16]).unwrap(),
+        object_id(0x94),
+        SegmentId::from_bytes([0x95; 16]).unwrap(),
+        DatabaseGeneration::new(17).unwrap(),
+        CatalogGeneration::new(13).unwrap(),
+        501,
+        509,
+        2_000,
+        1,
+        2,
+        SegmentKind::Rows,
+        123_456,
+    )
+    .unwrap();
+    let request = DataArtifactBuildRequest::new(
+        header,
+        vec![column],
+        vec![ColumnBuildPolicy::default()],
+        DataPhysicalCodec::Lz4,
+        limits,
+    )
+    .unwrap();
+    let text = "x".repeat(300);
+    let built = build_data_artifact(
+        &request,
+        (1..=2_000).map(|row_id| Ok(SourceRow::new(row_id, vec![Value::text(&text)]))),
+    )
+    .unwrap();
+
+    assert_eq!(built.data_layout().row_groups().len(), 2);
+    assert_eq!(built.data_layout().row_groups()[0].row_count(), 1_747);
+    assert_eq!(built.data_layout().row_groups()[1].row_count(), 253);
+}
+
+#[test]
 fn rebuild_projection_is_rejected_before_decoding_an_oversized_group() {
     let source_staging = tempfile::tempdir().unwrap();
     let column = DataColumnSpec::new(

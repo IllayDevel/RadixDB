@@ -61,6 +61,9 @@ mod tests {
         assert!(preview.ir_json.contains("do-not-log"));
         assert!(!preview.redacted_ir_json.contains("do-not-log"));
         assert!(!preview.normalized_sql.contains("do-not-log"));
-        assert_eq!(preview.parameter_types, vec![DataTypeDescriptor::Text]);
+        assert_eq!(
+            preview.parameter_types,
+            vec![DataTypeDescriptor::Text { max_chars: None }]
+        );
     }
 }

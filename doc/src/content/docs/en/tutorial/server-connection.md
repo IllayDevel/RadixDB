@@ -33,9 +33,9 @@ cargo build --locked \
   --bin basic
 ```
 
-The verified RadixDB 1.2 source baseline uses protocol 17. Confirm the server
+The verified RadixDB 1.2.4 source baseline uses protocol 17. Confirm the server
 identity before starting it; a local source build currently reports application
-version 1.1.0 together with its full Git revision and protocol version.
+version 1.2.4 together with its full Git revision and protocol version.
 
 ## Start a Local Server
 

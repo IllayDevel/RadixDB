@@ -976,6 +976,152 @@ impl SegmentManager {
         Ok(Some(result))
     }
 
+    /// Resolve bounded physical candidates for several complete exact keys
+    /// without materializing candidate values one row at a time.
+    ///
+    /// Every published volume must prove complete posting coverage. Returned
+    /// row IDs remain hash candidates and must be authoritatively rechecked by
+    /// the table layer.
+    pub fn find_candidate_row_ids_by_exact_index_keys_with_snapshot(
+        &self,
+        snapshot: &ColdSnapshot,
+        col_indices: &[usize],
+        keys: &[Vec<Value>],
+        snapshot_seq: Option<u64>,
+        max_candidates: Option<usize>,
+    ) -> Result<Option<Vec<i64>>> {
+        if col_indices.is_empty() || keys.iter().any(|values| values.len() != col_indices.len()) {
+            return Ok(None);
+        }
+        if keys.is_empty() || snapshot.seg_ids.is_empty() {
+            return Ok(Some(Vec::new()));
+        }
+
+        let mut volume_columns = Vec::with_capacity(snapshot.seg_ids.len());
+        for &segment_id in &snapshot.seg_ids {
+            let Some(cold) = snapshot.segs.get(&segment_id) else {
+                return Ok(None);
+            };
+            let physical: Option<smallvec::SmallVec<[usize; 4]>> = col_indices
+                .iter()
+                .map(|&schema_col| match cold.mapping.sources.get(schema_col) {
+                    Some(super::super::writer::ColSource::Volume(volume_col)) => Some(*volume_col),
+                    _ => None,
+                })
+                .collect();
+            let Some(physical) = physical else {
+                return Ok(None);
+            };
+            if !cold.volume.has_exact_postings(physical.as_slice()) {
+                return Ok(None);
+            }
+            for (value_idx, &volume_col) in physical.iter().enumerate() {
+                let Some(&data_type) = cold.volume.meta.column_types.get(volume_col) else {
+                    return Err(Error::internal(format!(
+                        "cold segment {segment_id} exact index column {volume_col} has no stored type"
+                    )));
+                };
+                if keys.iter().any(|values| {
+                    !super::super::index_hash::persisted_index_hash_is_compatible(
+                        data_type,
+                        values.get(value_idx),
+                    )
+                }) {
+                    return Ok(None);
+                }
+            }
+            volume_columns.push((segment_id, physical));
+        }
+
+        instrumentation::record_posting_exact_lookup_fanout(volume_columns.len());
+
+        let mut result = Vec::new();
+        let mut seen = FxHashSet::default();
+        for (segment_id, physical) in volume_columns {
+            let cold = snapshot
+                .segs
+                .get(&segment_id)
+                .expect("exact-index key coverage was checked above");
+            if let Some(source) = cold.volume.artifact_index_source() {
+                let remaining = max_candidates.map(|limit| limit.saturating_sub(result.len()));
+                let Some(row_ordinals) =
+                    source.lookup_equality_keys(physical.as_slice(), keys, remaining)?
+                else {
+                    return Ok(None);
+                };
+                for row_ordinal in row_ordinals {
+                    let row_idx = usize::try_from(row_ordinal).map_err(|_| {
+                        Error::internal(format!(
+                            "cold segment {segment_id} INDEX row ordinal exceeds usize"
+                        ))
+                    })?;
+                    if !cold.is_visible(row_idx) {
+                        continue;
+                    }
+                    let row_id = cold.volume.row_id_at(row_idx)?;
+                    if snapshot.ts.get(&row_id).is_some_and(|&commit_seq| {
+                        snapshot_seq.is_none_or(|cutoff| commit_seq <= cutoff)
+                    }) {
+                        continue;
+                    }
+                    if seen.insert(row_id) {
+                        result.push(row_id);
+                        if max_candidates.is_some_and(|limit| result.len() > limit) {
+                            return Ok(None);
+                        }
+                    }
+                }
+                continue;
+            }
+
+            for values in keys {
+                let mut query_hasher = super::super::index_hash::PersistedIndexHasher::new();
+                for (value_idx, &volume_col) in physical.iter().enumerate() {
+                    let data_type = cold.volume.meta.column_types[volume_col];
+                    query_hasher.add_value(data_type, &values[value_idx]);
+                }
+                let query_hash = query_hasher.finish();
+                let mut candidate_limit_exceeded = false;
+                cold.volume
+                    .visit_exact_posting_candidates(physical.as_slice(), query_hash, |row_idx| {
+                        let row_idx = row_idx as usize;
+                        if !cold.is_visible(row_idx) {
+                            return Ok(false);
+                        }
+                        let Some(row_id) = cold.volume.meta.row_ids.get(row_idx) else {
+                            return Err(Error::internal(format!(
+                                "cold segment {segment_id} exact index row {row_idx} exceeds row-id metadata"
+                            )));
+                        };
+                        if snapshot.ts.get(&row_id).is_some_and(|&commit_seq| {
+                            snapshot_seq.is_none_or(|cutoff| commit_seq <= cutoff)
+                        }) {
+                            return Ok(false);
+                        }
+                        if seen.insert(row_id) {
+                            result.push(row_id);
+                            if max_candidates.is_some_and(|limit| result.len() > limit) {
+                                candidate_limit_exceeded = true;
+                                return Ok(true);
+                            }
+                        }
+                        Ok(false)
+                    })?
+                    .ok_or_else(|| {
+                        Error::internal(
+                            "exact posting candidate source disappeared after coverage check",
+                        )
+                    })?;
+                if candidate_limit_exceeded {
+                    return Ok(None);
+                }
+            }
+        }
+
+        result.sort_unstable();
+        Ok(Some(result))
+    }
+
     /// Resolve bounded physical candidates for several values of one exact
     /// indexed column without materializing candidate values one row at a
     /// time.
@@ -992,14 +1138,36 @@ impl SegmentManager {
         snapshot_seq: Option<u64>,
         max_candidates: Option<usize>,
     ) -> Result<Option<Vec<i64>>> {
+        let snapshot = self.cold_snapshot();
+        self.find_candidate_row_ids_by_exact_index_values_with_snapshot(
+            &snapshot,
+            col_index,
+            values,
+            snapshot_seq,
+            max_candidates,
+        )
+    }
+
+    pub fn find_candidate_row_ids_by_exact_index_values_with_snapshot(
+        &self,
+        snapshot: &ColdSnapshot,
+        col_index: usize,
+        values: &[Value],
+        snapshot_seq: Option<u64>,
+        max_candidates: Option<usize>,
+    ) -> Result<Option<Vec<i64>>> {
         if values.is_empty() {
             return Ok(Some(Vec::new()));
         }
 
-        let snapshot = self.cold_snapshot();
         if snapshot.seg_ids.is_empty() {
             return Ok(Some(Vec::new()));
         }
+
+        let bloom_hashes: Vec<u64> = values
+            .iter()
+            .map(super::super::column::ColumnBloomFilter::hash_value_static)
+            .collect();
 
         // Prove complete posting coverage before returning any candidates.
         let mut volume_columns = Vec::with_capacity(snapshot.seg_ids.len());
@@ -1041,41 +1209,60 @@ impl SegmentManager {
                 .segs
                 .get(&segment_id)
                 .expect("exact-index candidate coverage was checked above");
-            for value in values {
-                if let Some(source) = cold.volume.artifact_index_source() {
-                    let remaining = max_candidates.map(|limit| limit.saturating_sub(result.len()));
-                    let Some(row_ordinals) = source.lookup_equality(
-                        &[volume_col],
-                        std::slice::from_ref(value),
-                        remaining,
-                    )?
-                    else {
-                        return Ok(None);
-                    };
-                    for row_ordinal in row_ordinals {
-                        let row_idx = usize::try_from(row_ordinal).map_err(|_| {
-                            Error::internal(format!(
-                                "cold segment {segment_id} INDEX row ordinal exceeds usize"
-                            ))
-                        })?;
-                        if !cold.is_visible(row_idx) {
-                            continue;
-                        }
-                        let row_id = cold.volume.row_id_at(row_idx)?;
-                        if snapshot.ts.get(&row_id).is_some_and(|&commit_seq| {
-                            snapshot_seq.is_none_or(|cutoff| commit_seq <= cutoff)
-                        }) {
-                            continue;
-                        }
-                        if seen.insert(row_id) {
-                            result.push(row_id);
-                            if max_candidates.is_some_and(|limit| result.len() > limit) {
-                                return Ok(None);
-                            }
+            let candidate_values: Vec<&Value> = values
+                .iter()
+                .zip(&bloom_hashes)
+                .filter_map(|(value, bloom_hash)| {
+                    let pruned =
+                        super::super::column::ColumnBloomFilter::supports_definitive_pruning(
+                            data_type, value,
+                        ) && volume_col < cold.volume.meta.bloom_filters.len()
+                            && !cold.volume.meta.bloom_filters[volume_col]
+                                .might_contain_hash(*bloom_hash);
+                    (!pruned).then_some(value)
+                })
+                .collect();
+            if candidate_values.is_empty() {
+                continue;
+            }
+
+            if let Some(source) = cold.volume.artifact_index_source() {
+                let owned_values = candidate_values
+                    .iter()
+                    .map(|value| (*value).clone())
+                    .collect::<Vec<_>>();
+                let remaining = max_candidates.map(|limit| limit.saturating_sub(result.len()));
+                let Some(row_ordinals) =
+                    source.lookup_equalities(&[volume_col], &owned_values, remaining)?
+                else {
+                    return Ok(None);
+                };
+                for row_ordinal in row_ordinals {
+                    let row_idx = usize::try_from(row_ordinal).map_err(|_| {
+                        Error::internal(format!(
+                            "cold segment {segment_id} INDEX row ordinal exceeds usize"
+                        ))
+                    })?;
+                    if !cold.is_visible(row_idx) {
+                        continue;
+                    }
+                    let row_id = cold.volume.row_id_at(row_idx)?;
+                    if snapshot.ts.get(&row_id).is_some_and(|&commit_seq| {
+                        snapshot_seq.is_none_or(|cutoff| commit_seq <= cutoff)
+                    }) {
+                        continue;
+                    }
+                    if seen.insert(row_id) {
+                        result.push(row_id);
+                        if max_candidates.is_some_and(|limit| result.len() > limit) {
+                            return Ok(None);
                         }
                     }
-                    continue;
                 }
+                continue;
+            }
+
+            for value in candidate_values {
                 let mut query_hasher = super::super::index_hash::PersistedIndexHasher::new();
                 query_hasher.add_value(data_type, value);
                 let query_hash = query_hasher.finish();
@@ -1247,12 +1434,20 @@ impl SegmentManager {
                     {
                         continue;
                     }
-                    let order_key = self
-                        .read_cold_value_at(segment_id, volume, range_column, row_idx)?
-                        .as_int64()
-                        .ok_or_else(|| {
-                            Error::internal("ordered INDEX returned a non-integral range key")
-                        })?;
+                    let range_value =
+                        self.read_cold_value_at(segment_id, volume, range_column, row_idx)?;
+                    let order_key = match range_type {
+                        radixdb_core::DataType::Integer => range_value.as_int64(),
+                        radixdb_core::DataType::Timestamp
+                        | radixdb_core::DataType::CivilTimestamp
+                        | radixdb_core::DataType::Time => range_value.artifact_temporal_nanos(),
+                        _ => None,
+                    }
+                    .ok_or_else(|| {
+                        Error::internal(
+                            "ordered INDEX returned a range key with incompatible logical type",
+                        )
+                    })?;
                     candidates.push((order_key, row_id));
                 }
                 continue;
@@ -1419,11 +1614,11 @@ impl SegmentManager {
 fn ordered_runtime_bound_value(data_type: radixdb_core::DataType, value: i64) -> Result<Value> {
     match data_type {
         radixdb_core::DataType::Integer => Ok(Value::Integer(value)),
-        radixdb_core::DataType::Timestamp => Ok(Value::timestamp(
-            chrono::DateTime::from_timestamp_nanos(value),
-        )),
+        radixdb_core::DataType::Timestamp
+        | radixdb_core::DataType::CivilTimestamp
+        | radixdb_core::DataType::Time => Value::from_temporal_nanos(data_type, value),
         _ => Err(Error::internal(
-            "ordered runtime bound is not INTEGER or TIMESTAMP",
+            "ordered runtime bound is not INTEGER or temporal",
         )),
     }
 }

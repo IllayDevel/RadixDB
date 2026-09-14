@@ -190,7 +190,7 @@ fn test_dml_now_function() {
     db.execute(
         "CREATE TABLE verification_test (
             id INTEGER PRIMARY KEY,
-            timestamp_result TIMESTAMP
+            timestamp_result TIMESTAMPTZ
         )",
         (),
     )

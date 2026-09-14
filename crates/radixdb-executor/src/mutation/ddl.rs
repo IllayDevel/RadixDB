@@ -339,9 +339,12 @@ fn validate_fk_reference(
                 ))
             })?
         };
-        if !ref_col_def.primary_key {
+        let references_complete_primary_key = schema_builder
+            .primary_key_column()
+            .is_some_and(|(index, _)| index == ref_col_idx);
+        if !references_complete_primary_key {
             return Err(Error::InvalidArgument(format!(
-                "self-referencing foreign key on '{}' must reference the table PRIMARY KEY; '{}' is not PRIMARY KEY",
+                "self-referencing foreign key on '{}' must reference the complete single-column PRIMARY KEY; '{}' does not",
                 fk_col_display, ref_col_def.name
             )));
         }
@@ -415,7 +418,8 @@ fn validate_fk_reference(
         ))
     })?;
 
-    if !ref_col_def.primary_key {
+    let references_complete_primary_key = parent_schema.primary_key_indices() == [ref_col_idx];
+    if !references_complete_primary_key {
         let has_unique = if let Some(parent) = transaction_parent {
             parent.get_indexes().iter().any(|idx| {
                 idx.is_unique()
@@ -907,49 +911,22 @@ pub trait DdlExecutorExt: MutationHost {
         // Build schema from column definitions
         let mut schema_builder = SchemaBuilder::new(table_name.as_str());
 
-        let mut table_primary_key: Option<String> = None;
-        for constraint in &stmt.table_constraints {
-            if let TableConstraint::PrimaryKey(columns) = constraint {
-                if columns.len() != 1 {
-                    return Err(Error::NotSupported(
-                        "composite PRIMARY KEY is not supported; use a UNIQUE multi-column constraint"
-                            .to_string(),
-                    ));
-                }
-                if table_primary_key
-                    .replace(columns[0].value_lower.to_string())
-                    .is_some()
-                {
-                    return Err(Error::InvalidArgument(
-                        "table declares more than one PRIMARY KEY constraint".to_string(),
-                    ));
-                }
-            }
-        }
-        let column_primary_keys = stmt
-            .columns
-            .iter()
-            .filter(|column| {
-                column
-                    .constraints
-                    .iter()
-                    .any(|constraint| matches!(constraint, ColumnConstraint::PrimaryKey))
-            })
-            .count();
-        if column_primary_keys + usize::from(table_primary_key.is_some()) > 1 {
-            return Err(Error::InvalidArgument(
-                "table declares more than one PRIMARY KEY".to_string(),
-            ));
-        }
-        let mut table_primary_key_found = table_primary_key.is_none();
+        let table_primary_key = super::primary_key::CreateTablePrimaryKey::bind(stmt)?;
 
         // Collect columns with UNIQUE constraints to create indexes after table creation
         let mut unique_columns: Vec<String> = Vec::new();
 
         for col_def in &stmt.columns {
             let col_name = &col_def.name.value;
-            let (data_type, vector_dimensions, decimal_precision, decimal_scale, external_type) =
-                super::type_binding::parse_schema_column_type(self, &col_def.data_type)?;
+            let (
+                data_type,
+                vector_dimensions,
+                decimal_precision,
+                decimal_scale,
+                double_precision,
+                text_max_chars,
+                external_type,
+            ) = super::type_binding::parse_schema_column_type(self, &col_def.data_type)?;
             let nullable = !col_def
                 .constraints
                 .iter()
@@ -958,18 +935,14 @@ pub trait DdlExecutorExt: MutationHost {
                 .constraints
                 .iter()
                 .any(|c| matches!(c, ColumnConstraint::PrimaryKey))
-                || table_primary_key
-                    .as_deref()
-                    .is_some_and(|primary_key| primary_key == col_def.name.value_lower.as_str());
-            table_primary_key_found |= table_primary_key
-                .as_deref()
-                .is_some_and(|primary_key| primary_key == col_def.name.value_lower.as_str());
+                || table_primary_key.contains(col_def.name.value_lower.as_str());
 
-            // Validate PRIMARY KEY type. INTEGER remains the physical row_id fast path;
-            // UUID is a logical primary key backed by an auto-created unique index.
-            if is_primary_key && !matches!(data_type, DataType::Integer | DataType::Uuid) {
+            // A single INTEGER remains the physical row_id fast path. Other
+            // orderable built-in scalars and composite keys use schema-derived
+            // unique indexes without changing physical row identity.
+            if is_primary_key && !data_type.supports_primary_key() {
                 return Err(Error::Parse(format!(
-                    "PRIMARY KEY column '{}' must be INTEGER or UUID type, got {:?}.",
+                    "PRIMARY KEY column '{}' must use an orderable built-in scalar type, got {:?}.",
                     col_name, data_type
                 )));
             }
@@ -1058,6 +1031,12 @@ pub trait DdlExecutorExt: MutationHost {
                 schema_builder =
                     schema_builder.set_last_decimal_parameters(decimal_precision, decimal_scale);
             }
+            if double_precision {
+                schema_builder = schema_builder.set_last_double_precision(true);
+            }
+            if text_max_chars > 0 {
+                schema_builder = schema_builder.set_last_text_max_chars(text_max_chars);
+            }
 
             if is_auto_increment && !matches!(data_type, DataType::Integer | DataType::Uuid) {
                 return Err(Error::Parse(format!(
@@ -1073,12 +1052,6 @@ pub trait DdlExecutorExt: MutationHost {
                 unique_columns.push(col_name.to_string());
             }
         }
-        if !table_primary_key_found {
-            return Err(Error::ColumnNotFound(
-                table_primary_key.expect("missing table primary-key name"),
-            ));
-        }
-
         // Collect foreign key constraints from column-level REFERENCES
         for col_def in &stmt.columns {
             for constraint in &col_def.constraints {
@@ -1157,9 +1130,7 @@ pub trait DdlExecutorExt: MutationHost {
         }
 
         let mut schema = schema_builder.build();
-        if let Some(primary_key) = schema.primary_key_columns().first() {
-            schema.register_primary_key_constraint(vec![primary_key.name.clone()])?;
-        }
+        table_primary_key.register_in(&mut schema)?;
         for column in schema.columns.clone() {
             if let Some(expression) = column.check_expr {
                 schema.register_check_constraint(Some(column.name), expression)?;
@@ -2083,8 +2054,15 @@ pub trait DdlExecutorExt: MutationHost {
                         stmt.operation
                     ))
                 })?;
-                let (data_type, vector_dimensions, decimal_precision, decimal_scale, external_type) =
-                    super::type_binding::parse_schema_column_type(self, &col_def.data_type)?;
+                let (
+                    data_type,
+                    vector_dimensions,
+                    decimal_precision,
+                    decimal_scale,
+                    double_precision,
+                    text_max_chars,
+                    external_type,
+                ) = super::type_binding::parse_schema_column_type(self, &col_def.data_type)?;
                 let is_add = stmt.operation == AlterTableOperation::AddColumn;
                 let existing_index = schema.get_column_index(&col_def.name.value);
                 if is_add && existing_index.is_some() {
@@ -2176,9 +2154,9 @@ pub trait DdlExecutorExt: MutationHost {
                         "table already has a PRIMARY KEY".to_string(),
                     ));
                 }
-                if primary_key && !matches!(data_type, DataType::Integer | DataType::Uuid) {
+                if primary_key && !data_type.supports_primary_key() {
                     return Err(Error::InvalidArgument(format!(
-                        "PRIMARY KEY column '{}' must be INTEGER or UUID",
+                        "PRIMARY KEY column '{}' must use an orderable built-in scalar type",
                         col_def.name.value
                     )));
                 }
@@ -2194,7 +2172,9 @@ pub trait DdlExecutorExt: MutationHost {
                             != external_type.as_ref().map(|(type_ref, _)| *type_ref)
                         || schema.columns[target_index].vector_dimensions != vector_dimensions
                         || schema.columns[target_index].decimal_precision != decimal_precision
-                        || schema.columns[target_index].decimal_scale != decimal_scale);
+                        || schema.columns[target_index].decimal_scale != decimal_scale
+                        || schema.columns[target_index].double_precision != double_precision
+                        || schema.columns[target_index].text_max_chars != text_max_chars);
                 if changes_type_contract && !table_is_empty {
                     return Err(Error::InvalidArgument(format!(
                         "ALTER TABLE cannot change the declared type of populated column '{}'; rebuild the table explicitly",
@@ -2233,6 +2213,12 @@ pub trait DdlExecutorExt: MutationHost {
                         column.decimal_precision = decimal_precision;
                         column.decimal_scale = decimal_scale;
                     }
+                    if data_type == DataType::Float {
+                        column.double_precision = double_precision;
+                    }
+                    if data_type == DataType::Text {
+                        column.text_max_chars = text_max_chars;
+                    }
                     if let Some((type_ref, sql_name)) = &external_type {
                         column.external_type = Some(*type_ref);
                         column.external_type_name = Some(sql_name.clone());
@@ -2268,6 +2254,12 @@ pub trait DdlExecutorExt: MutationHost {
                     } else {
                         column.decimal_precision = 0;
                         column.decimal_scale = 0;
+                    }
+                    column.double_precision = data_type == DataType::Float && double_precision;
+                    if data_type == DataType::Text {
+                        column.text_max_chars = text_max_chars;
+                    } else {
+                        column.text_max_chars = 0;
                     }
                 }
 
@@ -2362,10 +2354,9 @@ pub trait DdlExecutorExt: MutationHost {
                         ));
                     }
                     TableConstraint::PrimaryKey(columns) => {
-                        if columns.len() != 1 {
-                            return Err(Error::NotSupported(
-                                "composite PRIMARY KEY is not supported; use UNIQUE instead"
-                                    .to_string(),
+                        if columns.is_empty() {
+                            return Err(Error::InvalidArgument(
+                                "PRIMARY KEY must contain at least one column".to_string(),
                             ));
                         }
                         if schema.has_primary_key() {
@@ -2379,21 +2370,32 @@ pub trait DdlExecutorExt: MutationHost {
                                     .to_string(),
                             ));
                         }
-                        let index = schema
-                            .get_column_index(&columns[0].value)
-                            .ok_or_else(|| Error::ColumnNotFound(columns[0].value.to_string()))?;
-                        if !matches!(
-                            schema.columns[index].data_type,
-                            DataType::Integer | DataType::Uuid
-                        ) {
-                            return Err(Error::InvalidArgument(
-                                "PRIMARY KEY must be INTEGER or UUID".to_string(),
-                            ));
+                        let mut indices = Vec::with_capacity(columns.len());
+                        let mut names = Vec::with_capacity(columns.len());
+                        for column in columns {
+                            let index = schema
+                                .get_column_index(&column.value)
+                                .ok_or_else(|| Error::ColumnNotFound(column.value.to_string()))?;
+                            if indices.contains(&index) {
+                                return Err(Error::InvalidArgument(format!(
+                                    "PRIMARY KEY contains duplicate column '{}'",
+                                    column.value
+                                )));
+                            }
+                            if !schema.columns[index].data_type.supports_primary_key() {
+                                return Err(Error::InvalidArgument(format!(
+                                    "PRIMARY KEY column '{}' must use an orderable built-in scalar type",
+                                    column.value
+                                )));
+                            }
+                            indices.push(index);
+                            names.push(schema.columns[index].name.clone());
                         }
-                        schema.columns[index].primary_key = true;
-                        schema.columns[index].nullable = false;
-                        schema
-                            .register_primary_key_constraint(vec![columns[0].value.to_string()])?;
+                        for index in indices {
+                            schema.columns[index].primary_key = true;
+                            schema.columns[index].nullable = false;
+                        }
+                        schema.register_primary_key_constraint(names)?;
                     }
                     TableConstraint::ForeignKey(foreign_key) => {
                         let local_index = schema
@@ -2528,13 +2530,19 @@ pub trait DdlExecutorExt: MutationHost {
                         }
                         match &constraint.kind {
                             SchemaConstraintKind::PrimaryKey { columns } => {
-                                let column = schema
-                                    .get_column_index(&columns[0])
-                                    .ok_or_else(|| Error::ColumnNotFound(columns[0].clone()))?;
+                                let column_ids = columns
+                                    .iter()
+                                    .map(|column| {
+                                        schema
+                                            .get_column_index(column)
+                                            .map(|index| index as i32)
+                                            .ok_or_else(|| Error::ColumnNotFound(column.clone()))
+                                    })
+                                    .collect::<Result<Vec<_>>>()?;
                                 let derived_index = table.get_indexes().into_iter().find(|index| {
                                     (index.index_type() == radixdb_core::IndexType::PrimaryKey
                                         || index.name().starts_with("__pk_"))
-                                        && index.column_ids() == [column as i32]
+                                        && index.column_ids() == column_ids
                                 });
                                 if let Some(derived_index) = derived_index {
                                     owned_index = Some((derived_index.name().to_string(), true));
@@ -2560,7 +2568,9 @@ pub trait DdlExecutorExt: MutationHost {
                                     // a catalog net-zero: no physical PK index
                                     // has crossed the commit boundary yet.
                                 }
-                                schema.columns[column].primary_key = false;
+                                for column_id in column_ids {
+                                    schema.columns[column_id as usize].primary_key = false;
+                                }
                             }
                             SchemaConstraintKind::Unique { index_name, .. } => {
                                 if table.get_index(index_name).is_none()

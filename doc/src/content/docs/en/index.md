@@ -1,9 +1,9 @@
 ---
 title: RadixDB Manual
-description: User manual for RadixDB 1.2.
+description: User manual for RadixDB 1.2.4.
 ---
 
-This development manual targets **RadixDB 1.2**. The application version, Git
+This development manual targets **RadixDB 1.2.4**. The application version, Git
 revision and working-tree state used for each build are shown in the page
 footer. Known limitations are stated where they affect a command, interface or
 procedure.
@@ -35,10 +35,10 @@ The manual follows this sequence:
 
 ## Version and Verification
 
-The documentation target is 1.2 development. The application version, Git
+The documentation target is 1.2.4 development. The application version, Git
 revision and working-tree state are displayed separately so that a documentation
 build does not silently claim a released engine. Procedural SQL, ACL and native
-extension chapters describe the current 1.2 boundary, including explicitly
+extension chapters describe the current 1.2.4 boundary, including explicitly
 stated restrictions. Native packages execute in-process and require operator
 trust; begin with [extension operation](./administration/extensions/).
 

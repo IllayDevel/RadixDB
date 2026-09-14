@@ -726,7 +726,7 @@ fn test_row_number_partition_by_function_expression() {
             measurement TEXT,
             field TEXT,
             value FLOAT,
-            timestamp TIMESTAMP
+            timestamp TIMESTAMPTZ
         )",
         (),
     )

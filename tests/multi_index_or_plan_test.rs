@@ -5,10 +5,10 @@
 
 //! RDB-0007 regressions for composite branch plans under OR.
 
-use chrono::{TimeZone, Utc};
+use chrono::{NaiveDate, NaiveDateTime};
 use radixdb::{named_params, Database};
 
-fn collect_text(db: &Database, sql: &str, now: chrono::DateTime<Utc>, limit: i64) -> String {
+fn collect_text(db: &Database, sql: &str, now: NaiveDateTime, limit: i64) -> String {
     db.query_named(sql, named_params! { now: now, limit: limit })
         .unwrap()
         .map(|row| row.unwrap().get::<String>(0).unwrap())
@@ -16,7 +16,7 @@ fn collect_text(db: &Database, sql: &str, now: chrono::DateTime<Utc>, limit: i64
         .join("\n")
 }
 
-fn collect_ids(db: &Database, sql: &str, now: chrono::DateTime<Utc>, limit: i64) -> Vec<i64> {
+fn collect_ids(db: &Database, sql: &str, now: NaiveDateTime, limit: i64) -> Vec<i64> {
     db.query_named(sql, named_params! { now: now, limit: limit })
         .unwrap()
         .map(|row| row.unwrap().get::<i64>(0).unwrap())
@@ -82,12 +82,19 @@ WHERE (state = 'pending' AND available_at <= :now)
 ORDER BY available_at, created_at, id
 LIMIT :limit";
 
+fn cutoff() -> NaiveDateTime {
+    NaiveDate::from_ymd_opt(2026, 8, 9)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap()
+}
+
 #[test]
 fn hot_composite_or_branches_use_index_union_and_global_order_limit() {
     let db = Database::open("memory://rdb0007_hot").unwrap();
     create_outbox(&db, "outbox_jobs", true);
     create_outbox(&db, "outbox_jobs_seq", false);
-    let now = Utc.with_ymd_and_hms(2026, 8, 9, 0, 0, 0).unwrap();
+    let now = cutoff();
 
     let plan = collect_text(&db, &format!("EXPLAIN {QUERY}"), now, 2);
     assert!(
@@ -129,7 +136,7 @@ fn index_union_deduplicates_rows_matching_multiple_composite_branches() {
         (),
     )
     .unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 8, 9, 0, 0, 0).unwrap();
+    let now = cutoff();
     let sql = "SELECT id FROM outbox_jobs
                WHERE (state = 'pending' AND available_at <= :now)
                   OR (state = 'pending' AND created_at <= :now)
@@ -159,7 +166,7 @@ fn cold_and_mixed_or_plans_remain_honest_and_correct() {
     .unwrap();
     create_outbox(&db, "outbox_jobs", true);
     db.execute("PRAGMA CHECKPOINT", ()).unwrap();
-    let now = Utc.with_ymd_and_hms(2026, 8, 9, 0, 0, 0).unwrap();
+    let now = cutoff();
 
     let cold_plan = collect_text(&db, &format!("EXPLAIN {QUERY}"), now, 10);
     assert!(

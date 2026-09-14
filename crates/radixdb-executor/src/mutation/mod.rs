@@ -14,6 +14,7 @@ pub mod operator;
 pub mod partial_index;
 mod persistent_value;
 pub mod pk_fast_path;
+mod primary_key;
 mod returning;
 pub mod row_validation;
 mod type_binding;

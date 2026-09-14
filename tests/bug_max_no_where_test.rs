@@ -36,8 +36,11 @@ fn query_one(db: &Database, sql: &str) -> String {
 fn test_max_timestamp_basic() {
     // Simple case: all timestamps inserted the same way
     let db = Database::open("memory://max_ts_basic").unwrap();
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMP)", ())
-        .unwrap();
+    db.execute(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ)",
+        (),
+    )
+    .unwrap();
     db.execute("INSERT INTO t VALUES (1, '2026-03-10T10:00:00Z')", ())
         .unwrap();
     db.execute("INSERT INTO t VALUES (2, '2026-03-11T10:00:00Z')", ())
@@ -64,8 +67,11 @@ fn test_max_timestamp_basic() {
 fn test_max_timestamp_multiple_batches() {
     // Insert in separate batches to potentially create multiple arena segments
     let db = Database::open("memory://max_ts_batches").unwrap();
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMP)", ())
-        .unwrap();
+    db.execute(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ)",
+        (),
+    )
+    .unwrap();
 
     // Batch 1: older timestamps
     for i in 1..=100 {
@@ -113,8 +119,11 @@ fn test_max_timestamp_multiple_batches() {
 fn test_max_timestamp_with_updates() {
     // Updates could cause the max in the index to diverge from the arena
     let db = Database::open("memory://max_ts_updates").unwrap();
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMP)", ())
-        .unwrap();
+    db.execute(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ)",
+        (),
+    )
+    .unwrap();
 
     db.execute("INSERT INTO t VALUES (1, '2026-03-10T10:00:00Z')", ())
         .unwrap();
@@ -145,8 +154,11 @@ fn test_max_timestamp_with_updates() {
 fn test_max_timestamp_with_deletes() {
     // Deleting the current max row should change the result
     let db = Database::open("memory://max_ts_deletes").unwrap();
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMP)", ())
-        .unwrap();
+    db.execute(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ)",
+        (),
+    )
+    .unwrap();
 
     db.execute("INSERT INTO t VALUES (1, '2026-03-10T10:00:00Z')", ())
         .unwrap();
@@ -176,8 +188,11 @@ fn test_max_timestamp_with_deletes() {
 fn test_max_timestamp_mixed_formats() {
     // Different timestamp format strings that represent the same or different times
     let db = Database::open("memory://max_ts_formats").unwrap();
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMP)", ())
-        .unwrap();
+    db.execute(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ)",
+        (),
+    )
+    .unwrap();
 
     // Various timestamp format representations
     db.execute("INSERT INTO t VALUES (1, '2026-03-10T11:31:00.000Z')", ())
@@ -210,7 +225,7 @@ fn test_max_timestamp_large_table_with_index() {
         "CREATE TABLE candlesticks (
             id INTEGER PRIMARY KEY,
             symbol TEXT,
-            time TIMESTAMP,
+            time TIMESTAMPTZ,
             close FLOAT
         )",
         (),
@@ -280,8 +295,11 @@ fn test_max_timestamp_large_table_with_index() {
 fn test_max_timestamp_after_delete_and_reinsert() {
     // Delete max row, insert a new higher max — tests index + arena consistency
     let db = Database::open("memory://max_ts_reinsert").unwrap();
-    db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMP)", ())
-        .unwrap();
+    db.execute(
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ)",
+        (),
+    )
+    .unwrap();
     db.execute("CREATE INDEX idx_ts ON t (ts)", ()).unwrap();
 
     db.execute("INSERT INTO t VALUES (1, '2026-03-10T10:00:00Z')", ())
@@ -340,7 +358,7 @@ fn test_max_timestamp_across_persistence_cycles() {
                 id INTEGER PRIMARY KEY,
                 exchange TEXT,
                 symbol TEXT,
-                time TIMESTAMP,
+                time TIMESTAMPTZ,
                 open FLOAT,
                 high FLOAT,
                 low FLOAT,
@@ -464,7 +482,7 @@ fn test_max_timestamp_on_conflict_across_persistence() {
             "CREATE TABLE candlesticks (
                 id INTEGER PRIMARY KEY,
                 symbol TEXT,
-                time TIMESTAMP,
+                time TIMESTAMPTZ,
                 close FLOAT,
                 UNIQUE(symbol, time)
             )",
@@ -588,7 +606,7 @@ fn test_max_min_recovery_visibility_cache() {
     {
         let db = Database::open(&dsn).unwrap();
         db.execute(
-            "CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMP, val FLOAT)",
+            "CREATE TABLE t (id INTEGER PRIMARY KEY, ts TIMESTAMPTZ, val FLOAT)",
             (),
         )
         .unwrap();
