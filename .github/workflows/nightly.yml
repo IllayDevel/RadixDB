@@ -354,7 +354,7 @@ jobs:
         esac
 
         echo "Filter: $FILTER"
-        cargo nextest list --locked --lib -E "$FILTER" --message-format json > /tmp/miri-selection.json
+        cargo nextest list --locked -p radixdb-core --lib -E "$FILTER" --message-format json > /tmp/miri-selection.json
         python3 - <<'PY'
         import json
 
@@ -370,7 +370,7 @@ jobs:
             raise SystemExit('Miri rotation selected zero tests')
         print(f'Miri selected tests: {selected}')
         PY
-        cargo +nightly-2026-07-07 miri nextest run --locked --lib -E "$FILTER" --no-fail-fast
+        cargo +nightly-2026-07-07 miri nextest run --locked -p radixdb-core --lib -E "$FILTER" --no-fail-fast
       env:
         MIRIFLAGS: "-Zmiri-disable-isolation"
 

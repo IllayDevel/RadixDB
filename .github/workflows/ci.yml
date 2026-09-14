@@ -66,8 +66,8 @@ jobs:
 
       - name: Public contract tests
         run: |
-          scripts/run-exact-test.sh parser::statements::tests::test_parse_create_table_with_parameterized_type_aliases --lib -p radixdb
-          scripts/run-exact-test.sh parser::statements::tests::test_parse_create_table_rejects_malformed_type_arguments --lib -p radixdb
+          scripts/run-exact-test.sh statements::tests::test_parse_create_table_with_parameterized_type_aliases --lib -p radixdb-sql
+          scripts/run-exact-test.sh statements::tests::test_parse_create_table_rejects_malformed_type_arguments --lib -p radixdb-sql
           cargo test --locked --test data_type_contract_test -- --nocapture
           cargo test --locked --test partial_index_tcp_client_test -- --test-threads=1 --nocapture
           cargo test --locked --test pragma_test -- --nocapture
@@ -275,9 +275,8 @@ jobs:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64 -L /usr/aarch64-linux-gnu
         run: |
-          cargo test --locked --target aarch64-unknown-linux-gnu --lib \
-            storage::index::hnsw::tests::distance_kernels_match_scalar_contract_across_simd_tails \
-            -- --exact --test-threads=1
+          scripts/run-exact-test.sh index::hnsw::tests::distance_kernels_match_scalar_contract_across_simd_tails \
+            --target aarch64-unknown-linux-gnu --lib -p radixdb-storage
 
   coverage:
     name: Source and branch coverage
