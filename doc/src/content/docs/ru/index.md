@@ -27,6 +27,7 @@ description: Пользовательское руководство RadixDB 1.2
 
 ## Приложения
 
+- [Выбор RadixDB](./appendices/comparison/)
 - [Матрица совместимости](./appendices/compatibility/)
 - [Ограничения](./appendices/limits/)
 - [Производительность](./appendices/benchmarks/)

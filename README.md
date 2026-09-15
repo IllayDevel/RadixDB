@@ -4,23 +4,72 @@
 
 # RadixDB
 
-[Русский](README.ru.md)
+[Русский](README.ru.md) · [Official website](https://radixdb.org) ·
+[Support](mailto:dev@radixdb.org)
 
-[Official website](https://radixdb.org) · [Support](mailto:dev@radixdb.org)
+> RadixDB is a hybrid transactional and analytical SQL database written in
+> Rust. It combines MVCC row updates with compressed columnar storage and runs
+> as an embedded library or standalone server.
 
-RadixDB is an open source SQL database written in Rust. It combines transactional
-row updates with compressed column-oriented storage, bringing a compact data
-footprint and analytical query capabilities to application databases.
+RadixDB is intended for application databases that mix transactions with
+scans and aggregates over large connected datasets: ERP and asset registries,
+telemetry, operational analytics and geographic attribute catalogs. One engine
+serves embedded Rust applications and remote clients through its native TCP
+protocol.
 
-RadixDB runs as a standalone TCP server or as an embedded Rust library. Its
-design focuses on reliable recovery, controlled memory use and efficient access
-to large, connected datasets.
+[**Download**](https://github.com/IllayDevel/RadixDB/releases/latest) |
+[**Quick demo**](#quick-demo) |
+[**Documentation**](https://radixdb.org/manual/1.2.25/en/) |
+[**Benchmarks**](https://radixdb.org/manual/1.2.25/en/appendices/benchmarks/)
+
+**Release status:** `1.2.25` is the current stable packaged release. Linux
+x86-64 is the verified binary target; the current archive requires glibc 2.38
+or newer. Before production use, validate the application schema, workload,
+backup and restore procedure on the intended host.
+
+### How it differs
+
+RadixDB sits between an embedded application database, an in-process analytical
+engine and a client/server RDBMS. Like SQLite, it can run inside an application;
+like DuckDB, it uses compressed columnar structures for analytical scans; and
+like PostgreSQL, it supports a multi-client server, MVCC transactions, stored
+routines and triggers. Its defining choice is to provide these capabilities
+through the same Rust engine for mixed transactional and analytical application
+data. It is not a drop-in PostgreSQL replacement and does not yet offer that
+project's protocol compatibility, replication, high availability or ecosystem
+maturity.
+
+The [full capability comparison](doc/src/content/docs/en/appendices/comparison.md)
+explains these trade-offs and the cases where RadixDB is not the appropriate
+choice.
+
+### Quick demo
+
+Download and run the synthetic demonstration database:
+
+```bash
+curl -LO https://github.com/IllayDevel/RadixDB/releases/download/v1.2.25/radixdb-1.2.25-quick-demo.tar.gz
+tar -xzf radixdb-1.2.25-quick-demo.tar.gz
+cd radixdb-1.2.25-quick-demo
+./run.sh
+```
+
+The quick demo is a product tour, not a performance benchmark.
+
+### Three measured results
+
+| Result | Recorded measurement |
+| --- | --- |
+| Selected analytical queries | RadixDB was 2.46 to 3.64 times faster than PostgreSQL 18.3 in three reported scan and aggregate cases on the 100-million-row fixture. PostgreSQL was faster in the reported lookup, JOIN, rollback, load and index-build cases. |
+| Database footprint | 1.96 GB for RadixDB versus 16.13 GB for PostgreSQL, 8.21 times smaller for the same fixture and documented scope. |
+| Six-hour endurance | 2,351,035 operations and 2,100 invariant checks with zero invariant failures on a 1.76 GiB host; the engine resumed after the recorded transient SATA failure. |
+
+Measurements apply only to their recorded revisions, data, hardware and
+settings. Read the [methodology and complete results](doc/src/content/docs/en/appendices/benchmarks.md)
+and the [public evidence archive](doc/public/evidence/README.md).
 
 Development of RadixDB is sponsored by [Light Soft](http://light-soft.info/).
-
-[Documentation](doc/src/content/docs/en/index.md) · [Getting started](#getting-started) ·
-[Release notes](CHANGELOG.md) · [Test results](doc/src/content/docs/en/appendices/benchmarks.md) ·
-[Evidence archive](doc/public/evidence/README.md)
+[Release notes](CHANGELOG.md) · [Getting started](#getting-started)
 
 ## Performance and accessibility
 
