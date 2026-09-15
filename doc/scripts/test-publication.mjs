@@ -87,7 +87,7 @@ try {
 
   const documentationPages = filesBelow(canonicalRoot).filter(file =>
     file.endsWith('.html') && (file === '404.html' || file.startsWith('en/') || file.startsWith('ru/')));
-  assert.equal(documentationPages.length, 147);
+  assert.equal(documentationPages.length, 149);
   for (const file of documentationPages) {
     const html = readFileSync(path.join(canonicalRoot, file), 'utf8');
     assert.equal(html.split('mc.yandex.ru/metrika/tag.js?id=112445210').length - 1, 1,
