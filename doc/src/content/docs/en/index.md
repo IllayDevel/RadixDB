@@ -28,6 +28,7 @@ The manual follows this sequence:
 ## Appendices
 
 - [Choosing RadixDB](./appendices/comparison/)
+- [Release qualification](./appendices/release-qualification/)
 - [Compatibility matrix](./appendices/compatibility/)
 - [Limits](./appendices/limits/)
 - [Benchmarks](./appendices/benchmarks/)

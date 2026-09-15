@@ -19,13 +19,16 @@ protocol.
 
 [**Download**](https://github.com/IllayDevel/RadixDB/releases/latest) |
 [**Quick demo**](#quick-demo) |
+[**Comparison**](https://radixdb.org/manual/1.2.25/en/appendices/comparison/) |
 [**Documentation**](https://radixdb.org/manual/1.2.25/en/) |
 [**Benchmarks**](https://radixdb.org/manual/1.2.25/en/appendices/benchmarks/)
 
-**Release status:** `1.2.25` is the current stable packaged release. Linux
-x86-64 is the verified binary target; the current archive requires glibc 2.38
-or newer. Before production use, validate the application schema, workload,
-backup and restore procedure on the intended host.
+**Release status:** `1.2.25` is the current stable packaged release. Stability
+is based on the project's automated correctness, recovery, endurance and
+compatibility test gates. It is also the first publicly packaged release, so
+its external production track record and ecosystem remain limited. See
+[release qualification](doc/src/content/docs/en/appendices/release-qualification.md)
+for the evidence and exact boundary of this status.
 
 ### How it differs
 
@@ -68,54 +71,24 @@ Measurements apply only to their recorded revisions, data, hardware and
 settings. Read the [methodology and complete results](doc/src/content/docs/en/appendices/benchmarks.md)
 and the [public evidence archive](doc/public/evidence/README.md).
 
+### Follow relationships directly
+
+Follow declared relationships without repeating JOIN boilerplate:
+
+```sql
+SELECT
+    e.name,
+    e.department_id.name AS department
+FROM employees AS e;
+```
+
+The field path is resolved from the foreign key declared in the schema. The
+full contract is described under [navigable references](#navigable-references).
+
 Development of RadixDB is sponsored by [Light Soft](http://light-soft.info/).
 [Release notes](CHANGELOG.md) · [Getting started](#getting-started)
 
-## Performance and accessibility
-
-### Query performance
-
-A comparative test on a Ryzen 9 7950X and NVMe storage measured these query
-latencies on a 100-million-row relational dataset:
-
-| Query | RadixDB | PostgreSQL 18.3 |
-| --- | ---: | ---: |
-| Full scan | 100.299 ms | 246.457 ms |
-| Projected scan | 23.189 ms | 84.456 ms |
-| Grouped aggregate with HAVING | 9.907 ms | 24.948 ms |
-
-RadixDB was approximately 2.5 to 3.6 times faster in these cases. PostgreSQL was
-faster in the same comparison for point/range lookup, the parent JOIN, bulk
-loading and index creation. Results are workload-specific, use recorded
-revisions and do not represent measurements of every subsequent commit.
-The [full results and methodology](doc/src/content/docs/en/appendices/benchmarks.md) include
-both strengths and slower cases.
-
-### Reliability under demanding conditions
-
-Transactions, write-ahead logging, checksummed storage and verified physical
-snapshots provide the foundation for recovery. A six-hour endurance test used
-100 million rows and up to 256 clients on a machine with 1.76 GiB RAM and a
-5400 rpm hard drive.
-
-During the run, a real SATA transport failure interrupted a disk flush. After
-the kernel reset the link and retried the operation, the engine resumed work.
-The test completed 2,351,035 operations and 2,100 invariant checks with no
-invariant failures; the restored snapshot matched the source logical digest.
-This demonstrates recovery from the observed transient failure, rather than
-permanent loss of the drive. The report also records temporary stalls and their
-recovery.
-
-### Low memory requirements
-
-Large databases do not have to be loaded completely into process memory.
-In the same 100-million-row endurance test, peak server RSS was approximately
-1,011 MiB and final RSS returned to 197 MiB.
-
-For smaller deployments, the 20,000-row profile with 120 tables measured
-23.4 MiB at clean reopen using the system allocator, or 54.2 MiB with the default
-mimalloc allocator. These are separate, measured workload profiles, with
-explicit worker and cache settings.
+## Engine design and functionality
 
 ### Rust foundation
 
@@ -127,8 +100,6 @@ own build, filesystem and recovery validation.
 
 Applications can use the embedded `radixdb` library, the standalone
 `radixdb-client` TCP client and the `radixdb-orm` data-access layer.
-
-## Engine design and functionality
 
 ### Hybrid storage for connected data
 

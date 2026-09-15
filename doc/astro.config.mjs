@@ -75,7 +75,7 @@ export default defineConfig({
         { slug: 'reference/configuration' },
       ] },
       { label: 'Internals', translations: { ru: 'Внутреннее устройство' }, items: ['overview', 'storage', 'protocol'].map(name => ({ slug: `internals/${name}` })) },
-      { label: 'Appendices', translations: { ru: 'Приложения' }, items: [{ slug: 'appendices/comparison' }, { slug: 'appendices/compatibility' }, { slug: 'appendices/limits' }, { slug: 'appendices/benchmarks' }, { slug: 'appendices/evidence' }, { slug: 'appendices/release-notes' }, { slug: 'appendices/glossary' }] },
+      { label: 'Appendices', translations: { ru: 'Приложения' }, items: [{ slug: 'appendices/comparison' }, { slug: 'appendices/release-qualification' }, { slug: 'appendices/compatibility' }, { slug: 'appendices/limits' }, { slug: 'appendices/benchmarks' }, { slug: 'appendices/evidence' }, { slug: 'appendices/release-notes' }, { slug: 'appendices/glossary' }] },
     ],
     customCss: ['./src/styles/manual.css'],
     components: { Footer: './src/components/ManualFooter.astro', MarkdownContent: './src/components/ManualContent.astro' },

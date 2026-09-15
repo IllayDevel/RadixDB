@@ -52,6 +52,7 @@ assert.equal(new Set(benchmarkIds).size, 27);
 for (const locale of ['en', 'ru']) {
   const benchmark = content(locale, 'benchmarks');
   const notes = content(locale, 'release-notes');
+  const qualification = content(locale, 'release-qualification');
   for (const marker of [
     'b648b2d3ea323cf5eb10417ab09d5eb3d5d01ecc',
     'dd0bf75c9176bceb70ce8f1d2a07057610ec381b',
@@ -72,6 +73,19 @@ for (const locale of ['en', 'ru']) {
     'protocol 14',
     '1.0.0',
   ]) assert(notes.includes(marker), `${locale} release notes are missing ${marker}`);
+  for (const marker of [
+    '63f45972475dd14825690009ee9e10e97707a3c7',
+    '34845870019',
+    locale === 'ru' ? '6 949' : '6,949',
+    locale === 'ru' ? '3 100' : '3,100',
+    locale === 'ru' ? '3 849' : '3,849',
+    '54 Criterion',
+    '23bf35df011aae6816d77578be96074b02bc363c',
+    'dd0bf75c9176bceb70ce8f1d2a07057610ec381b',
+    '59b56e6b7bdaf846dd167aa01185222c7af95aec54593b9a05927b4c0abda4b0',
+    'glibc 2.38',
+  ]) assert(qualification.includes(marker),
+    `${locale} release qualification is missing ${marker}`);
 }
 
 function read(relative) {

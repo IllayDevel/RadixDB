@@ -518,6 +518,18 @@ reviewer = "Codex"
 legacy_paths = []
 
 [[chapters]]
+id = "appendices-release-qualification"
+path = "appendices/release-qualification.md"
+order = 46.75
+status = "verified"
+feature_status = "accepted"
+sources = [".github/workflows/ci.yml", ".github/workflows/nightly.yml", "scripts/check-coverage-thresholds.py", "doc/public/evidence/performance/RADIXDB_1_2_100M_VALIDATION.md", "doc/public/evidence/reliability/CA_90_3_6H_ACCEPTANCE_REPORT.md", "release"]
+tests = ["npm run test:benchmarks-release", "npm run build", "npm run test:browser"]
+verified_commit = "e09a2cb1791b92935c1b9f9f6344e7224fc308b2"
+reviewer = "Codex"
+legacy_paths = []
+
+[[chapters]]
 id = "appendices-compatibility"
 path = "appendices/compatibility.md"
 order = 47
